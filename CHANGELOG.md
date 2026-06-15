@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.1...xbloom-v1.0.2) (2026-06-15)
+
+
+### CI
+
+* orchestrate validate/release/docs as one check suite via reusable workflows ([a426576](https://github.com/saya6k/ha-xbloom/commit/a42657637029e2bba07112d066d7ac29118c5fba))
+
 ## [1.0.1](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.0...xbloom-v1.0.1) (2026-06-15)
 
 
