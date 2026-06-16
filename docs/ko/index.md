@@ -24,7 +24,6 @@
 - **실시간 텔레메트리** — 브루어 온도, 저울 무게, 수위 상태, 현재 추출 단계.
 - **이벤트 엔티티** — 에러 이벤트(물 부족, 원두 없음, 비정상 dose, 비정상 기어)와 알림(그라인딩 시작/완료, 추출 시작, 추출 완료, bloom, paused, 레시피 완료, 차 침지).
 - **LLM API** — 추출, 레시피 실행, 레시피 목록, 상태를 Home Assistant Assist에 노출 (안전 확인: 원두, 필터, 저울 위 컵).
-- **Agent Skills** — [`skills/`](../../skills/)에 번들 (agentskills.io spec 준수): `xbloom-brew` (CoT 레시피 디자이너), `xbloom-recipes` (YAML CRUD 도우미), `xbloom-troubleshoot` (알려진 이슈 진단). `.claude/skills` 심링크로 Claude Code 자동 인식.
 - **한국어·영어** UI 번역.
 
 ## 설치 (HACS)
@@ -94,7 +93,7 @@ xbloom:
 
 차 레시피는 각 pour가 한 번의 steep. xBloom Omni Tea Brewer의 사이펀은 약 ~120ml에서 트리거(찻잎 부피에 따라 변동) — `pausing`은 *steep 사이의 대기 시간*이지 실제 침지 시간이 아닙니다. 사이펀 메커니즘 상세는 [`brewing-notes.md`](./brewing-notes.md) 참조.
 
-필드별 스키마 레퍼런스: [`skills/xbloom-brew/references/yaml-schema.md`](../../skills/xbloom-brew/references/yaml-schema.md).
+필드별 스키마는 위의 **YAML 레시피 형태**를 참고하세요.
 
 ### UI(OptionsFlow)로 레시피 관리
 

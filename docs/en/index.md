@@ -24,7 +24,6 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
 - **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
-- **Agent Skills** — bundled at [`skills/`](../../skills/) (agentskills.io spec): `xbloom-brew` (CoT recipe designer), `xbloom-recipes` (YAML CRUD helper), `xbloom-troubleshoot` (diagnose against known issues). Auto-discovered by Claude Code via `.claude/skills` symlink.
 - **Korean and English** UI translations.
 
 ## Installation (HACS)
@@ -94,7 +93,7 @@ xbloom:
 
 For tea recipes, each pour represents one steep. The xBloom Omni Tea Brewer's siphon triggers at ~120 ml (leaf-volume dependent) — `pausing` is *idle time between steeps*, not actual steep time. See [`brewing-notes.md`](./brewing-notes.md) for the full siphon-mechanics explanation.
 
-Field-by-field schema reference: [`skills/xbloom-brew/references/yaml-schema.md`](../../skills/xbloom-brew/references/yaml-schema.md).
+See the **YAML recipe shape** above for the field-by-field reference.
 
 ### Recipe management via UI (OptionsFlow)
 
