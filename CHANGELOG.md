@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.3](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.2...xbloom-v1.0.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* **manifest:** point documentation at the published docs site ([685660c](https://github.com/saya6k/ha-xbloom/commit/685660cf06a9d371fead216df3f0decf1b30e9fc))
+
+
+### Documentation
+
+* drop references to the removed bundled agent skills ([48cff3b](https://github.com/saya6k/ha-xbloom/commit/48cff3b4d9d1dce5215b36997f9649f4351ac895))
+
+
+### CI
+
+* pass a PAT to release-please so the release PR runs CI ([#3](https://github.com/saya6k/ha-xbloom/issues/3)) ([d929dce](https://github.com/saya6k/ha-xbloom/commit/d929dcef8aff199cfb16b406dc789d94b8feeda6))
+
 ## [1.0.2](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.1...xbloom-v1.0.2) (2026-06-15)
 
 
