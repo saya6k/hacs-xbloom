@@ -688,6 +688,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await asyncio.sleep(0.3)
             await self.client.grinder.stop()
             await self.client.brewer.stop()
+            await asyncio.sleep(0.3)
+            # Reset the machine's UI/mode state to the home screen.
+            # Without this the machine stays in whatever screen was active
+            # (e.g. tea recipe UI) after the hardware stops.
+            await self.client._send_command(brewing._CMD_BACK_TO_HOME)
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
 
