@@ -27,6 +27,7 @@ async def async_setup_entry(
         XBloomRecipeSelect(coordinator, entry),
         XBloomWaterSourceSelect(coordinator, entry),
         XBloomPourPatternSelect(coordinator, entry),
+        XBloomModeSelect(coordinator, entry),
     ])
 
 
@@ -163,3 +164,32 @@ class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
         self.coordinator.pour_pattern = POUR_PATTERN_OPTIONS.get(option, 2)
         self.async_write_ha_state()
         _LOGGER.debug("Pour pattern changed to: %s", option)
+
+
+class XBloomModeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
+    """Machine operating mode — Pro or Easy (Auto).
+
+    Pro Mode accepts the full 8001/8004/8002 live-brew sequence.
+    Easy Mode uses the stored slot recipes activated by physical buttons.
+    Recipe execution from HA automatically switches to Pro Mode first.
+    """
+
+    _attr_translation_key = "mode"
+    _attr_unique_id = "xbloom_mode"
+    _attr_has_entity_name = True
+    _attr_options = ["pro", "easy"]
+
+    def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+
+    @property
+    def device_info(self):
+        return self.coordinator.device_info
+
+    @property
+    def current_option(self) -> str:
+        return (self.coordinator.data or {}).get("mode", "pro")
+
+    async def async_select_option(self, option: str) -> None:
+        await self.coordinator.async_set_mode(option)
+        self.async_write_ha_state()

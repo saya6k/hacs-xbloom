@@ -24,6 +24,7 @@ async def async_setup_entry(
             XBloomGrindButton(coordinator, entry),
             XBloomPourButton(coordinator, entry),
             XBloomExecuteRecipeButton(coordinator, entry),
+            XBloomPauseButton(coordinator, entry),
             XBloomCancelButton(coordinator, entry),
             XBloomVibrateButton(coordinator, entry),
             XBloomTareButton(coordinator, entry),
@@ -67,6 +68,25 @@ class XBloomExecuteRecipeButton(_XBloomButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_execute_recipe()
+
+
+class XBloomPauseButton(_XBloomButton):
+    """Pause / Resume toggle — action depends on machine state.
+
+    Brewing or grinding → pause.  Paused → resume.  Idle → no-op.
+    The icon flips between mdi:pause and mdi:play accordingly.
+    """
+
+    _attr_translation_key = "pause"
+    _attr_unique_id = "xbloom_pause"
+
+    @property
+    def icon(self) -> str:
+        state = (self.coordinator.data or {}).get("state", "unknown")
+        return "mdi:play" if state == "paused" else "mdi:pause"
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_pause_resume()
 
 
 class XBloomCancelButton(_XBloomButton):

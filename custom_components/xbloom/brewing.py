@@ -168,6 +168,42 @@ def _build_tea_payload(recipe: XBloomRecipe) -> bytes:
     return struct.pack("B", len(body)) + body + footer
 
 
+def _build_coffee_recipe_payload(recipe: XBloomRecipe) -> bytes:
+    """Build a recipe blob whose footer matches brAzzi64's ``encode_recipe``.
+
+    The vendored ``build_recipe_payload`` writes ``total_water * 10`` as
+    footer byte 2, but the machine expects ``ratio * 10`` (ratio =
+    total_water / dose).  This is confirmed by the decompiled official app
+    (``RecipeDetailActivity`` line 670: ``dose × grandWater ==
+    totalPourVolume``) and every HCI capture in brAzzi64's PROTOCOL.md.
+
+    In live brew the dose arrives via the separate ``8102`` command, so
+    the wrong footer byte is sometimes tolerated.  In Easy Mode the
+    machine must derive the dose from the stored recipe blob — if the
+    footer encodes ``total_water * 10`` instead of ``ratio * 10`` the
+    machine computes the wrong dose and may skip grinding entirely (hot
+    water only).
+
+    Body encoding (substep chunking, timing blocks, length byte) is
+    identical to the vendored builder — only the footer byte 2 correction
+    is applied.
+    """
+    # Reuse the vendored builder for the body; only the footer needs
+    # correcting.
+    vendored = build_recipe_payload(recipe)
+    body_content = vendored[1:-2]  # strip length byte + [grind_byte, water_byte]
+
+    grind_byte = recipe.grind_size & 0xFF
+    total_water = sum(p.volume for p in recipe.pours)
+    dose = recipe.bean_weight
+    ratio = (total_water / dose) if dose > 0 else 0
+    ratio_byte = int(ratio * 10) & 0xFF
+
+    body_len = len(body_content)
+    footer = struct.pack("BB", grind_byte, ratio_byte)
+    return struct.pack("B", body_len) + body_content + footer
+
+
 def _cup_value(recipe: XBloomRecipe) -> int:
     cup = recipe.cup_type
     return int(cup.value if hasattr(cup, "value") else cup)
@@ -271,7 +307,7 @@ async def _async_brew_coffee(
 
     # Recipe: 8001 (APP_RECIPE_SEND_AUTO, with grinding) or 8004
     # (APP_RECIPE_SEND_MANUAL, no grinding).
-    payload = build_recipe_payload(recipe)
+    payload = _build_coffee_recipe_payload(recipe)
     recipe_cmd = (
         XBloomCommand.APP_RECIPE_SEND_AUTO if grinding
         else XBloomCommand.APP_RECIPE_SEND_MANUAL
@@ -383,7 +419,7 @@ async def async_write_easy_slot(
     grinder_on = recipe.grind_size > 0 and recipe.bean_weight > 0
     flags = slot_flags(scale_on, grinder_on)
 
-    recipe_blob = build_recipe_payload(recipe)
+    recipe_blob = _build_coffee_recipe_payload(recipe)
     payload = bytes([slot_index, flags]) + recipe_blob
 
     _LOGGER.info(

@@ -208,9 +208,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_TELEMETRY_INTERVAL,
         entry.data.get(CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL),
     )
-    # water_source is stored in options so it survives HA restarts.
-    # Falls back to DEFAULT_WATER_SOURCE (tank) if never set.
+    # water_source and mode are stored in options so they survive HA
+    # restarts.  Falls back to sensible defaults if never set.
     initial_water_source = entry.options.get(CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE)
+
+    from .const import CONF_MODE, DEFAULT_MODE
+    initial_mode = entry.options.get(CONF_MODE, DEFAULT_MODE)
 
     coordinator = XBloomCoordinator(
         hass=hass,
@@ -218,6 +221,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_id=entry.entry_id,
         update_interval=telemetry_interval,
         initial_water_source=initial_water_source,
+        initial_mode=initial_mode,
     )
 
     # Recipe merge order — lowest precedence first:

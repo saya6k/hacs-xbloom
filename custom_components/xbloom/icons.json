@@ -101,6 +101,13 @@
           "tank": "mdi:cup-water",
           "direct": "mdi:water"
         }
+      },
+      "mode": {
+        "default": "mdi:coffee-maker-check",
+        "state": {
+          "pro": "mdi:coffee-maker-check",
+          "easy": "mdi:coffee-maker"
+        }
       }
     },
     "switch": {

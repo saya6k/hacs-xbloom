@@ -100,8 +100,11 @@
       "execute_recipe": {
         "name": "레시피 실행"
       },
+      "pause": {
+        "name": "일시정지"
+      },
       "cancel": {
-        "name": "중지"
+        "name": "취소"
       },
       "vibrate_scale": {
         "name": "저울 진동"
@@ -182,6 +185,13 @@
           "center": "중앙",
           "circular": "원형",
           "spiral": "나선형"
+        }
+      },
+      "mode": {
+        "name": "머신 모드",
+        "state": {
+          "pro": "Pro",
+          "easy": "Easy"
         }
       }
     },

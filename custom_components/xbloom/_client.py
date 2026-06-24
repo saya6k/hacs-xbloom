@@ -43,6 +43,13 @@ _LOGGER = logging.getLogger(__name__)
 # packet layout: header(3) | cmd(2) | len(4) | type(1) | payload | crc(2).
 _MACHINE_INFO_CMD_BYTES = (40521).to_bytes(2, "little")  # b"\x09\xa9"
 
+# MachineInfo payload byte offsets (from PROTOCOL.md field map).
+# Mode is a 4-byte hex string at payload offset 51–54:
+#   "91327856" → Easy/Auto Mode, anything else → Pro Mode.
+_MACHINE_INFO_MODE_OFFSET = 51
+_MACHINE_INFO_MODE_LEN = 4
+_MACHINE_INFO_MODE_EASY_HEX = "91327856"
+
 EventCallback = Callable[[str, str, dict], None]
 
 # 8100 — MTU handshake. Cherry-picked from
@@ -137,6 +144,19 @@ class XBloomClientWithEvents(XBloomClient):
             except Exception as exc:
                 _LOGGER.error("Event callback error: %s", exc)
 
+    def _machine_mode(self) -> str:
+        """Return ``easy`` or ``pro`` from the cached MachineInfo payload.
+
+        Reads the raw mode bytes stored during ``_handle_response`` /
+        ``_scan_for_machine_info``.  Falls back to ``pro`` when not yet
+        available (the coordinator treats ``pro`` as the safe default).
+        """
+        raw = getattr(self._status, "_mode_bytes", None)
+        if not raw or len(raw) < _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN:
+            return "pro"
+        mode_slice = raw[_MACHINE_INFO_MODE_OFFSET : _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN]
+        return "easy" if mode_slice.hex() == _MACHINE_INFO_MODE_EASY_HEX else "pro"
+
     def _on_notification(self, char, data: bytearray) -> None:
         raw = bytes(data)
         char_uuid = str(getattr(char, "uuid", char))
@@ -188,9 +208,10 @@ class XBloomClientWithEvents(XBloomClient):
             if serial:
                 self._status.serial_number = serial
                 self._status.version = version
+                self._status._mode_bytes = payload
                 _LOGGER.info(
-                    "Manual MachineInfo extract: serial=%r version=%r",
-                    serial, version,
+                    "Manual MachineInfo extract: serial=%r version=%r mode=%s",
+                    serial, version, self._machine_mode(),
                 )
             return
 
@@ -212,11 +233,15 @@ class XBloomClientWithEvents(XBloomClient):
             if len(payload) >= 29:
                 self._status.serial_number = strict_ascii(payload[0:13])
                 self._status.version = strict_ascii(payload[19:29])
+            # Cache the raw payload so _machine_mode() can extract the
+            # mode bytes at offset 51–54.
+            self._status._mode_bytes = payload
             _LOGGER.info(
-                "RD_MachineInfo parsed: serial=%r version=%r water_ok=%s",
+                "RD_MachineInfo parsed: serial=%r version=%r water_ok=%s mode=%s",
                 self._status.serial_number,
                 self._status.version,
                 self._status.water_level_ok,
+                self._machine_mode(),
             )
         if response in _NOTIFICATION_MAP:
             self._fire_event("notification", _NOTIFICATION_MAP[response])

@@ -8,11 +8,13 @@ CONF_TELEMETRY_INTERVAL = "telemetry_interval"
 CONF_SESSION_TIMEOUT = "session_timeout"
 CONF_RECIPES = "recipes"
 CONF_WATER_SOURCE = "water_source"   # persisted in entry.options
+CONF_MODE = "mode"                   # persisted in entry.options
 
 # Defaults
 DEFAULT_TELEMETRY_INTERVAL = 5  # seconds
 DEFAULT_SESSION_TIMEOUT = 60    # seconds
 DEFAULT_WATER_SOURCE = 0        # 0 = tank
+DEFAULT_MODE = "easy"
 
 # Data keys
 DATA_COORDINATOR = "coordinator"

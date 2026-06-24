@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
@@ -71,9 +72,17 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
             )
         )
 
+    total_water = int(raw.get("total_water", 0))
+    # If the YAML omits total_water, derive it from the pour volumes so the
+    # recipe footer carries a meaningful value.  A zero footer byte 2 causes
+    # the machine to skip grinding (hot water only) on Easy Mode slots and
+    # may also confuse live brew.
+    if total_water == 0:
+        total_water = sum(int(p.get("volume", 0)) for p in raw.get("pours", []))
+
     return XBloomRecipe(
         grind_size=int(raw.get("grind_size", 0)),
-        total_water=int(raw.get("total_water", 0)),
+        total_water=total_water,
         rpm=int(raw.get("rpm", 80)),
         cup_type=cup_val,
         name=str(raw.get("name", "Unknown")),
@@ -107,6 +116,7 @@ DEFAULT_STATE: Dict[str, Any] = {
     "water_level_ok": False,
     "version": "",
     "serial_number": "",
+    "mode": "pro",
     "error": None,
 }
 
@@ -161,6 +171,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         entry_id: str,
         update_interval: int = 5,
         initial_water_source: int = DEFAULT_WATER_SOURCE,
+        initial_mode: str = DEFAULT_MODE,
     ) -> None:
         super().__init__(
             hass,
@@ -194,6 +205,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Recipe execution (APP_RECIPE_EXECUTE) does NOT use this value.
         self.water_source: int = initial_water_source
 
+        # Machine operating mode ("pro" / "easy").  Persisted in entry.options
+        # so the user's preference survives restarts and reconnects.
+        # The coordinator applies this mode when it connects to the machine.
+        self._mode: str = initial_mode
+
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.
         self._event_listeners: List[Callable[[str, str, dict], None]] = []
@@ -210,6 +226,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # machine actually fires RD_ErrorLackOfWater. Cleared by the next
         # successful brew/pour notification.
         self._water_shortage: bool = False
+
+        # Track whether we temporarily switched to Pro Mode for an HA
+        # operation.  When the operation completes we switch back to the
+        # default (Easy) mode so the physical slot buttons work again.
+        self._auto_switched_to_pro: bool = False
 
     # ------------------------------------------------------------------
     # DataUpdateCoordinator contract
@@ -240,6 +261,10 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     "water_level_ok": water_ok,
                     "version": s.version,
                     "serial_number": s.serial_number,
+                    # Use the machine's reported mode when available;
+                    # fall back to the persisted preference before
+                    # MachineInfo arrives.
+                    "mode": self.client._machine_mode() if s.serial_number else self._mode,
                     "error": None,
                 }
                 # If MachineInfo arrived since last poll, update the device registry
@@ -551,6 +576,20 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
 
+        # ── Restore Easy Mode after HA-triggered operations finish ──
+        # When we auto-switched to Pro for grind/pour/recipe, switch
+        # back once the machine reports a completion event so the
+        # physical slot buttons work again.
+        if self._auto_switched_to_pro and category == "notification" and event_type in (
+            "grinding_complete", "pour_complete", "recipe_complete",
+        ):
+            if self.hass and self.hass.loop:
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.hass.async_create_task(
+                        self._restore_persisted_mode(event_type)
+                    )
+                )
+
         def _do_dispatch() -> None:
             # Snapshot the list in case a listener un-registers during iteration
             for cb in list(self._event_listeners):
@@ -574,6 +613,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if not self._check_connected():
             return
         try:
+            await self._ensure_pro_mode()
             await self.client.brewer.start(
                 volume=float(self.volume),
                 temperature=float(self.temperature),
@@ -589,6 +629,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if not self._check_connected():
             return
         try:
+            await self._ensure_pro_mode()
             await self.client.grinder.start(size=self.grind_size, speed=self.rpm)
         except Exception as exc:
             _LOGGER.error("Grind error: %s", exc)
@@ -649,6 +690,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
             return
         try:
+            # ── Auto-switch to PRO mode if the machine is in Easy mode ──
+            # Easy Mode silences or misinterprets the 8001/8004/8002 Pro-mode
+            # brew sequence, resulting in hot water only (grinder never runs).
+            # We always switch to PRO before a live brew to guarantee the
+            # sequence is honoured.  The user can switch back via the Mode
+            # switch entity if they want physical slot buttons afterwards.
+            await self._ensure_pro_mode()
             raw = self.recipes[self.selected_recipe]
             recipe = _build_recipe_from_yaml(raw)
             is_tea = brewing.is_tea_recipe(recipe)
@@ -679,6 +727,26 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
 
+    async def async_pause_resume(self) -> None:
+        """Toggle between pause and resume based on machine state.
+
+        When the machine is brewing or grinding the button PAUSES.
+        When paused the button RESUMES (brewer + grinder).
+        When idle the button is a no-op.
+        """
+        if not self._check_connected():
+            return
+        state = (self.data or {}).get("state", "unknown")
+        try:
+            if state == "paused":
+                await self.client.brewer.restart()
+                await self.client.grinder.restart()
+            else:
+                await self.client.brewer.pause()
+                await self.client.grinder.pause()
+        except Exception as exc:
+            _LOGGER.error("Pause/resume error (state=%s): %s", state, exc)
+
     async def async_cancel(self) -> None:
         """Emergency stop all operations."""
         if not self._check_connected():
@@ -695,6 +763,105 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await self.client._send_command(brewing._CMD_BACK_TO_HOME)
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
+        # Restore the user's persisted mode if we had auto-switched to Pro
+        # for an HA operation that is now cancelled.
+        await self._restore_persisted_mode("cancel")
+
+    async def async_set_mode(self, mode: str) -> None:
+        """Switch the machine's operating mode.
+
+        ``mode`` must be ``pro`` or ``easy``.  Sends command 11511 with the
+        appropriate mode code (type-2 packet).  The next MachineInfo
+        notification will reflect the new mode.
+
+        The choice is persisted in ``entry.options`` so it survives HA
+        restarts and is reapplied on the next connection.
+        """
+        if not self._check_connected():
+            return
+        mode = mode.strip().lower()
+        if mode not in ("pro", "easy"):
+            raise ValueError(f"mode must be 'pro' or 'easy', got {mode!r}")
+        try:
+            mode_code = (
+                "00000000" if mode == "pro"
+                else "91327856"
+            )
+            mode_bytes = bytes.fromhex(mode_code)
+            # Mode switch is a type-2 packet (cmd 11511).
+            await self.client._send_command_raw(11511, mode_bytes, type_code=2)
+            _LOGGER.info("Mode switch requested: %s", mode)
+            # Persist so the choice survives HA restarts.
+            self._mode = mode
+            from .const import CONF_MODE
+            entry = self.hass.config_entries.async_get_entry(self.entry_id)
+            if entry is not None:
+                new_options = {**entry.options, CONF_MODE: mode}
+                self.hass.config_entries.async_update_entry(entry, options=new_options)
+            # The next MachineInfo notification will update coordinator data.
+            await asyncio.sleep(0.5)
+            await self.async_refresh()
+        except Exception as exc:
+            _LOGGER.error("Mode switch error (%s): %s", mode, exc)
+
+    async def _restore_persisted_mode(self, trigger: str) -> None:
+        """Restore the user's persisted mode preference after an HA operation.
+
+        When the user has chosen Easy Mode (the default) we temporarily
+        switch to Pro for grind/pour/recipe execution, then switch back
+        once the machine reports idle.  If the user explicitly chose Pro
+        Mode we leave the machine there — it is already in the right mode.
+        """
+        if self._mode != "easy":
+            # User explicitly chose Pro — nothing to restore.
+            self._auto_switched_to_pro = False
+            return
+        await asyncio.sleep(3.0)
+        if not self._auto_switched_to_pro:
+            return  # another codepath already handled it
+        state = (self.data or {}).get("state", "unknown")
+        if state not in ("idle", "unknown"):
+            _LOGGER.debug(
+                "Not restoring Easy Mode yet — machine is %s (trigger=%s)",
+                state, trigger,
+            )
+            return
+        _LOGGER.info("Restoring Easy Mode after %s", trigger)
+        try:
+            await self.client._send_command_raw(
+                11511, bytes.fromhex("91327856"), type_code=2,
+            )
+            self._auto_switched_to_pro = False
+            await asyncio.sleep(0.5)
+            await self.async_refresh()
+        except Exception as exc:
+            _LOGGER.warning("Easy Mode restore failed: %s", exc)
+
+    async def _ensure_pro_mode(self) -> None:
+        """Switch the machine to Pro Mode if it is currently in Easy Mode.
+
+        Called before operations that need the Pro Mode command set
+        (grind, pour, recipe execution).  Easy Mode silently ignores
+        the Pro brew commands, resulting in the grinder never running
+        (hot water only).
+
+        Sets ``_auto_switched_to_pro`` so the event dispatcher can
+        restore Easy Mode when the operation finishes.  This switch is
+        ephemeral — the user's persisted mode preference is not
+        overwritten.
+        """
+        current = (self.data or {}).get("mode", "pro")
+        if current == "easy":
+            _LOGGER.info("Machine is in Easy Mode — switching to Pro for HA operation")
+            try:
+                await self.client._send_command_raw(
+                    11511, bytes.fromhex("00000000"), type_code=2,
+                )
+                self._auto_switched_to_pro = True
+                await asyncio.sleep(0.5)
+                await self.async_refresh()
+            except Exception as exc:
+                _LOGGER.warning("Pro-mode switch failed: %s", exc)
 
     async def async_vibrate_scale(self) -> None:
         """Vibrate the scale tray."""
