@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.2.1...xbloom-v1.3.0) (2026-06-24)
+
+
+### Features
+
+* add hacs.json for HACS default repository compliance ([#13](https://github.com/saya6k/ha-xbloom/issues/13)) ([2b3e9e4](https://github.com/saya6k/ha-xbloom/commit/2b3e9e44d690c9d73e079eabcd02d8cba842dee8))
+
+
+### Documentation
+
+* update README with recipe management and recent features ([#15](https://github.com/saya6k/ha-xbloom/issues/15)) ([c7fd98e](https://github.com/saya6k/ha-xbloom/commit/c7fd98e62a066a090f8c54471e54ea08b87a99ec))
+
 ## [1.2.1](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.2.0...xbloom-v1.2.1) (2026-06-24)
 
 
