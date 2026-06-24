@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.1.0...xbloom-v1.2.0) (2026-06-24)
+
+
+### Features
+
+* allow editing and deleting default recipes from OptionsFlow ([#9](https://github.com/saya6k/ha-xbloom/issues/9)) ([3e08c9a](https://github.com/saya6k/ha-xbloom/commit/3e08c9a1bd1984e40deff28259b855a1971f7b30))
+
 ## [1.1.0](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.4...xbloom-v1.1.0) (2026-06-24)
 
 
