@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.4...xbloom-v1.1.0) (2026-06-24)
+
+
+### Features
+
+* correct recipe footer encoding, add mode select and pause button ([8bf90e0](https://github.com/saya6k/ha-xbloom/commit/8bf90e070a828f7d7ae090f5b8df40a5dd0e4f61))
+
 ## [1.0.4](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.0.3...xbloom-v1.0.4) (2026-06-18)
 
 
