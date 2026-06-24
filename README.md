@@ -20,8 +20,8 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Features
 
+- **Saved recipes** — edit, add, or delete recipes directly from the HA UI (Settings → Devices & Services → XBloom → Configure). Built-in default recipes (Korean coffee and tea) are editable and deletable too — deleted defaults can be re-added anytime. Recipes can also be defined in `configuration.yaml`. Single-button execution from the dashboard.
 - **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
-- **Saved recipes** in `configuration.yaml` (JSON-shaped XBloom recipes) with single-button execution.
 - **Per-brew overrides** — selecting a recipe syncs the Grind Size / RPM sliders to it; tweak them (or call the `xbloom.execute_recipe` service / ask Assist) to brew the saved recipe with adjusted grind, RPM, or bypass without editing the recipe. Bypass is recipe-scoped (no slider) — override it per brew via the service or Assist. Tea / no-grind recipes are left untouched.
 - **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = soak seconds; the firmware drives pour → soak → siphon-drain internally.
 - **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
@@ -46,7 +46,9 @@ Copy `custom_components/xbloom/` into your HA config's `custom_components/` fold
 
 The config flow handles MAC + telemetry interval + idle disconnect timeout.
 
-To add saved recipes, drop them into `configuration.yaml`:
+Recipes can be managed from the HA UI: Settings → Devices & Services → XBloom → **Configure**. Use **Add a recipe** / **Edit a recipe** / **Delete a recipe** to manage all recipes, including the built-in defaults (Korean coffee and tea). Edits to a default recipe are saved as a per-machine override — the original stays intact in the integration. Deleting a default hides it; add a same-named recipe to restore it.
+
+Recipes can also be defined in `configuration.yaml` (lowest priority — UI recipes win by name):
 
 ```yaml
 xbloom:
