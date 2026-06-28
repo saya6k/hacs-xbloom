@@ -32,6 +32,8 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=ha-xbloom&category=integration)
+
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
 2. Install **XBloom Coffee Machine**.
 3. Restart Home Assistant.
