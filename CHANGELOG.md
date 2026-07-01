@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.4.0](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.3.1...xbloom-v1.4.0) (2026-07-01)
+
+
+### Features
+
+* add hacs.json for HACS default repository compliance ([#13](https://github.com/saya6k/ha-xbloom/issues/13)) ([2b3e9e4](https://github.com/saya6k/ha-xbloom/commit/2b3e9e44d690c9d73e079eabcd02d8cba842dee8))
+* allow editing and deleting default recipes from OptionsFlow ([#9](https://github.com/saya6k/ha-xbloom/issues/9)) ([3e08c9a](https://github.com/saya6k/ha-xbloom/commit/3e08c9a1bd1984e40deff28259b855a1971f7b30))
+* correct recipe footer encoding, add mode select and pause button ([8bf90e0](https://github.com/saya6k/ha-xbloom/commit/8bf90e070a828f7d7ae090f5b8df40a5dd0e4f61))
+
+
+### Bug Fixes
+
+* add missing DEFAULT_MODE import in coordinator.py ([#11](https://github.com/saya6k/ha-xbloom/issues/11)) ([fe7b16a](https://github.com/saya6k/ha-xbloom/commit/fe7b16ab8502a11941245b734cbf05cfb184d081))
+* **coordinator:** send Back-to-Home (8022) after cancel to restore machine UI state ([#5](https://github.com/saya6k/ha-xbloom/issues/5)) ([e004f61](https://github.com/saya6k/ha-xbloom/commit/e004f6128b9222103671ded3b0997706fb4b9c8e))
+* **manifest:** point documentation at the published docs site ([685660c](https://github.com/saya6k/ha-xbloom/commit/685660cf06a9d371fead216df3f0decf1b30e9fc))
+* resolve hassfest validation errors ([3aa631a](https://github.com/saya6k/ha-xbloom/commit/3aa631a1e5d737321210e95f7debeee14d2d8f2b))
+
+
+### Documentation
+
+* add HACS My Home Assistant badge to README ([#16](https://github.com/saya6k/ha-xbloom/issues/16)) ([d37397b](https://github.com/saya6k/ha-xbloom/commit/d37397be0620d4c02647923985dea0f559c7761e))
+* drop references to the removed bundled agent skills ([48cff3b](https://github.com/saya6k/ha-xbloom/commit/48cff3b4d9d1dce5215b36997f9649f4351ac895))
+* update README with recipe management and recent features ([#15](https://github.com/saya6k/ha-xbloom/issues/15)) ([c7fd98e](https://github.com/saya6k/ha-xbloom/commit/c7fd98e62a066a090f8c54471e54ea08b87a99ec))
+
+
+### CI
+
+* draft releases with manual publish; deploy docs on release-published ([#18](https://github.com/saya6k/ha-xbloom/issues/18)) ([50359e4](https://github.com/saya6k/ha-xbloom/commit/50359e48ebdeaa250aa362e36628dc0140ae8c57))
+* gate release and docs workflows on Validate success ([ea30f85](https://github.com/saya6k/ha-xbloom/commit/ea30f85e81e509ee789a85cf7f749e2b36c2499a))
+* orchestrate validate/release/docs as one check suite via reusable workflows ([a426576](https://github.com/saya6k/ha-xbloom/commit/a42657637029e2bba07112d066d7ac29118c5fba))
+* pass a PAT to release-please so the release PR runs CI ([#3](https://github.com/saya6k/ha-xbloom/issues/3)) ([d929dce](https://github.com/saya6k/ha-xbloom/commit/d929dcef8aff199cfb16b406dc789d94b8feeda6))
+
 ## [1.3.1](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.3.0...xbloom-v1.3.1) (2026-07-01)
 
 
