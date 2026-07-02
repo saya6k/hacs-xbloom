@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.3.1...xbloom-v1.3.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **coordinator:** check water level before recipe execution ([#21](https://github.com/saya6k/ha-xbloom/issues/21)) ([39a5781](https://github.com/saya6k/ha-xbloom/commit/39a5781358d320a39aa9da5be73ef2aec5185f95))
+
 ## [1.3.1](https://github.com/saya6k/ha-xbloom/compare/xbloom-v1.3.0...xbloom-v1.3.1) (2026-07-01)
 
 
