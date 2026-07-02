@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -686,6 +687,22 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """
         if not self._check_connected():
             return
+        # Check water BEFORE touching the machine (mode switch, BLE writes,
+        # etc.) — without this, a low-water recipe attempt runs the whole
+        # brew sequence and only fails once the firmware fires
+        # RD_ErrorLackOfWater, so the user finds out mid-attempt instead of
+        # up front. Skipped when the user has told us they're on a direct
+        # (hose) feed: water_level_ok tracks the internal tank sensor, which
+        # stays empty/unreliable by design on a hose setup and would
+        # otherwise block every brew. (This is the same water_source select
+        # that otherwise only affects manual pour — here it's just the
+        # user's declaration of which feed is actually plumbed in.)
+        if self.water_source == WATER_SOURCE_TANK and not self.data.get(
+            "water_level_ok", True
+        ):
+            raise HomeAssistantError(
+                "XBloom water level is too low — refill the tank before brewing."
+            )
         if not self.selected_recipe or self.selected_recipe not in self.recipes:
             _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
             return

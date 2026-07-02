@@ -143,10 +143,17 @@ def _register_services(hass: HomeAssistant) -> None:
             if ATTR_RPM in call.data:
                 coord.rpm = int(call.data[ATTR_RPM])
             coord.async_update_listeners()
-            await coord.async_execute_recipe(
-                bypass_volume=call.data.get(ATTR_BYPASS_VOLUME),
-                bypass_temperature=call.data.get(ATTR_BYPASS_TEMPERATURE),
-            )
+            try:
+                await coord.async_execute_recipe(
+                    bypass_volume=call.data.get(ATTR_BYPASS_VOLUME),
+                    bypass_temperature=call.data.get(ATTR_BYPASS_TEMPERATURE),
+                )
+            except HomeAssistantError as exc:
+                # e.g. low water — don't let one machine's pre-brew check
+                # abort the recipe for the rest of the targeted machines.
+                _LOGGER.warning(
+                    "execute_recipe skipped for %s: %s", coord.mac_address, exc,
+                )
 
     hass.services.async_register(
         DOMAIN,

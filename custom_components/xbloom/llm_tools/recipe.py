@@ -7,7 +7,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
-from ..coordinator import POUR_PATTERN_OPTIONS
+from ..coordinator import POUR_PATTERN_OPTIONS, WATER_SOURCE_TANK
 from .base import XBloomBaseTool
 
 _LOGGER = logging.getLogger(__name__)
@@ -169,7 +169,11 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         "weight; however, if a cup was placed before the machine powered "
         "on, the scale reads it as 0 g — in that case the tool will ask "
         "the user to verify the cup and you should pass cup_confirmed=true "
-        "after the user confirms."
+        "after the user confirms. Water level is checked automatically "
+        "(no user confirmation needed) — the tool refuses to start and "
+        "returns error='water_low' if the tank needs a refill. This check "
+        "is skipped when the Water Source select is set to 'direct' (hose "
+        "feed), since the low-water sensor only tracks the internal tank."
     )
     parameters = vol.Schema(
         {
@@ -336,6 +340,26 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                         "on and in range."
                     ),
                 }
+
+        # Water level: machine-reported, no user confirmation needed — but
+        # check it before cup/select/execute so a low-water machine is
+        # caught up front instead of failing partway through the brew
+        # sequence. See coordinator.async_execute_recipe for the low-level
+        # guard; this is the LLM-facing early check. Skipped on a direct
+        # (hose) feed — water_level_ok tracks the internal tank sensor,
+        # which a hose setup doesn't rely on.
+        if self.coordinator.water_source == WATER_SOURCE_TANK and not (
+            self.coordinator.data or {}
+        ).get("water_level_ok", True):
+            return {
+                "success": False,
+                "error": "water_low",
+                "instruction": (
+                    "Do NOT start the recipe. Tell the user the XBloom's "
+                    "water tank is low and ask them to refill it before "
+                    "brewing. Do not retry until they confirm it's refilled."
+                ),
+            }
 
         # Cup presence: weight > threshold proves a cup is there. A reading
         # near 0 g is ambiguous because the machine auto-tares any weight
