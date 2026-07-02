@@ -21,20 +21,20 @@
 !/zensical.en.toml
 !/zensical.ko.toml
 
-# Root doc + agent-dir symlink aliases
+# AGENTS.md is the agent source of truth. CLAUDE.md / GEMINI.md are local
+# symlinks to it; .gemini and .claude's per-item symlinks are local per-tool
+# scaffolding into .agents. Only .claude/settings.json (Claude-specific,
+# shared) is tracked; settings.local.json stays per-developer.
 !/AGENTS.md
-!/CLAUDE.md
-!/GEMINI.md
 !/.claude
-!/.gemini
+/.claude/*
+!/.claude/settings.json
 
 # Noise inside tracked directories
 __pycache__/
 *.py[cod]
 .DS_Store
 
-# .agents: track only shared skills/ + settings.json
-# (settings.local.json is per-developer; notes/ are local decision logs)
-/.agents/*
-!/.agents/skills/
-!/.agents/settings.json
+# .agents is the agent source of truth (skills/, workflows/, agents/, memory/).
+# Per-developer local settings never belong in it.
+/.agents/settings.local.json
