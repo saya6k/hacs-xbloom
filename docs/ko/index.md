@@ -127,7 +127,7 @@ XBloom 앱 계정을 연결하면 공식 앱에서 보이는 것과 동일한 XB
 | 서비스 | 기능 |
 | --- | --- |
 | `cloud_search_recipes` | 계정의 모든 레시피 목록 조회, 이름으로 필터링 가능. |
-| `cloud_import_recipe` | `share-h5.xbloom.com` 링크 또는 share id로 레시피를 가져와 로컬 레시피로 저장. 계정 불필요 — 클라우드 계정 설정 없이도 동작. |
+| `cloud_import_recipe` | `share-h5.xbloom.com` 링크, `collective.xbloom.com/recipe/{id}` 커뮤니티 허브 링크, 또는 share id로 레시피를 가져와 로컬 레시피로 저장. 계정 불필요 — 클라우드 계정 설정 없이도 동작. |
 | `cloud_create_recipe` | 인라인 `recipe_yaml`(위 "레시피 추가"와 동일한 형식) 또는 `recipe_name`으로 기존 로컬 레시피를 지정해 클라우드에 새 레시피 생성. 새 `table_id`와 `share_url` 반환. |
 | `cloud_edit_recipe` | `table_id`로 기존 클라우드 레시피의 필드 일부 변경; 생략한 필드는 그대로 유지(먼저 현재 레시피를 가져온 뒤 patch). |
 | `cloud_delete_recipe` | `table_id`로 클라우드 레시피 영구 삭제. 되돌릴 수 없음. |

@@ -102,18 +102,21 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
     name = "import_xbloom_cloud_recipe"
     description = (
         "Import a recipe from an XBloom cloud share URL or share id (e.g. "
-        "from the official app's Share button) and save it as a local "
-        "recipe, so it shows up in list_xbloom_recipes / execute_xbloom_recipe. "
-        "No XBloom account login is required for this — it uses XBloom's "
-        "public share endpoint."
+        "from the official app's Share button), or from a "
+        "collective.xbloom.com/recipe/{id} community-hub link, and save it "
+        "as a local recipe, so it shows up in list_xbloom_recipes / "
+        "execute_xbloom_recipe. No XBloom account login is required for "
+        "this — both source endpoints are public."
     )
     parameters = vol.Schema(
         {
             vol.Required(
                 "share_url_or_id",
                 description=(
-                    "A share-h5.xbloom.com URL, or the bare share id "
-                    "(the value after ?id= in such a URL)."
+                    "A share-h5.xbloom.com URL, a "
+                    "collective.xbloom.com/recipe/{id} URL, or the bare "
+                    "share-h5 share id (the value after ?id= in a "
+                    "share-h5.xbloom.com URL)."
                 ),
             ): str,
         }
