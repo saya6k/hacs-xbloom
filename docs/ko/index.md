@@ -13,18 +13,17 @@
 
 ## 기능
 
-- **수동 제어** — 커스텀 온도/용량으로 추출, 커스텀 크기/RPM으로 그라인딩, 저울 **영점(tare)**, 트레이 진동.
-- **레시피 — 3계층 구조**:
-  1. **클라우드 동기화 레시피** — 설치 시, 그리고 매시간 자동으로 갱신됩니다: 계정이 연결돼 있으면 본인 클라우드 계정의 레시피, 아니면 XBloom 공식 계정의 공개 레시피가 동기화됩니다. 동기화가 네트워크에 전혀 접근하지 못하면(예: 첫 부팅 시 인터넷 없음) 다음 동기화 성공 전까지 작은 번들 기본 세트(`default_recipes.py`)가 사용됩니다. 런타임에는 읽기 전용 — 덮어쓰는 방법은 아래 참조.
-  2. **`configuration.yaml`** 레시피(레거시 경로). 이름으로 동기화 레시피를 덮어씀.
-  3. **OptionsFlow CRUD** — UI에서 추가/수정/삭제, HA 재시작 불필요. 이름으로 동기화 레시피와 YAML을 덮어씀. 설정 → 기기 및 서비스 → XBloom → ⋯ → **구성**.
-- **차 레시피** (`cup_type: tea`) — 각 우려내기를 한 번의 pour로 표현, `pausing`은 다음 steep까지의 *대기* 시간(실제 침지 시간 아님). 펌웨어가 추출 → 사이펀 배수를 내부적으로 처리.
+- **로컬 레시피가 source of truth** — 모든 레시피는 HA 안에서 고유한 로컬 `uid`를 갖고, Recipe 드롭다운이 보여주고 추출하는 대상도 바로 이것입니다. 설치 시 1회 시드됩니다(계정이 연결돼 있으면 클라우드 계정 레시피, 아니면 XBloom 공식 공개 레시피). 이후로는 백그라운드 동기화가 없습니다 — HA UI, 레시피 서비스, `configuration.yaml`로 직접 관리하세요.
+- **교차 식별자 지정** — 레시피를 다루는 모든 서비스/도구는 `recipe` 필드 하나로 로컬 uid, 클라우드 table id, 공유 URL/id, 또는 정확한 이름을 받습니다.
+- **수동 제어** — 커스텀 온도/용량/유량/푸어 패턴으로 추출, 커스텀 크기/RPM으로 그라인딩, 저울 **영점(tare)**, 트레이 진동.
+- **브루별 오버라이드** — 레시피를 수정하지 않고 그라인드/RPM/도즈/비율/컵 타입/바이패스를 조정해 브루(dose/ratio 오버라이드는 pour 볼륨을 비례 재계산). 레시피를 선택하면 Grind Size / RPM 슬라이더도 그 값으로 동기화됩니다.
+- **차 레시피** (`cup_type: tea`) — 각 우려내기를 pour 하나로 표현, `pausing`이 곧 소크(우림) 초. 펌웨어가 추출 → 소크 → 사이펀 배수를 내부적으로 처리. 사이펀 메커니즘은 [`brewing-notes.md`](./brewing-notes.md) 참고.
 - **선택된 레시피 조회** — recipe select 엔티티의 `recipe` 속성에 pours / bypass / 온도 등 전체 파라미터가 노출됨. 개발자 도구 → 상태 → `select.xbloom_recipe`, 또는 템플릿에서 `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
-- **Easy Mode 슬롯 쓰기** — 현재 선택된 레시피를 머신의 온보드 슬롯 A / B / C에 푸시 (장치의 Auto/Easy Mode 버튼).
-- **선택적 클라우드 계정** — XBloom 계정을 연결하면 위 자동 동기화 외에도 본인 클라우드 계정이나 XBloom 공개 커뮤니티 허브의 개별 레시피를 검색·생성·수정·삭제·가져오기할 수 있습니다. 완전히 선택 사항이며, 계정 없이도 다른 모든 기능은 그대로 동작합니다. 아래 [클라우드 레시피 동기화](#클라우드-레시피-동기화-선택) 참조.
+- **Easy Mode 슬롯 쓰기** — 슬롯 버튼, 슬롯 텍스트 엔티티, 또는 `write_recipe_to_easy_slot` 서비스(로컬에 없는 공유 URL은 자동 가져오기) 세 가지 경로로 어떤 레시피든 온보드 슬롯 A/B/C에 기록.
+- **클라우드는 가져오기/내보내기 경계** — 공유된 레시피를 가져오거나(`cloud_import_recipe`, 계정 불필요), 로컬 레시피를 내보내 공유 링크를 받거나(`cloud_export_recipe`), XBloom 공개 커뮤니티 허브를 검색(`cloud_search_collective_recipes`). 계정은 선택 사항이며 내보내기에만 필요합니다. 아래 [레시피 서비스](#레시피-서비스) 참고.
 - **실시간 텔레메트리** — 브루어 온도, 저울 무게, 수위 상태, 현재 추출 단계.
-- **이벤트 엔티티** — 에러 이벤트(물 부족, 원두 없음, 비정상 dose, 비정상 기어)와 알림(그라인딩 시작/완료, 추출 시작, 추출 완료, bloom, paused, 레시피 완료, 차 침지).
-- **LLM API** — 추출, 레시피 실행, 레시피 목록, 상태를 Home Assistant Assist에 노출 (안전 확인: 원두, 필터, 저울 위 컵).
+- **이벤트 엔티티** — 에러(물 부족, 원두 없음, 비정상 dose/기어)와 알림(그라인딩/추출/pour/bloom/일시정지/완료/차 침지).
+- **LLM API** — 상태, 레시피 CRUD, 추출, 슬롯 쓰기, 가져오기/내보내기, 허브 검색을 Assist에 노출(안전 확인: 원두, 필터, 저울 위 컵, 삭제).
 - **한국어·영어** UI 번역.
 
 ## 설치 (HACS)
@@ -45,17 +44,9 @@
 
 ### 레시피
 
-우선순위 낮음 → 높음 3계층:
+설치 시 레시피 저장소가 **1회** 시드됩니다: 작은 번들 세트가 즉시 기록되고(드롭다운이 절대 비지 않도록), 이후 백그라운드 작업이 XBloom 클라우드 계정 레시피(계정이 연결돼 있으면) 또는 XBloom 공식 공개 레시피(없으면)를 가져옵니다 — 이미 있는 이름은 건너뜁니다. 가져오기가 실패하면(예: 첫 부팅 시 인터넷 없음) 다음 재시작 때 재시도합니다. 계정을 **나중에** 연결하면 그 시점에 계정 레시피가 한 번 더 시드됩니다. 그 이후로는 백그라운드 동기화가 없습니다 — 로컬 저장소는 온전히 사용자의 것입니다.
 
-| 계층 | 위치 | 변경 방법 | 비고 |
-| --- | --- | --- | --- |
-| 클라우드 동기화 | `coordinator.cloud_synced_recipes` (메모리) | 직접 변경 불가 — 아래 참조 | 계정이 있으면 계정 레시피, 없으면 XBloom 공식 공개 레시피. 설치 시·매시간 갱신. 두 가져오기가 모두 실패할 때만 작은 번들 세트(`default_recipes.py`)로 대체. 런타임 읽기 전용. |
-| YAML | `configuration.yaml`의 `xbloom: recipes:` | 편집 후 HA 재시작 | 아래 스키마 따름. 이름으로 동기화 레시피 덮어씀. |
-| OptionsFlow | `entry.options[CONF_RECIPES]` | HA UI | 추가 / 수정 / 삭제. 이름으로 모든 것 덮어씀. |
-
-동기화 레시피를 덮어쓰고 싶으면 YAML이나 OptionsFlow에서 같은 이름으로 추가하면 됩니다 — 원본 동기화 레시피는 그대로 남아 있다가, 덮어쓴 레시피를 삭제하면 다시 나타납니다.
-
-### YAML 레시피 형식
+레시피는 `configuration.yaml`에도 정의할 수 있습니다 — 로컬 저장소보다 우선순위가 낮음(같은 이름의 저장소 레시피가 이김; UI에서 YAML 레시피를 삭제하면 숨겨짐):
 
 ```yaml
 xbloom:
@@ -86,53 +77,54 @@ xbloom:
       pours:
         - volume_ml: 120
           temperature_c: 80
-          pause_seconds: 60       # 다음 steep까지의 대기 시간 (초)
+          pause_seconds: 60       # 다음 steep 전까지의 소크 시간
         - volume_ml: 120
           temperature_c: 80
           pause_seconds: 0
 ```
 
-차 레시피는 각 pour가 한 번의 steep. xBloom Omni Tea Brewer의 사이펀은 약 ~120ml에서 트리거(찻잎 부피에 따라 변동) — `pause_seconds`는 *steep 사이의 대기 시간*이지 실제 침지 시간이 아닙니다. 사이펀 메커니즘 상세는 [`brewing-notes.md`](./brewing-notes.md) 참조.
+차 레시피는 각 pour가 한 번의 steep입니다. `pause_seconds`는 스팁당 pour가 사이펀 임계 이하로 유지되는 한(통합이 자동으로 이를 보장) 진짜 소크 시간(물이 브루어에 머금어짐)입니다. 사이펀 메커니즘 상세는 [`brewing-notes.md`](./brewing-notes.md) 참조.
 
-필드별 스키마는 위의 **YAML 레시피 형태**를 참고하세요.
+### UI로 레시피 관리
 
-### UI(OptionsFlow)로 레시피 관리
+설정 → 기기 및 서비스 → XBloom → ⋯ → **구성** → **레시피 추가** / **레시피 수정** / **레시피 삭제**. 삭제는 로컬에만 적용되며 즉시 반영됩니다 — 클라우드 계정의 사본은 건드리지 않습니다. YAML 레시피도 Edit/Delete에 나타나며, 수정하면 로컬 오버라이드로 저장됩니다(YAML 파일 자체는 건드리지 않음). 삭제하면 tombstone 처리(같은 이름으로 다시 추가하면 복원).
 
-설정 → 기기 및 서비스 → XBloom → ⋯ → **구성** → 메뉴:
+### 브루별 오버라이드
 
-- **설정** — 텔레메트리 간격, idle 해제 타임아웃.
-- **레시피 추가** — YAML 블록 붙여넣기 → 스키마 검증 → 옵션에 저장 → 통합 자동 reload.
-- **레시피 수정** — UI로 추가한 레시피 중에서 선택(defaults / YAML은 여기서 읽기 전용). YAML이 미리 채워진 채로 편집 가능. `name:` 변경(이름 변경)도 허용.
-- **레시피 삭제** — UI로 추가한 레시피 중에서 선택 후 확정.
+저장된 레시피를 수정하지 않고 단일 브루에만 적용되는 조정으로 실행할 수 있습니다. **Recipe** select에서 레시피를 선택하면 **Grind Size** / **Grinder RPM** 슬라이더가 그 값으로 동기화되고, 브루 시점에 슬라이더가 들고 있는 값이 사용됩니다. 차·no-grind 레시피는 grind/RPM을 무시합니다.
 
-번들 default와 YAML 레시피는 의도적으로 Edit/Delete 드롭다운에 나타나지 않습니다(소스가 코드/파일이라 UI 소유가 아님). Default를 제거하고 싶으면 OptionsFlow에서 같은 이름으로 추가해 덮어쓰세요.
+모든 최상위 스칼라를 브루별로 오버라이드할 수 있습니다: `grind_size`, `rpm`, `dose_g`, `ratio`, `cup_type`, `bypass_volume`, `bypass_temperature`. `dose_g`/`ratio` 오버라이드는 pour 볼륨을 비례 재계산합니다(pours 합 + bypass = dose × ratio). bypass가 없는 레시피에도 추가할 수 있고, 차 레시피는 bypass도 grind도 없습니다.
 
-## 클라우드 레시피 동기화 (선택)
+```yaml
+service: xbloom.execute_recipe
+target:
+  device_id: <your xbloom device>   # 머신이 하나뿐이면 생략 가능
+data:
+  recipe: Morning V60   # uid / 클라우드 id / 공유 URL / 이름 — 선택, 기본값은 현재 선택된 레시피
+  grind_size: 42
+  rpm: 90
+  dose_g: 20            # 총 물량 = dose × ratio를 유지하도록 pour가 재계산됨
+  bypass_volume: 50
+  bypass_temperature: 92
+```
 
-XBloom 앱 계정을 연결하면 공식 앱에서 보이는 것과 동일한 XBloom 클라우드 계정의
-레시피를 검색·가져오기·생성·수정·삭제할 수 있습니다 — 위의 3계층 로컬 레시피 관리와
-완전히 독립적입니다. 로컬 레시피 관리는 계정 없이도 아무 제약 없이 동작하므로,
-필요 없으면 이 단계를 건너뛰어도 됩니다.
+Assist(LLM)에서는 `get_xbloom_recipe`가 레시피 전체 상세(grind, RPM, bypass, 각 pour의 볼륨/유량/패턴)를 반환하고, `execute_xbloom_recipe`는 같은 스칼라 오버라이드에 더해 pour별 `pour_overrides`(0-based `pour_index`로 지정하는 볼륨/유량/패턴)를 받아, 에이전트가 요청에 따라 개별 pour를 조정할 수 있습니다.
 
-**설정**: 초기 설정의 config flow에서 "XBloom Cloud Account" 단계에 XBloom 앱
-이메일/비밀번호를 입력(두 필드 모두 선택 사항이며 건너뛰기 가능)하거나, 나중에 설정
-→ 기기 및 서비스 → XBloom → ⋯ → **구성** → **클라우드 계정**에서 추가/변경/삭제할 수
-있습니다. Apple로 로그인해서 XBloom 비밀번호가 없다면, XBloom 자체의 "비밀번호 찾기"
-플로우(Apple이 릴레이하는 이메일 사용, 앱의 계정 설정에서 확인 가능)로 비밀번호를
-먼저 설정한 뒤 입력하세요.
+## 레시피 서비스
 
-7개 서비스를 사용할 수 있습니다 (개발자 도구 → 액션, 또는 `xbloom.cloud_*`);
-`cloud_import_recipe`와 `cloud_search_collective_recipes`는 계정 없이도 동작하며,
-나머지는 계정 설정이 필요합니다:
+9개 서비스가 레시피 전체 표면을 커버합니다(개발자 도구 → 액션). 서비스가 `recipe`를 받는 곳이면 어디든 로컬 **uid**, **클라우드 table id**, **공유 URL/id**, 또는 정확한 **이름**을 받습니다 — `list_recipes`가 uid를 반환합니다.
 
 | 서비스 | 기능 |
 | --- | --- |
-| `cloud_search_recipes` | **본인** 클라우드 계정의 모든 레시피 목록 조회, 이름으로 필터링 가능. |
-| `cloud_search_collective_recipes` | XBloom의 **공개** 커뮤니티 레시피 허브(collective.xbloom.com) 검색 — xBloom과 다른 사용자들이 공유한 레시피. 계정 불필요. 검색어, coffee/tea, 머신, official/user, 컵 타입, 원산지, 품종, 가공 방식, 로스팅, 풍미, 정렬로 필터링 가능 — 원두 프로필 필터는 허브의 현재 옵션과 매칭되는 자유 텍스트 이름을 받습니다. |
-| `cloud_import_recipe` | `share-h5.xbloom.com` 링크, `collective.xbloom.com/recipe/{id}` 커뮤니티 허브 링크, 또는 share id로 레시피를 가져와 로컬 레시피로 저장. 계정 불필요 — 클라우드 계정 설정 없이도 동작. |
-| `cloud_create_recipe` | 인라인 `recipe_yaml`(위 "레시피 추가"와 동일한 형식) 또는 `recipe_name`으로 기존 로컬 레시피를 지정해 클라우드에 새 레시피 생성. 새 `table_id`와 `share_url` 반환. |
-| `cloud_edit_recipe` | `table_id`로 기존 클라우드 레시피의 필드 일부 변경; 생략한 필드는 그대로 유지(먼저 현재 레시피를 가져온 뒤 patch). |
-| `cloud_delete_recipe` | `table_id`로 클라우드 레시피 영구 삭제. 되돌릴 수 없음. |
+| `list_recipes` | 모든 로컬 레시피 목록(uid, source, 컵 타입, dose, grind, pour 수, 클라우드 id/공유 URL 유무), 이름으로 필터링 가능. |
+| `create_recipe` | 인라인 `recipe_yaml`로 새 로컬 레시피 생성. `uid` 반환. 업로드 없음. |
+| `edit_recipe` | 로컬 레시피의 필드 일부 변경; 생략한 필드는 유지. 로컬에 없는 공유 URL을 지정하면 먼저 복사본을 가져온 뒤 수정. |
+| `delete_recipe` | 로컬 레시피 삭제 — 드롭다운에 즉시 반영. 클라우드 계정 사본은 **건드리지 않음**(클라우드 삭제는 공식 앱에서). |
+| `execute_recipe` | 레시피 추출, 선택적 브루별 스칼라 오버라이드(위 참조). |
+| `write_recipe_to_easy_slot` | 온보드 Easy Mode 슬롯 A/B/C에 레시피 저장. 로컬에 없는 공유 URL은 먼저 자동 가져오기. |
+| `cloud_import_recipe` | `share-h5.xbloom.com` 링크, `collective.xbloom.com/recipe/{id}` 커뮤니티 허브 링크, 또는 share id로 레시피를 가져와 로컬에 저장(새 uid 부여). 계정 불필요. |
+| `cloud_export_recipe` | 로컬 레시피를 **본인** XBloom 클라우드 계정에 올리고 클라우드 `id`, 공유 `link`, 레시피를 반환. 같은 레시피를 재-export하면 같은 클라우드 엔트리가 갱신됨(링크 유지). 계정 미설정 시 업로드 없이 레시피만 반환. |
+| `cloud_search_collective_recipes` | XBloom의 **공개** 커뮤니티 레시피 허브(collective.xbloom.com) 검색 — 계정 불필요. 검색어, coffee/tea, official/user, 멀티 셀렉트 머신/컵 타입/원산지/품종/가공/로스팅/풍미 필터와 정렬. |
 
 ```yaml
 service: xbloom.cloud_import_recipe
@@ -140,11 +132,11 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Assist(LLM)에서는 7개 작업 모두 도구로 노출되어 있습니다: `import_xbloom_cloud_recipe`,
-`search_xbloom_cloud_recipes`, `search_xbloom_collective_recipes`,
-`create_xbloom_cloud_recipe`, `export_xbloom_recipe_to_cloud`,
-`edit_xbloom_cloud_recipe`, `delete_xbloom_cloud_recipe`(마지막 도구는 브루잉
-도구의 원두/필터 확인과 동일하게 삭제 전 명시적 확인이 필요합니다).
+collective-search 필터 드롭다운은 허브 분류 코드의 스냅샷입니다. XBloom이 드롭다운이 모르는 새 분류를 추가했다면 숫자 코드를 직접 입력하세요(필드가 custom value를 받습니다) — 그리고 다음 릴리스의 스냅샷·번역에 반영할 수 있도록 [이슈](https://github.com/saya6k/ha-xbloom/issues)로 코드를 제보해 주세요.
+
+**클라우드 계정(선택)** — `cloud_export_recipe`만 계정이 필요합니다. 초기 설정의 config flow "XBloom Cloud Account" 단계에서 XBloom 앱 이메일/비밀번호를 입력하거나, 나중에 설정 → 기기 및 서비스 → XBloom → ⋯ → **구성** → **클라우드 계정**에서 추가/변경/삭제하세요. Apple로 로그인해서 XBloom 비밀번호가 없다면, XBloom 자체의 "비밀번호 찾기" 플로우(Apple이 릴레이하는 이메일 사용, 앱의 계정 설정에서 확인 가능)로 먼저 설정하세요.
+
+Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_recipes`, `get_xbloom_recipe`, `create_xbloom_recipe`, `edit_xbloom_recipe`, `delete_xbloom_recipe`(삭제 전 명시적 확인 요청), `execute_xbloom_recipe`, `write_xbloom_easy_slot`, `import_xbloom_cloud_recipe`, `export_xbloom_recipe`, `search_xbloom_collective_recipes`.
 
 ## 그라인드 사이즈 참고 (XBloom Studio 스케일, 0–80)
 
@@ -166,16 +158,15 @@ Assist(LLM)에서는 7개 작업 모두 도구로 노출되어 있습니다: `im
 
 ## 알려진 제한사항
 
-- **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조). XBloom **Original**은 대신 Wi-Fi로 연결되는 완전히 다른 프로토콜을 사용하며, 이 통합은 이를 구현하지 않습니다 — 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `list_recipes()` / `create_recipe()`(`_cloud_client.py`)에서 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original만 있는 계정에서는 클라우드 레시피 동기화/생성이 검증되지 않았습니다.
-- **티 → 커피 그라인딩 실패**: 티 brew 후 다음 커피 brew에서 그라인더 단계를 건너뜀(추출은 동작하지만 원두를 갈지 않음). 펌웨어가 진입한 티 상태를 빠져나오는 BLE 명령이 문서화되어 있지 않음 — [`brewing-notes.md`](./brewing-notes.md#known-limitation--grinding-fails-after-a-tea-brew). **워크어라운드:** 티 brew와 다음 커피 brew 사이에 머신 전원 재시작.
-- **티 사이펀은 flash-extract 방식**: xBloom Omni Tea Brewer는 `pausing` 값과 무관하게 ~120ml에 사이펀 배수. 장시간 침지를 전제로 한 레시피(말차, 분 미만의 짧은 steep을 여러 번 하는 gong-fu 스타일 등)는 의도대로 동작하지 않음. 상세는 [`brewing-notes.md`](./brewing-notes.md#xbloom-omni-tea-brewer--siphon-mechanics).
-- **일부 펌웨어의 MachineInfo**: 특정 XBloom 펌웨어 리비전은 `RD_MachineInfo` BLE 알림을 푸시하지 않아 Model / Serial / Firmware 센서가 `unknown`으로 남을 수 있음. 이런 펌웨어에서 수위 binary sensor는 이벤트 기반(RD_ErrorLackOfWater) 감지로 fallback.
-- **수동 컵 감지**: 저울은 전원 인가 시 존재하는 모든 무게를 자동 영점화하므로, 부팅 전에 놓인 컵은 0 g으로 읽힘. 이 경우 LLM `execute_xbloom_recipe` 도구가 명시적 확인을 요청.
+- **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조) — Original은 완전히 다른 Wi-Fi 프로토콜을 쓰며, 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original 전용 계정에서는 계정 레시피 시드와 `cloud_export_recipe`가 검증되지 않았습니다.
+- **일부 펌웨어의 MachineInfo**: 특정 펌웨어 리비전은 `RD_MachineInfo`를 아예 푸시하지 않아 Model / Serial / Firmware 센서가 `unknown`으로 남을 수 있음. 이런 펌웨어에서 수위 binary sensor는 이벤트 기반 감지로 fallback.
+- **수동 컵 감지**: 저울은 전원 인가 시 존재하는 모든 무게를 자동 영점화하므로, 부팅 전에 놓인 컵은 0 g으로 읽힘 — 이 경우 LLM `execute_xbloom_recipe` 도구가 명시적 확인을 요청.
 - **레시피 물 출처**: 수동 pour 엔티티는 water-source select(탱크 vs. 직수)를 따르지만, 레시피 실행은 그렇지 않음 — 펌웨어가 자체 추출 시퀀스를 내부적으로 제어.
+- **차 소크 타이밍은 근사 보정값**: steep 사이 대기 시간은 레시피의 `pausing` 초에서 몇 번의 스톱워치 측정으로 도출한 계수로 스케일링됩니다 — 더 정밀한 타이밍이 필요하면 [`brewing-notes.md`](./brewing-notes.md) 참고.
 
 ## 개발
 
-이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항·펌웨어 거동·알려진 제약(티 → 커피 그라인딩 등)·Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조.
+이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조.
 
 실제 Home Assistant 설치에 대해 통합을 테스트하기 위한 devcontainer가 제공됩니다. VS Code에서 Dev Containers 확장으로 폴더를 열고 실행:
 
@@ -187,4 +178,4 @@ scripts/develop
 
 ## 라이선스
 
-[MIT](LICENSE) — vendored upstream 양쪽의 저작권(`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, 각자 MIT `LICENSE` 파일 보유)을 보존하고 통합 자체의 저작권 행을 추가.
+[MIT](../../LICENSE) — vendored upstream 양쪽의 저작권(`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, 각자 MIT `LICENSE` 파일 보유)을 보존하고 통합 자체의 저작권 행을 추가.

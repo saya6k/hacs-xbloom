@@ -1,0 +1,1 @@
+- [Edit tool only](feedback_edit_tool_only.md) — never use Bash/Python to splice-rewrite a tracked file; retry Edit with corrected exact text instead.

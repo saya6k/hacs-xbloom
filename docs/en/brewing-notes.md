@@ -37,11 +37,11 @@ brAzzi64's HCI capture measured (110, 90) for omni_dripper, but the vendored val
 8022  RD_BackToHome
 8102  APP_SET_BYPASS  [0, 0, 0]
 8104  APP_SET_CUP     [200, 0]    ← tea bounds
-4513  APP_TEA_RECIP_CODE  (build_tea_payload — pattern=3 hack)
+4513  APP_TEA_RECIP_CODE  (build_tea_payload)
 4512  APP_TEA_RECIP_MAKE  (re-sends payload, mirrors vendored execute_recipe)
 ```
 
-`_build_tea_payload` substitutes the substep pattern byte with 3 — borrowed from the AML225 cloud-API JSON schema. **This is now known to be wrong:** the official-app capture shows tea steeps use pattern=1 (circular), and steeps still flatten *with* the pattern=3 hack in place. See [Open — tea multi-steep flattens into one pour](#open--tea-multi-steep-flattens-into-one-pour) for the byte-level diff and the real cause.
+`_build_tea_payload` caps each steep's wire volume at `_TEA_SIPHON_CAP` (90 ml, so the firmware soaks then auto-tops-up to drain instead of draining instantly), uses substep pattern=1 (circular — same as coffee), and writes the soak time into the timing block's byte[1]. See [Resolved — tea multi-steep flatten](#resolved--tea-multi-steep-flatten) for how this was found; an earlier pattern=3 hack (borrowed from AML225's cloud-API JSON) did not work and was replaced.
 
 ## Resolved — grinding after a tea brew (2026-05-29)
 
@@ -57,11 +57,11 @@ The bug was **self-inflicted**: `_async_brew_coffee` had grown a QUIT prelude (`
 
 Removed the four QUIT commands from `_async_brew_coffee`; kept only `8022 RD_BackToHome` (it independently restores pour-pattern interpretation — without it the coffee pour falls back to center instead of the recipe's spiral). Confirmed 2026-05-29: tea → coffee now grinds, with spiral pour, temperature, and vibration all correct. The power-cycle workaround is no longer needed.
 
-> Note: this document previously credited the QUIT prelude with "restoring multi-steep separation in tea." That was a coincidental correlation — the official capture shows tea steep separation is determined purely by the tea recipe payload (pattern byte + per-steep timing), not by any coffee-side prelude. See the open issue below.
+> Note: this document previously credited the QUIT prelude with "restoring multi-steep separation in tea." That was a coincidental correlation — the official capture shows tea steep separation is determined purely by the tea recipe payload (pattern byte + per-steep timing), not by any coffee-side prelude. See below.
 
-## Open — tea multi-steep flattens into one pour
+## Resolved — tea multi-steep flatten
 
-A multi-steep tea recipe (e.g. 홍차: 120 ml @95 °C soak 180 s + 120 ml @95 °C soak 120 s) brews as a **single ~316 ml pour** instead of two separate steeps. The same official-app capture pinpointed the cause via a byte diff of the 4513 payload:
+**Status: FIXED (2026-05-29, hardware-confirmed).** A multi-steep tea recipe (e.g. 홍차: 120 ml @95 °C soak 180 s + 120 ml @95 °C soak 120 s) used to brew as a **single ~316 ml pour** instead of two separate steeps. The official-app capture pinpointed the cause via a byte diff of the 4513 payload:
 
 ```
 ha-xbloom: 10 | 78 5f 03 00 | 4c 00 00 1e | 78 5f 03 00 | 88 00 00 1e | 00 60
