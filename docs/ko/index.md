@@ -19,7 +19,7 @@
 - **브루별 오버라이드** — 레시피를 수정하지 않고 그라인드/RPM/도즈/비율/컵 타입/바이패스를 조정해 브루(dose/ratio 오버라이드는 pour 볼륨을 비례 재계산). 레시피를 선택하면 Grind Size / RPM 슬라이더도 그 값으로 동기화됩니다.
 - **차 레시피** (`cup_type: tea`) — 각 우려내기를 pour 하나로 표현, `pausing`이 곧 소크(우림) 초. 펌웨어가 추출 → 소크 → 사이펀 배수를 내부적으로 처리. 사이펀 메커니즘은 [`brewing-notes.md`](./brewing-notes.md) 참고.
 - **선택된 레시피 조회** — recipe select 엔티티의 `recipe` 속성에 pours / bypass / 온도 등 전체 파라미터가 노출됨. 개발자 도구 → 상태 → `select.xbloom_recipe`, 또는 템플릿에서 `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
-- **Easy Mode 슬롯 쓰기** — 슬롯 버튼, 슬롯 텍스트 엔티티, 또는 `write_recipe_to_easy_slot` 서비스(로컬에 없는 공유 URL은 자동 가져오기) 세 가지 경로로 어떤 레시피든 온보드 슬롯 A/B/C에 기록.
+- **Easy Mode 슬롯 쓰기** — 슬롯 버튼 또는 `write_recipe_to_easy_slot` 서비스(로컬에 없는 공유 URL은 자동 가져오기)로 어떤 레시피든 온보드 슬롯 A/B/C에 기록. 읽기 전용 센서 엔티티가 각 슬롯에 저장된 내용을 보여줌.
 - **클라우드는 가져오기/내보내기 경계** — 공유된 레시피를 가져오거나(`cloud_import_recipe`, 계정 불필요), 로컬 레시피를 내보내 공유 링크를 받거나(`cloud_export_recipe`), XBloom 공개 커뮤니티 허브를 검색(`cloud_search_collective_recipes`). 계정은 선택 사항이며 내보내기에만 필요합니다. 아래 [레시피 서비스](#레시피-서비스) 참고.
 - **실시간 텔레메트리** — 브루어 온도, 저울 무게, 수위 상태, 현재 추출 단계.
 - **이벤트 엔티티** — 에러(물 부족, 원두 없음, 비정상 dose/기어)와 알림(그라인딩/추출/pour/bloom/일시정지/완료/차 침지).

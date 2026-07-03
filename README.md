@@ -25,7 +25,7 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
 - **Per-brew overrides** — brew a recipe with adjusted grind, RPM, dose, ratio, cup type, or bypass without editing it (dose/ratio rescales the pours proportionally); selecting a recipe also syncs the Grind Size / RPM sliders to it.
 - **Tea recipes** (`cup_type: tea`) — each steep is a pour with `pausing` = soak seconds; the firmware handles pour → soak → siphon-drain internally.
-- **Easy Mode slot writing** — push any recipe to onboard slot A/B/C via the slot buttons, the slot text entities, or the `write_recipe_to_easy_slot` service (auto-imports a share URL that isn't local yet).
+- **Easy Mode slot writing** — push any recipe to onboard slot A/B/C via the slot buttons or the `write_recipe_to_easy_slot` service (auto-imports a share URL that isn't local yet); read-only sensor entities show what's stored in each slot.
 - **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse XBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — errors (water shortage, no beans, abnormal dose/gear) and notifications (grinding/brewing/pour/bloom/pause/complete/tea soaking).
@@ -48,7 +48,12 @@ Copy `custom_components/xbloom/` into your HA config's `custom_components/` fold
 
 ## Configuration
 
-The config flow handles MAC + telemetry interval + idle disconnect timeout.
+The config flow handles MAC + telemetry interval + idle disconnect timeout. The
+Settings step (Settings → Devices & Services → XBloom → **Configure** →
+**Settings**) also sets the machine's *own* onboard display units — weight
+(g/oz/ml) and temperature (°C/°F) — pushed to the machine on every reconnect.
+This is separate from what HA itself shows for the weight/temperature
+sensors, which already follows your HA profile's unit system automatically.
 
 On first install the recipe store is seeded **once**: a small bundled set is
 written immediately (so the dropdown is never empty), then a background task

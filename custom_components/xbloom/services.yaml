@@ -21,13 +21,16 @@ execute_recipe:
     recipe:
       name: Recipe
       description: >-
-        Which recipe to run — a local uid, a cloud table id, a share
-        URL/id, or the exact recipe name. Defaults to the currently
-        selected recipe if omitted.
+        Which recipe to run. Pick from the dropdown, or type a cloud table
+        id / share URL / share id if it isn't local yet. Defaults to the
+        currently selected recipe if omitted.
       required: false
       example: Morning V60
       selector:
-        text:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown
     dose_g:
       name: Dose
       description: >-
@@ -124,7 +127,7 @@ write_recipe_to_easy_slot:
     Store a recipe in one of the machine's three onboard Easy Mode slots
     (A/B/C) so it can be run from the machine's physical buttons. This
     does not brew anything; existing slot contents are overwritten. A
-    share URL that isn't local yet is imported first. The slot's text
+    share URL that isn't local yet is imported first. The slot's sensor
     entity updates to show the recipe name.
   fields:
     device_id:
@@ -151,13 +154,16 @@ write_recipe_to_easy_slot:
     recipe:
       name: Recipe
       description: >-
-        Which recipe to store — a local uid, a cloud table id, a share
-        URL/id, or the exact recipe name. Defaults to the currently
-        selected recipe if omitted.
+        Which recipe to store. Pick from the dropdown, or type a cloud
+        table id / share URL / share id if it isn't local yet. Defaults
+        to the currently selected recipe if omitted.
       required: false
       example: Morning V60
       selector:
-        text:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown
 
 cloud_import_recipe:
   name: Import recipe from XBloom cloud
@@ -221,12 +227,15 @@ cloud_export_recipe:
     recipe:
       name: Recipe
       description: >-
-        Which recipe to export — a local uid, a cloud table id, a share
-        URL/id, or the exact recipe name.
+        Which recipe to export. Pick from the dropdown, or type a cloud
+        table id / share URL / share id if it isn't local yet.
       required: true
       example: Morning V60
       selector:
-        text:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown
 
 list_recipes:
   name: List recipes
@@ -650,12 +659,15 @@ edit_recipe:
     recipe:
       name: Recipe
       description: >-
-        Which recipe to edit — a local uid, a cloud table id, a share
-        URL/id, or the exact recipe name.
+        Which recipe to edit. Pick from the dropdown, or type a cloud
+        table id / share URL / share id if it isn't local yet.
       required: true
       example: Morning V60
       selector:
-        text:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown
     changes:
       name: Fields to change (YAML)
       description: >-
@@ -689,9 +701,12 @@ delete_recipe:
     recipe:
       name: Recipe
       description: >-
-        Which recipe to delete — a local uid, a cloud table id, a share
-        URL/id, or the exact recipe name.
+        Which recipe to delete. Pick from the dropdown, or type a cloud
+        table id / share URL / share id if it isn't local yet.
       required: true
       example: Morning V60
       selector:
-        text:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown

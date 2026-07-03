@@ -63,11 +63,15 @@ from .const import (
     CONF_RECIPES_SEEDED,
     CONF_SESSION_TIMEOUT,
     CONF_TELEMETRY_INTERVAL,
+    CONF_TEMP_UNIT,
     CONF_WATER_SOURCE,
+    CONF_WEIGHT_UNIT,
     DATA_COORDINATOR,
     DEFAULT_SESSION_TIMEOUT,
     DEFAULT_TELEMETRY_INTERVAL,
+    DEFAULT_TEMP_UNIT,
     DEFAULT_WATER_SOURCE,
+    DEFAULT_WEIGHT_UNIT,
     DOMAIN,
     SERVICE_CLOUD_EXPORT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
@@ -100,7 +104,6 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
-    Platform.TEXT,
 ]
 
 # YAML / options recipe schemas live in ``schema.py`` so the OptionsFlow
@@ -687,12 +690,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_TELEMETRY_INTERVAL,
         entry.data.get(CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL),
     )
-    # water_source and mode are stored in options so they survive HA
-    # restarts.  Falls back to sensible defaults if never set.
+    # water_source, mode, and the display units are stored in options so
+    # they survive HA restarts.  Falls back to sensible defaults if never set.
     initial_water_source = entry.options.get(CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE)
 
     from .const import CONF_MODE, DEFAULT_MODE
     initial_mode = entry.options.get(CONF_MODE, DEFAULT_MODE)
+    initial_weight_unit = entry.options.get(CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT)
+    initial_temp_unit = entry.options.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)
 
     coordinator = XBloomCoordinator(
         hass=hass,
@@ -701,6 +706,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=telemetry_interval,
         initial_water_source=initial_water_source,
         initial_mode=initial_mode,
+        initial_weight_unit=initial_weight_unit,
+        initial_temp_unit=initial_temp_unit,
         cloud_email=entry.data.get(CONF_EMAIL),
         cloud_password=entry.data.get(CONF_PASSWORD),
     )
@@ -723,6 +730,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Snapshot for _async_update_listener's recipe-only-change check.
         "options_snapshot": dict(entry.options),
     }
+    # coordinator.seed_bundled_recipes() + _rebuild_recipes() above ran
+    # before this entry was registered in hass.data, so the recipe-service
+    # dropdown refresh they triggered couldn't see this machine's own
+    # recipes yet (only any other already-configured machine's). Refresh
+    # once more now that self-lookup works.
+    coordinator._refresh_recipe_service_schemas()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -807,4 +820,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
+        else:
+            # Drop this machine's recipes from the other machines'
+            # recipe-service dropdowns (see _refresh_recipe_service_schemas).
+            remaining[0][DATA_COORDINATOR]._refresh_recipe_service_schemas()
     return unload_ok

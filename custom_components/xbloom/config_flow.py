@@ -27,9 +27,13 @@ from .const import (
     CONF_RECIPES,
     CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
+    CONF_TEMP_UNIT,
+    CONF_WEIGHT_UNIT,
     DATA_COORDINATOR,
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_SESSION_TIMEOUT,
+    DEFAULT_TEMP_UNIT,
+    DEFAULT_WEIGHT_UNIT,
     DOMAIN,
 )
 from .schema import RECIPE_SCHEMA
@@ -357,6 +361,30 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                             ),
                         ),
                     ): vol.All(int, vol.Range(min=10, max=3600)),
+                    vol.Optional(
+                        CONF_WEIGHT_UNIT,
+                        default=self._entry.options.get(
+                            CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT
+                        ),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=["g", "oz", "ml"],
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="weight_unit",
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_TEMP_UNIT,
+                        default=self._entry.options.get(
+                            CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT
+                        ),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=["c", "f"],
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="temp_unit",
+                        )
+                    ),
                 }
             ),
         )
