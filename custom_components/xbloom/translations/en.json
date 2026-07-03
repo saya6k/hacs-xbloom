@@ -9,11 +9,20 @@
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)"
         }
+      },
+      "account": {
+        "title": "XBloom Cloud Account (optional)",
+        "description": "Optional — enter your XBloom app email/password to enable cloud recipe sync (search, import, export). Leave both blank to skip; the integration works fully over Bluetooth without an account, and cloud-only features will report a clear error instead of running.",
+        "data": {
+          "email": "Email (optional)",
+          "password": "Password (optional)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the XBloom device. Check the MAC address and ensure Bluetooth is enabled.",
       "invalid_mac": "Invalid MAC address format.",
+      "account_incomplete": "Enter both email and password, or leave both blank to skip cloud setup.",
       "unknown": "Unexpected error."
     },
     "abort": {
@@ -27,6 +36,7 @@
         "title": "XBloom Options",
         "menu_options": {
           "settings": "Settings (telemetry, session timeout)",
+          "account": "Cloud account (add, update, or remove)",
           "add_recipe": "Add a recipe",
           "edit_recipe": "Edit a recipe",
           "delete_recipe": "Delete a recipe"
@@ -37,6 +47,14 @@
         "data": {
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)"
+        }
+      },
+      "account": {
+        "title": "XBloom Cloud Account",
+        "description": "Add, update, or remove the optional XBloom cloud account used for cloud recipe sync (search, import, export). Leave both fields blank to remove a saved account, or leave the email unchanged with the password blank to make no changes. Setting a new or different email requires a password.",
+        "data": {
+          "email": "Email (optional)",
+          "password": "Password (optional)"
         }
       },
       "add_recipe": {
@@ -69,7 +87,9 @@
     "error": {
       "invalid_yaml": "Invalid YAML — {error}",
       "invalid_recipe": "Recipe does not match the schema — {error}",
-      "recipe_exists": "A recipe named {error} already exists. Use 'Edit a recipe' instead or pick another name."
+      "recipe_exists": "A recipe named {error} already exists. Use 'Edit a recipe' instead or pick another name.",
+      "account_password_required": "Enter the password to set or change the cloud account.",
+      "account_email_required": "Enter the email to set the cloud account."
     },
     "abort": {
       "no_recipes": "No recipes available. Use 'Add a recipe' to create one."
@@ -257,6 +277,68 @@
         "bypass_temperature": {
           "name": "Bypass temperature",
           "description": "Bypass water temperature in °C (0 = bypass off). Pair with a non-zero bypass volume. Coffee recipes only."
+        }
+      }
+    },
+    "cloud_import_recipe": {
+      "name": "Import recipe from XBloom cloud",
+      "description": "Fetch a recipe from an XBloom cloud share URL or id and save it as a local recipe. No XBloom account login is required.",
+      "fields": {
+        "share_url": {
+          "name": "Share URL",
+          "description": "A share-h5.xbloom.com link, e.g. from the official app's Share button. Provide this or recipe_id, not both."
+        },
+        "recipe_id": {
+          "name": "Recipe ID",
+          "description": "The bare share id (the base64 value after ?id= in a share URL). Provide this or share_url, not both."
+        }
+      }
+    },
+    "cloud_search_recipes": {
+      "name": "Search XBloom cloud recipes",
+      "description": "List every recipe saved on the configured XBloom cloud account, optionally filtered by name.",
+      "fields": {
+        "query": {
+          "name": "Query",
+          "description": "Filter results to recipes whose name contains this text (case-insensitive). Omit to list every recipe."
+        }
+      }
+    },
+    "cloud_create_recipe": {
+      "name": "Create XBloom cloud recipe",
+      "description": "Create a new recipe on the configured XBloom cloud account, either from an inline YAML recipe definition or by pushing an existing local recipe by name. Provide recipe_yaml or recipe_name, not both. Returns the new recipe's table ID and share URL.",
+      "fields": {
+        "recipe_yaml": {
+          "name": "Recipe (YAML)",
+          "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step. Provide this or recipe_name, not both."
+        },
+        "recipe_name": {
+          "name": "Recipe name (push an existing local recipe)",
+          "description": "Name of an existing local recipe to push to the cloud instead of defining one inline. Provide this or recipe_yaml, not both."
+        }
+      }
+    },
+    "cloud_edit_recipe": {
+      "name": "Edit XBloom cloud recipe",
+      "description": "Change one or more fields of an existing recipe on the configured XBloom cloud account. Only the fields present in the YAML are changed — every omitted field keeps its current value.",
+      "fields": {
+        "table_id": {
+          "name": "Recipe table ID",
+          "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
+        },
+        "recipe_yaml": {
+          "name": "Fields to change (YAML)",
+          "description": "A YAML mapping of only the fields to change (e.g. just `name: New Name` to rename). Omitted fields are left unchanged."
+        }
+      }
+    },
+    "cloud_delete_recipe": {
+      "name": "Delete XBloom cloud recipe",
+      "description": "Permanently delete a recipe from the configured XBloom cloud account. This cannot be undone.",
+      "fields": {
+        "table_id": {
+          "name": "Recipe table ID",
+          "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
         }
       }
     }

@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
 from ..coordinator import POUR_PATTERN_OPTIONS, WATER_SOURCE_TANK
+from ..schema import compute_total_water_ml
 from .base import XBloomBaseTool
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,9 +28,9 @@ def _summarize_recipe(raw: dict) -> dict:
     return {
         "name": raw.get("name"),
         "cup_type": raw.get("cup_type", "omni_dripper"),
-        "bean_weight_g": raw.get("bean_weight"),
+        "dose_g": raw.get("dose_g"),
         "grind_size": raw.get("grind_size"),
-        "total_water_ml": raw.get("total_water"),
+        "total_water_ml": compute_total_water_ml(raw),
         "pour_count": len(pours),
     }
 
@@ -50,19 +51,19 @@ def _detail_recipe(raw: dict) -> dict:
             pat_name = _PATTERN_INT_TO_NAME.get(int(pat), "spiral")
         pours.append({
             "pour_index": i,
-            "volume_ml": p.get("volume"),
-            "temperature_c": p.get("temperature"),
+            "volume_ml": p.get("volume_ml"),
+            "temperature_c": p.get("temperature_c"),
             "flow_rate": p.get("flow_rate", 3.0),
             "pattern": pat_name,
-            "pausing_s": p.get("pausing", 0),
+            "pause_seconds": p.get("pause_seconds", 0),
         })
     return {
         "name": raw.get("name"),
         "cup_type": raw.get("cup_type", "omni_dripper"),
         "grind_size": raw.get("grind_size"),
         "rpm": raw.get("rpm"),
-        "bean_weight_g": raw.get("bean_weight"),
-        "total_water_ml": raw.get("total_water"),
+        "dose_g": raw.get("dose_g"),
+        "total_water_ml": compute_total_water_ml(raw),
         "bypass_volume_ml": raw.get("bypass_volume", 0),
         "bypass_temperature_c": raw.get("bypass_temperature", 0),
         "pours": pours,

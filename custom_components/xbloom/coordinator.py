@@ -7,15 +7,25 @@ import struct
 from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
+import voluptuous as vol
+
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
+from .const import CONF_RECIPES, DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
+from ._cloud_client import (
+    XBloomCloudClient,
+    cloud_recipe_to_local,
+    local_recipe_to_cloud,
+    validate_pour_volume_consistency,
+)
 from . import brewing
+from .schema import RECIPE_SCHEMA, compute_total_water_ml
 from xbloom.models.types import (
     CupType,
     PourPattern,
@@ -47,6 +57,13 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     and treats `grind_size: 0` / `bean_weight: 0` as missing via `or`,
     silently substituting defaults — which routes tea recipes (no grind,
     no beans) into the coffee brew path.
+
+    Reads the local schema's cloud-shaped field names (``dose_g``,
+    ``ratio``, ``pours[].volume_ml/temperature_c/pause_seconds``) but
+    still constructs the vendored ``XBloomRecipe``/``PourStep`` with
+    THEIR field names (``bean_weight``, ``total_water``, ``volume``,
+    ``temperature``, ``pausing``) — that vendored class is untouched, so
+    the translation happens only here.
     """
     cup_raw = raw.get("cup_type", 0)
     if isinstance(cup_raw, str):
@@ -64,22 +81,25 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
         )
         pours.append(
             PourStep(
-                volume=int(p["volume"]),
-                temperature=int(p["temperature"]),
+                volume=int(p["volume_ml"]),
+                temperature=int(p["temperature_c"]),
                 flow_rate=float(p.get("flow_rate", 3.0)),
-                pausing=int(p.get("pausing", 0)),
+                pausing=int(p.get("pause_seconds", 0)),
                 pattern=PourPattern(int(p.get("pattern", 2))),
                 vibration=vib,
             )
         )
 
-    total_water = int(raw.get("total_water", 0))
-    # If the YAML omits total_water, derive it from the pour volumes so the
-    # recipe footer carries a meaningful value.  A zero footer byte 2 causes
-    # the machine to skip grinding (hot water only) on Easy Mode slots and
-    # may also confuse live brew.
-    if total_water == 0:
-        total_water = sum(int(p.get("volume", 0)) for p in raw.get("pours", []))
+    # total_water = dose_g * ratio (matches the XBloom cloud API's own
+    # dose/grandWater relationship), rounded to the nearest ml to absorb
+    # float drift from a repeating-decimal ratio. Falls back to summing
+    # pour volumes when ratio/dose_g can't produce a total (tea recipes
+    # have no weighed dose) — see schema.compute_total_water_ml, shared
+    # so this and the LLM-facing recipe summary can't disagree on the
+    # actual brewed total. A zero footer byte 2 causes the machine to
+    # skip grinding (hot water only) on Easy Mode slots and may also
+    # confuse live brew, so the fallback still matters here.
+    total_water = int(round(compute_total_water_ml(raw)))
 
     return XBloomRecipe(
         grind_size=int(raw.get("grind_size", 0)),
@@ -87,7 +107,7 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
         rpm=int(raw.get("rpm", 80)),
         cup_type=cup_val,
         name=str(raw.get("name", "Unknown")),
-        bean_weight=float(raw.get("bean_weight", 0.0)),
+        bean_weight=float(raw.get("dose_g", 0.0)),
         pours=pours,
     )
 
@@ -138,6 +158,13 @@ WATER_SOURCE_OPTIONS = {
 # PourPattern (0=center, 1=circular, 2=spiral).
 POUR_PATTERN_OPTIONS = {"center": 0, "circular": 1, "spiral": 2}
 
+# Cloud-only fields the local RECIPE_SCHEMA doesn't model (color swatch,
+# app placement, etc.) — an edit must preserve these verbatim from the
+# fetched current recipe rather than resetting them to create's defaults.
+_CLOUD_EDIT_PRESERVE_KEYS = (
+    "theColor", "theSubsetId", "isShortcuts", "appPlace", "adaptedModel", "subSetType",
+)
+
 
 def _apply_pour_overrides(recipe: XBloomRecipe, overrides: List[dict]) -> None:
     """Override individual pours' volume / flow_rate / pattern by index.
@@ -173,6 +200,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         update_interval: int = 5,
         initial_water_source: int = DEFAULT_WATER_SOURCE,
         initial_mode: str = DEFAULT_MODE,
+        cloud_email: Optional[str] = None,
+        cloud_password: Optional[str] = None,
     ) -> None:
         super().__init__(
             hass,
@@ -185,6 +214,15 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.client: Optional[XBloomClient] = None
         self._connect_lock = asyncio.Lock()
         self._machine_info_task: Optional[asyncio.Task] = None
+
+        # Cloud account (recipe sync) — entirely optional. The client is
+        # always constructed (fetch_shared_recipe needs no login at all),
+        # but authenticated calls (search/create/edit/delete, added later)
+        # must check ``cloud_login_configured`` first and fail gracefully
+        # rather than assume credentials exist.
+        self._cloud_email = cloud_email
+        self._cloud_password = cloud_password
+        self.cloud_client = XBloomCloudClient(async_get_clientsession(hass))
 
         # Recipes loaded from YAML config (name → dict)
         self.recipes: Dict[str, dict] = {}
@@ -918,6 +956,308 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await brewing.async_write_easy_slot(self.client, slot_letter, recipe)
         except Exception as exc:
             _LOGGER.error("Easy slot write error (%s): %s", slot_letter, exc, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Cloud account (recipe sync) — all optional, never required for BLE use
+    # ------------------------------------------------------------------
+
+    @property
+    def cloud_login_configured(self) -> bool:
+        """Whether an XBloom cloud email/password were set up.
+
+        Only gates AUTHENTICATED cloud calls (search/create/edit/delete —
+        added in a later phase). Does NOT gate :meth:`async_import_cloud_recipe`
+        — fetching a shared recipe needs no login at all on the wire.
+        """
+        return bool(self._cloud_email and self._cloud_password)
+
+    async def async_ensure_cloud_login(self) -> bool:
+        """Log in if an account is configured and not already logged in.
+
+        Returns False (never raises) when no account is configured or the
+        login itself fails — callers should turn that into a structured
+        error rather than let an exception propagate.
+        """
+        if not self.cloud_login_configured:
+            return False
+        if self.cloud_client.logged_in:
+            return True
+        return await self.cloud_client.login(self._cloud_email, self._cloud_password)
+
+    async def async_import_cloud_recipe(self, share_url_or_id: str) -> dict:
+        """Fetch a recipe from an XBloom cloud share URL/id and save it locally.
+
+        No login required — ``RecipeDetail.html`` is a public,
+        unauthenticated endpoint, so this works even with no cloud account
+        configured. Returns a structured ``{"success": bool, ...}`` dict
+        rather than raising, so the service handler / LLM tool can surface
+        a clean error either way.
+        """
+        local_raw = await self.cloud_client.fetch_shared_recipe(share_url_or_id)
+        if local_raw is None:
+            return {
+                "success": False,
+                "error": "fetch_failed",
+                "message": (
+                    "Could not fetch that recipe — check the share URL/id, "
+                    "or the XBloom cloud API may be unreachable."
+                ),
+            }
+        try:
+            validated = RECIPE_SCHEMA(local_raw)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Fetched recipe failed validation: {exc}",
+            }
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return {
+                "success": False,
+                "error": "entry_not_found",
+                "message": "Config entry not found.",
+            }
+
+        name = validated["name"]
+        existing_options = dict(entry.options.get(CONF_RECIPES) or {})
+        if existing_options.get(name) is not None:
+            # Same "don't silently overwrite" rule as the OptionsFlow's
+            # Add a recipe step.
+            return {
+                "success": False,
+                "error": "recipe_exists",
+                "message": (
+                    f"A recipe named {name!r} already exists locally. "
+                    "Rename it in the cloud before importing, or delete/"
+                    "edit the local one first."
+                ),
+            }
+        existing_options[name] = validated
+        new_options = dict(entry.options)
+        new_options[CONF_RECIPES] = existing_options
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        return {"success": True, "recipe_name": name}
+
+    async def async_list_cloud_recipes(self, query: Optional[str] = None) -> dict:
+        """List every recipe on the configured XBloom cloud account.
+
+        Unlike :meth:`async_import_cloud_recipe`, this requires a
+        configured + working login (``tuMyTeaRecipeCreated.tuhtml`` is an
+        authenticated endpoint). Returns a structured
+        ``{"success": bool, ...}`` dict rather than raising, matching the
+        error-shape convention of the rest of this class. ``query``, if
+        given, filters the results client-side by a case-insensitive
+        substring match against the recipe name — the wire API has no
+        server-side search parameter.
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        cloud_list = await self.cloud_client.list_recipes()
+        if cloud_list is None:
+            return {
+                "success": False,
+                "error": "list_failed",
+                "message": "Could not fetch recipes from the XBloom cloud account.",
+            }
+        recipes = [
+            {
+                "table_id": r.get("tableId"),
+                "name": r.get("theName"),
+                "dose_g": r.get("dose"),
+                "ratio": r.get("grandWater"),
+                "grind_size": r.get("grinderSize"),
+                "rpm": r.get("rpm"),
+                "share_url": r.get("shareRecipeLink"),
+            }
+            for r in cloud_list
+        ]
+        if query:
+            needle = query.strip().lower()
+            recipes = [r for r in recipes if needle in (r["name"] or "").lower()]
+        return {"success": True, "recipes": recipes}
+
+    async def async_create_cloud_recipe(self, recipe: dict) -> dict:
+        """Create a new recipe on the configured XBloom cloud account.
+
+        ``recipe`` is validated against ``RECIPE_SCHEMA`` here — the single
+        enforced choke point for every caller (service handler,
+        :meth:`async_export_local_recipe`, future LLM tools) — rather than
+        trusting each caller to have validated it first. Returns a
+        structured ``{"success": bool, ...}`` dict rather than raising; on
+        success includes ``table_id`` and ``share_url`` (the latter
+        resolves back to an equivalent recipe via
+        :meth:`async_import_cloud_recipe`).
+        """
+        try:
+            recipe = RECIPE_SCHEMA(recipe)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Recipe does not match the schema: {exc}",
+            }
+        mismatch = validate_pour_volume_consistency(recipe)
+        if mismatch:
+            return {
+                "success": False,
+                "error": "pour_volume_mismatch",
+                "message": f"Recipe rejected before sending to the cloud: {mismatch}",
+            }
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        result = await self.cloud_client.create_recipe(recipe)
+        if result is None:
+            return {
+                "success": False,
+                "error": "create_failed",
+                "message": "Could not create the recipe on the XBloom cloud account.",
+            }
+        return {"success": True, **result}
+
+    async def async_edit_cloud_recipe(self, table_id: int, **partial_fields) -> dict:
+        """Edit a recipe on the configured XBloom cloud account (fetch-then-patch).
+
+        Only the fields passed in ``partial_fields`` (local ``RECIPE_SCHEMA``
+        names, e.g. ``name``/``dose_g``/``ratio``/``grind_size``/``rpm``/
+        ``cup_type``/``bypass_volume``/``bypass_temperature``/``pours``) are
+        changed — every other field keeps its current cloud value, mirroring
+        the reference implementation (the wire API itself is full-replace,
+        not a merge patch). Returns a structured ``{"success": bool, ...}``
+        dict rather than raising.
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        current_raw = await self.cloud_client.get_recipe(table_id)
+        if current_raw is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No recipe with table_id {table_id} found on the account.",
+            }
+        current_local = cloud_recipe_to_local(current_raw)
+        merged_local = {**current_local, **partial_fields}
+        try:
+            validated = RECIPE_SCHEMA(merged_local)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Merged recipe failed validation: {exc}",
+            }
+        mismatch = validate_pour_volume_consistency(validated)
+        if mismatch:
+            return {
+                "success": False,
+                "error": "pour_volume_mismatch",
+                "message": f"Merged recipe rejected before sending to the cloud: {mismatch}",
+            }
+        cloud_fields = local_recipe_to_cloud(validated)
+        for key in _CLOUD_EDIT_PRESERVE_KEYS:
+            if key in current_raw:
+                cloud_fields[key] = current_raw[key]
+        if not await self.cloud_client.update_recipe(table_id, cloud_fields):
+            return {
+                "success": False,
+                "error": "edit_failed",
+                "message": "Could not update the recipe on the XBloom cloud account.",
+            }
+        return {"success": True, "table_id": table_id}
+
+    async def async_export_local_recipe(self, recipe_name: str) -> dict:
+        """Push an existing local recipe to the XBloom cloud account.
+
+        Per D2 in tasks/plan.md, every export is a fresh create (no
+        ``table_id`` tracked against the local recipe) — delegates
+        entirely to :meth:`async_create_cloud_recipe` after looking the
+        recipe up by name, so the two paths can't drift apart (validation
+        happens once, inside :meth:`async_create_cloud_recipe`). Returns a
+        structured ``{"success": bool, ...}`` dict rather than raising.
+        """
+        raw = (self.recipes or {}).get(recipe_name)
+        if raw is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No local recipe named {recipe_name!r} found.",
+            }
+        return await self.async_create_cloud_recipe(raw)
+
+    async def async_delete_cloud_recipe(self, table_id: int) -> dict:
+        """Delete a recipe from the configured XBloom cloud account.
+
+        Returns a structured ``{"success": bool, ...}`` dict rather than
+        raising. Live testing (2026-07-03) found the wire API is
+        idempotent for a ``table_id`` that was previously a valid recipe
+        on this account — deleting it again after it's already gone
+        still reports success. A ``table_id`` that never existed on the
+        account returns the ``delete_failed`` error below.
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        if not await self.cloud_client.delete_recipe(table_id):
+            return {
+                "success": False,
+                "error": "delete_failed",
+                "message": (
+                    f"Could not delete recipe {table_id} from the XBloom "
+                    "cloud account — it may not exist, or the call failed."
+                ),
+            }
+        return {"success": True, "table_id": table_id}
 
     # ------------------------------------------------------------------
     # Helpers

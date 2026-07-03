@@ -25,6 +25,7 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Per-brew overrides** — selecting a recipe syncs the Grind Size / RPM sliders to it; tweak them (or call the `xbloom.execute_recipe` service / ask Assist) to brew the saved recipe with adjusted grind, RPM, or bypass without editing the recipe. Bypass is recipe-scoped (no slider) — override it per brew via the service or Assist. Tea / no-grind recipes are left untouched.
 - **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = soak seconds; the firmware drives pour → soak → siphon-drain internally.
 - **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
+- **Optional cloud recipe sync** — link an XBloom account to search, import, create, edit, and delete recipes on your XBloom cloud account, alongside the fully local BLE-only recipe management above. Entirely optional; skip the account step and every other feature works exactly as it does without one.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
 - **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
@@ -55,33 +56,32 @@ Recipes can also be defined in `configuration.yaml` (lowest priority — UI reci
 ```yaml
 xbloom:
   recipes:
-    morning_v60:
-      name: Morning V60
+    - name: Morning V60
       cup_type: omni_dripper
       grind_size: 35
-      bean_weight: 18
+      dose_g: 18
+      ratio: 15.6
       pours:
-        - volume: 50
-          temperature: 93
+        - volume_ml: 50
+          temperature_c: 93
           flow_rate: 3.0
-          pausing: 30
-        - volume: 200
-          temperature: 92
+          pause_seconds: 30
+        - volume_ml: 200
+          temperature_c: 92
           flow_rate: 3.0
-          pausing: 0
-    sencha:
-      name: Sencha Tea
+          pause_seconds: 0
+    - name: Sencha Tea
       cup_type: tea
       pours:
-        - volume: 150
-          temperature: 80
-          pausing: 60
-        - volume: 150
-          temperature: 80
-          pausing: 90
+        - volume_ml: 150
+          temperature_c: 80
+          pause_seconds: 60
+        - volume_ml: 150
+          temperature_c: 80
+          pause_seconds: 90
 ```
 
-For tea recipes, each pour represents one steep cycle: `volume` is the steep water, `temperature` is the water temperature, `pausing` is the soak time in seconds. The machine handles the siphon drain automatically.
+For tea recipes, each pour represents one steep cycle: `volume_ml` is the steep water, `temperature_c` is the water temperature, `pause_seconds` is the soak time in seconds. The machine handles the siphon drain automatically.
 
 ### Per-brew overrides
 
@@ -104,6 +104,39 @@ data:
 ```
 
 Through Assist (LLM), `get_xbloom_recipe` returns a recipe's full detail (grind, RPM, bypass, and each pour's volume / flow rate / pattern) and `execute_xbloom_recipe` accepts optional `grind_size`, `rpm`, `bypass_volume`, `bypass_temperature`, and per-pour `pour_overrides` (volume / flow rate / pattern keyed by 0-based `pour_index`), so an agent can tune individual pours on request.
+
+## Cloud recipe sync (optional)
+
+Linking your XBloom app account lets you search, import, create, edit, and delete
+recipes on your XBloom cloud account — the same recipes visible in the official app —
+on top of the fully local (BLE-only) recipe management above. Everything works
+without an account; skip it entirely if you don't want this.
+
+**Setup**: enter your XBloom app email/password in the config flow's "XBloom Cloud
+Account" step during initial setup, or add/update/remove it later via Settings →
+Devices & Services → XBloom → **Configure** → **Cloud account**. Signed in with Apple
+and have no XBloom password? Use XBloom's own "forgot password" flow (with the email
+Apple relays, visible in the app's account settings) to set one first.
+
+Six services are available once an account is configured (Developer Tools → Actions,
+or `xbloom.cloud_*`):
+
+| Service | Does |
+| --- | --- |
+| `cloud_search_recipes` | List every recipe on the account, optionally filtered by name. |
+| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link or share id and save it locally. No account needed — works even without the cloud account configured. |
+| `cloud_create_recipe` | Create a new cloud recipe, either from inline `recipe_yaml` or by pushing an existing local recipe by `recipe_name`. Returns the new `table_id` and `share_url`. |
+| `cloud_edit_recipe` | Change one or more fields of an existing cloud recipe by `table_id`; omitted fields are left unchanged. |
+| `cloud_delete_recipe` | Permanently delete a cloud recipe by `table_id`. |
+
+```yaml
+service: xbloom.cloud_import_recipe
+data:
+  share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
+```
+
+Through Assist (LLM), only `cloud_import_recipe` is currently exposed as a tool
+(`import_xbloom_cloud_recipe`); the other four are HA services only for now.
 
 ## Grind size reference (XBloom Studio scale, 0–80)
 

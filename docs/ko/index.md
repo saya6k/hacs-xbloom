@@ -21,6 +21,7 @@
 - **차 레시피** (`cup_type: tea`) — 각 우려내기를 한 번의 pour로 표현, `pausing`은 다음 steep까지의 *대기* 시간(실제 침지 시간 아님). 펌웨어가 추출 → 사이펀 배수를 내부적으로 처리.
 - **선택된 레시피 조회** — recipe select 엔티티의 `recipe` 속성에 pours / bypass / 온도 등 전체 파라미터가 노출됨. 개발자 도구 → 상태 → `select.xbloom_recipe`, 또는 템플릿에서 `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
 - **Easy Mode 슬롯 쓰기** — 현재 선택된 레시피를 머신의 온보드 슬롯 A / B / C에 푸시 (장치의 Auto/Easy Mode 버튼).
+- **선택적 클라우드 레시피 동기화** — XBloom 계정을 연결하면 위의 로컬 계층과 별개로 XBloom 클라우드 계정의 레시피를 검색·가져오기·생성·수정·삭제할 수 있습니다. 완전히 선택 사항이며, 계정 없이도 다른 모든 기능은 그대로 동작합니다. 아래 [클라우드 레시피 동기화](#클라우드-레시피-동기화-선택) 참조.
 - **실시간 텔레메트리** — 브루어 온도, 저울 무게, 수위 상태, 현재 추출 단계.
 - **이벤트 엔티티** — 에러 이벤트(물 부족, 원두 없음, 비정상 dose, 비정상 기어)와 알림(그라인딩 시작/완료, 추출 시작, 추출 완료, bloom, paused, 레시피 완료, 차 침지).
 - **LLM API** — 추출, 레시피 실행, 레시피 목록, 상태를 Home Assistant Assist에 노출 (안전 확인: 원두, 필터, 저울 위 컵).
@@ -62,36 +63,36 @@ xbloom:
     - name: Morning V60
       cup_type: omni_dripper      # x_pod | omni_dripper | other | tea
       grind_size: 35
-      bean_weight: 18
-      total_water: 250
+      dose_g: 18
+      ratio: 13.9                 # 총 물량 = dose_g * ratio
       bypass_volume: 0            # 0이면 bypass 비활성
       bypass_temperature: 0
       pours:
-        - volume: 50
-          temperature: 93
+        - volume_ml: 50
+          temperature_c: 93
           flow_rate: 3.0
-          pausing: 30
+          pause_seconds: 30
           pattern: spiral         # center | circular | spiral
           vibration: after        # none | before | after | both
-        - volume: 200
-          temperature: 92
+        - volume_ml: 200
+          temperature_c: 92
           flow_rate: 3.0
-          pausing: 0
+          pause_seconds: 0
           pattern: spiral
     - name: Sencha
-      cup_type: tea               # grind_size + bean_weight는 0이어야 함
+      cup_type: tea               # dose_g는 0이어야 하며, 차 레시피에서 ratio는 의미 없음
       grind_size: 0
-      bean_weight: 0
+      dose_g: 0
       pours:
-        - volume: 120
-          temperature: 80
-          pausing: 60             # 다음 steep까지의 대기 시간 (초)
-        - volume: 120
-          temperature: 80
-          pausing: 0
+        - volume_ml: 120
+          temperature_c: 80
+          pause_seconds: 60       # 다음 steep까지의 대기 시간 (초)
+        - volume_ml: 120
+          temperature_c: 80
+          pause_seconds: 0
 ```
 
-차 레시피는 각 pour가 한 번의 steep. xBloom Omni Tea Brewer의 사이펀은 약 ~120ml에서 트리거(찻잎 부피에 따라 변동) — `pausing`은 *steep 사이의 대기 시간*이지 실제 침지 시간이 아닙니다. 사이펀 메커니즘 상세는 [`brewing-notes.md`](./brewing-notes.md) 참조.
+차 레시피는 각 pour가 한 번의 steep. xBloom Omni Tea Brewer의 사이펀은 약 ~120ml에서 트리거(찻잎 부피에 따라 변동) — `pause_seconds`는 *steep 사이의 대기 시간*이지 실제 침지 시간이 아닙니다. 사이펀 메커니즘 상세는 [`brewing-notes.md`](./brewing-notes.md) 참조.
 
 필드별 스키마는 위의 **YAML 레시피 형태**를 참고하세요.
 
@@ -105,6 +106,41 @@ xbloom:
 - **레시피 삭제** — UI로 추가한 레시피 중에서 선택 후 확정.
 
 번들 default와 YAML 레시피는 의도적으로 Edit/Delete 드롭다운에 나타나지 않습니다(소스가 코드/파일이라 UI 소유가 아님). Default를 제거하고 싶으면 OptionsFlow에서 같은 이름으로 추가해 덮어쓰세요.
+
+## 클라우드 레시피 동기화 (선택)
+
+XBloom 앱 계정을 연결하면 공식 앱에서 보이는 것과 동일한 XBloom 클라우드 계정의
+레시피를 검색·가져오기·생성·수정·삭제할 수 있습니다 — 위의 3계층 로컬 레시피 관리와
+완전히 독립적입니다. 로컬 레시피 관리는 계정 없이도 아무 제약 없이 동작하므로,
+필요 없으면 이 단계를 건너뛰어도 됩니다.
+
+**설정**: 초기 설정의 config flow에서 "XBloom Cloud Account" 단계에 XBloom 앱
+이메일/비밀번호를 입력(두 필드 모두 선택 사항이며 건너뛰기 가능)하거나, 나중에 설정
+→ 기기 및 서비스 → XBloom → ⋯ → **구성** → **클라우드 계정**에서 추가/변경/삭제할 수
+있습니다. Apple로 로그인해서 XBloom 비밀번호가 없다면, XBloom 자체의 "비밀번호 찾기"
+플로우(Apple이 릴레이하는 이메일 사용, 앱의 계정 설정에서 확인 가능)로 비밀번호를
+먼저 설정한 뒤 입력하세요.
+
+계정을 설정하면 6개 서비스를 사용할 수 있습니다 (개발자 도구 → 액션, 또는
+`xbloom.cloud_*`):
+
+| 서비스 | 기능 |
+| --- | --- |
+| `cloud_search_recipes` | 계정의 모든 레시피 목록 조회, 이름으로 필터링 가능. |
+| `cloud_import_recipe` | `share-h5.xbloom.com` 링크 또는 share id로 레시피를 가져와 로컬 레시피로 저장. 계정 불필요 — 클라우드 계정 설정 없이도 동작. |
+| `cloud_create_recipe` | 인라인 `recipe_yaml`(위 "레시피 추가"와 동일한 형식) 또는 `recipe_name`으로 기존 로컬 레시피를 지정해 클라우드에 새 레시피 생성. 새 `table_id`와 `share_url` 반환. |
+| `cloud_edit_recipe` | `table_id`로 기존 클라우드 레시피의 필드 일부 변경; 생략한 필드는 그대로 유지(먼저 현재 레시피를 가져온 뒤 patch). |
+| `cloud_delete_recipe` | `table_id`로 클라우드 레시피 영구 삭제. 되돌릴 수 없음. |
+
+```yaml
+service: xbloom.cloud_import_recipe
+data:
+  share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
+```
+
+Assist(LLM)에서는 현재 `cloud_import_recipe`만 도구(`import_xbloom_cloud_recipe`)로
+노출되어 있습니다. 나머지 4개 클라우드 서비스는 현재 HA 서비스로만 제공되며 — Assist
+도구는 추후 예정입니다.
 
 ## 그라인드 사이즈 참고 (XBloom Studio 스케일, 0–80)
 

@@ -14,10 +14,16 @@ if _VENDOR_PATH not in sys.path:
     sys.path.insert(0, _VENDOR_PATH)
 
 import voluptuous as vol
+import yaml
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -26,9 +32,16 @@ from .const import (
     ATTR_BYPASS_TEMPERATURE,
     ATTR_BYPASS_VOLUME,
     ATTR_GRIND_SIZE,
+    ATTR_QUERY,
+    ATTR_RECIPE_ID,
     ATTR_RECIPE_NAME,
+    ATTR_RECIPE_YAML,
     ATTR_RPM,
+    ATTR_SHARE_URL,
+    ATTR_TABLE_ID,
+    CONF_EMAIL,
     CONF_MAC_ADDRESS,
+    CONF_PASSWORD,
     CONF_RECIPES,
     CONF_SESSION_TIMEOUT,
     CONF_TELEMETRY_INTERVAL,
@@ -38,6 +51,11 @@ from .const import (
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_WATER_SOURCE,
     DOMAIN,
+    SERVICE_CLOUD_CREATE_RECIPE,
+    SERVICE_CLOUD_DELETE_RECIPE,
+    SERVICE_CLOUD_EDIT_RECIPE,
+    SERVICE_CLOUD_IMPORT_RECIPE,
+    SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
 )
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
@@ -86,6 +104,54 @@ EXECUTE_RECIPE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_BYPASS_TEMPERATURE): vol.All(
             vol.Coerce(float), vol.Range(min=0, max=100)
         ),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_IMPORT_RECIPE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_SHARE_URL): cv.string,
+            vol.Optional(ATTR_RECIPE_ID): cv.string,
+        },
+        extra=vol.ALLOW_EXTRA,
+    ),
+    cv.has_at_least_one_key(ATTR_SHARE_URL, ATTR_RECIPE_ID),
+)
+
+CLOUD_SEARCH_RECIPES_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_QUERY): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+# recipe_yaml = create from an inline definition; recipe_name = push an
+# existing local recipe (former standalone cloud_export_recipe service,
+# merged in here since it was a thin wrapper over the same create path —
+# same "one service, alternate inputs" shape as CLOUD_IMPORT_RECIPE_SCHEMA).
+CLOUD_CREATE_RECIPE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_RECIPE_YAML): cv.string,
+            vol.Optional(ATTR_RECIPE_NAME): cv.string,
+        },
+        extra=vol.ALLOW_EXTRA,
+    ),
+    cv.has_at_least_one_key(ATTR_RECIPE_YAML, ATTR_RECIPE_NAME),
+)
+
+CLOUD_EDIT_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
+        vol.Required(ATTR_RECIPE_YAML): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_DELETE_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -162,6 +228,141 @@ def _register_services(hass: HomeAssistant) -> None:
         schema=EXECUTE_RECIPE_SCHEMA,
     )
 
+    async def _handle_cloud_import_recipe(call: ServiceCall) -> None:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        identifier = call.data.get(ATTR_SHARE_URL) or call.data.get(ATTR_RECIPE_ID)
+        for coord in coordinators:
+            result = await coord.async_import_cloud_recipe(identifier)
+            if not result.get("success"):
+                _LOGGER.warning(
+                    "cloud_import_recipe failed for %s: %s",
+                    coord.mac_address, result.get("message", result.get("error")),
+                )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_IMPORT_RECIPE,
+        _handle_cloud_import_recipe,
+        schema=CLOUD_IMPORT_RECIPE_SCHEMA,
+    )
+
+    async def _handle_cloud_search_recipes(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        # A cloud account is per-machine (per-config-entry) credentials, not
+        # a shared account across every targeted machine — search against
+        # the first match's account, matching how a device-target selector
+        # is normally used for a single-result query (unlike execute_recipe/
+        # cloud_import_recipe, which apply the same action to every match).
+        result = await coordinators[0].async_list_cloud_recipes(
+            query=call.data.get(ATTR_QUERY)
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_search_recipes failed")
+            )
+        return {"recipes": result["recipes"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_SEARCH_RECIPES,
+        _handle_cloud_search_recipes,
+        schema=CLOUD_SEARCH_RECIPES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_create_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        # A cloud account is per-machine credentials — act against the
+        # first targeted machine's account, same resolution as
+        # cloud_search_recipes.
+        coordinator = coordinators[0]
+        recipe_yaml = call.data.get(ATTR_RECIPE_YAML)
+        if recipe_yaml:
+            try:
+                parsed = yaml.safe_load(recipe_yaml)
+            except yaml.YAMLError as exc:
+                raise HomeAssistantError(f"Invalid recipe YAML: {exc}") from exc
+            if not isinstance(parsed, dict):
+                raise HomeAssistantError("Recipe YAML must be a mapping.")
+            # async_create_cloud_recipe validates against RECIPE_SCHEMA
+            # itself — the single enforced choke point for every caller.
+            result = await coordinator.async_create_cloud_recipe(parsed)
+        else:
+            # No recipe_yaml — push an existing local recipe instead
+            # (former standalone cloud_export_recipe service).
+            result = await coordinator.async_export_local_recipe(
+                call.data[ATTR_RECIPE_NAME]
+            )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_create_recipe failed")
+            )
+        return {"table_id": result["table_id"], "share_url": result["share_url"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_CREATE_RECIPE,
+        _handle_cloud_create_recipe,
+        schema=CLOUD_CREATE_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_edit_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        try:
+            parsed = yaml.safe_load(call.data[ATTR_RECIPE_YAML])
+        except yaml.YAMLError as exc:
+            raise HomeAssistantError(f"Invalid recipe YAML: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise HomeAssistantError("Recipe YAML must be a mapping.")
+        # Partial by design — only the fields present are changed; every
+        # other field keeps its current cloud value (fetch-then-patch).
+        result = await coordinators[0].async_edit_cloud_recipe(
+            call.data[ATTR_TABLE_ID], **parsed
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_edit_recipe failed")
+            )
+        return {"table_id": result["table_id"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_EDIT_RECIPE,
+        _handle_cloud_edit_recipe,
+        schema=CLOUD_EDIT_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_delete_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        result = await coordinators[0].async_delete_cloud_recipe(
+            call.data[ATTR_TABLE_ID]
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_delete_recipe failed")
+            )
+        return {"table_id": result["table_id"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_DELETE_RECIPE,
+        _handle_cloud_delete_recipe,
+        schema=CLOUD_DELETE_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Load bundled defaults + YAML-defined recipes into hass.data.
@@ -206,6 +407,81 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+def _migrate_recipe_v1_to_v2(recipe: dict) -> dict:
+    """Translate one v1-schema recipe dict to the v2 (cloud-shaped) schema.
+
+    v1: bean_weight/total_water, pours[].volume/temperature/pausing.
+    v2: dose_g/ratio, pours[].volume_ml/temperature_c/pause_seconds.
+    ``pattern``/``vibration`` are unchanged — only the renamed fields move.
+    """
+    dose_g = float(recipe.get("bean_weight", 15.0))
+    total_water = float(recipe.get("total_water", 250))
+    # ratio is meaningless for a zero dose (tea) — omit it and let
+    # schema.compute_total_water_ml's pour-volume-sum fallback take over,
+    # exactly as it did pre-migration when total_water was stored directly.
+    ratio = (total_water / dose_g) if dose_g > 0 else None
+
+    new_pours = []
+    for p in recipe.get("pours", []):
+        new_pour = dict(p)
+        if "volume" in new_pour:
+            new_pour["volume_ml"] = new_pour.pop("volume")
+        if "temperature" in new_pour:
+            new_pour["temperature_c"] = new_pour.pop("temperature")
+        if "pausing" in new_pour:
+            new_pour["pause_seconds"] = new_pour.pop("pausing")
+        new_pours.append(new_pour)
+
+    new_recipe = dict(recipe)
+    new_recipe.pop("bean_weight", None)
+    new_recipe.pop("total_water", None)
+    new_recipe["dose_g"] = dose_g
+    new_recipe["ratio"] = ratio
+    new_recipe["pours"] = new_pours
+    return new_recipe
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry to the current schema version.
+
+    v1 -> v2: recipes stored in ``entry.options[CONF_RECIPES]`` are
+    rewritten from the old field names to the cloud-shaped ones (see
+    ``_migrate_recipe_v1_to_v2``). Recipes defined in ``configuration.yaml``
+    are NOT touched here — the integration doesn't own that file — so YAML
+    users must update their field names by hand; this logs a pointer to do so.
+    """
+    if entry.version == 1:
+        options_recipes = entry.options.get(CONF_RECIPES) or {}
+        if isinstance(options_recipes, dict) and options_recipes:
+            migrated = {
+                name: (_migrate_recipe_v1_to_v2(recipe) if recipe is not None else None)
+                for name, recipe in options_recipes.items()
+            }
+            new_options = dict(entry.options)
+            new_options[CONF_RECIPES] = migrated
+            hass.config_entries.async_update_entry(
+                entry, options=new_options, version=2,
+            )
+            _LOGGER.info(
+                "Migrated %d UI-managed recipe(s) to the new schema "
+                "(dose_g/ratio, pours[].volume_ml/temperature_c/pause_seconds)",
+                len([r for r in migrated.values() if r is not None]),
+            )
+        else:
+            hass.config_entries.async_update_entry(entry, version=2)
+
+        _LOGGER.warning(
+            "XBloom recipe schema changed (bean_weight/total_water -> "
+            "dose_g/ratio; pours[].volume/temperature/pausing -> "
+            "volume_ml/temperature_c/pause_seconds). UI-managed recipes "
+            "were migrated automatically. If you define recipes in "
+            "configuration.yaml, update their field names by hand — see "
+            "the README for the new recipe format."
+        )
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up XBloom from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -229,6 +505,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=telemetry_interval,
         initial_water_source=initial_water_source,
         initial_mode=initial_mode,
+        cloud_email=entry.data.get(CONF_EMAIL),
+        cloud_password=entry.data.get(CONF_PASSWORD),
     )
 
     # Recipe merge order — lowest precedence first:
@@ -288,6 +566,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data for data in hass.data.get(DOMAIN, {}).values()
             if isinstance(data, dict) and DATA_COORDINATOR in data
         ]
-        if not remaining and hass.services.has_service(DOMAIN, SERVICE_EXECUTE_RECIPE):
-            hass.services.async_remove(DOMAIN, SERVICE_EXECUTE_RECIPE)
+        if not remaining:
+            for service in (
+                SERVICE_EXECUTE_RECIPE,
+                SERVICE_CLOUD_IMPORT_RECIPE,
+                SERVICE_CLOUD_SEARCH_RECIPES,
+                SERVICE_CLOUD_CREATE_RECIPE,
+                SERVICE_CLOUD_EDIT_RECIPE,
+                SERVICE_CLOUD_DELETE_RECIPE,
+            ):
+                if hass.services.has_service(DOMAIN, service):
+                    hass.services.async_remove(DOMAIN, service)
     return unload_ok

@@ -21,7 +21,9 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_EMAIL,
     CONF_MAC_ADDRESS,
+    CONF_PASSWORD,
     CONF_RECIPES,
     CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
@@ -56,10 +58,14 @@ STEP_SCHEMA = vol.Schema(
 class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for XBloom."""
 
-    VERSION = 1
+    # Bumped 1 -> 2: recipe schema field rename (bean_weight/total_water ->
+    # dose_g/ratio, pour volume/temperature/pausing -> volume_ml/
+    # temperature_c/pause_seconds). See __init__.async_migrate_entry.
+    VERSION = 2
 
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []
+        self._mac_step_data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
@@ -88,18 +94,16 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
 
                 if not errors:
-                    return self.async_create_entry(
-                        title=f"XBloom ({mac})",
-                        data={
-                            CONF_MAC_ADDRESS: mac,
-                            CONF_TELEMETRY_INTERVAL: user_input.get(
-                                CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL
-                            ),
-                            CONF_SESSION_TIMEOUT: user_input.get(
-                                CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
-                            ),
-                        },
-                    )
+                    self._mac_step_data = {
+                        CONF_MAC_ADDRESS: mac,
+                        CONF_TELEMETRY_INTERVAL: user_input.get(
+                            CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL
+                        ),
+                        CONF_SESSION_TIMEOUT: user_input.get(
+                            CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
+                        ),
+                    }
+                    return await self.async_step_account()
 
         # Show form — optionally pre-fill with discovered device
         discovered_mac = ""
@@ -133,6 +137,48 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Optional XBloom cloud account (recipe sync) — entirely skippable.
+
+        Leaving both fields blank skips cloud setup; the integration works
+        exactly as it does without an account (BLE-only). No connectivity
+        test is done here — a bad login is only discovered lazily, the
+        first time a cloud-backed service/tool is actually used, so this
+        step stays fast and doesn't fail setup if the cloud is briefly down.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            email = (user_input.get(CONF_EMAIL) or "").strip()
+            password = user_input.get(CONF_PASSWORD) or ""
+
+            if bool(email) != bool(password):
+                errors["base"] = "account_incomplete"
+            else:
+                data = dict(self._mac_step_data)
+                if email and password:
+                    data[CONF_EMAIL] = email
+                    data[CONF_PASSWORD] = password
+                return self.async_create_entry(
+                    title=f"XBloom ({self._mac_step_data[CONF_MAC_ADDRESS]})",
+                    data=data,
+                )
+
+        return self.async_show_form(
+            step_id="account",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_EMAIL): str,
+                    vol.Optional(CONF_PASSWORD): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> XBloomOptionsFlow:
@@ -143,21 +189,21 @@ _RECIPE_YAML_PLACEHOLDER = """\
 name: My Recipe
 grind_size: 60
 rpm: 80
-bean_weight: 16.0
-total_water: 250
+dose_g: 16.0
+ratio: 15.625
 cup_type: omni_dripper
 pours:
-  - volume: 50
-    temperature: 92
-    pausing: 45
+  - volume_ml: 50
+    temperature_c: 92
+    pause_seconds: 45
     pattern: spiral
     vibration: after
-  - volume: 100
-    temperature: 92
-    pausing: 30
+  - volume_ml: 100
+    temperature_c: 92
+    pause_seconds: 30
     pattern: spiral
-  - volume: 100
-    temperature: 92
+  - volume_ml: 100
+    temperature_c: 92
     pattern: spiral
 """
 
@@ -214,7 +260,66 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "add_recipe", "edit_recipe", "delete_recipe"],
+            menu_options=["settings", "account", "add_recipe", "edit_recipe", "delete_recipe"],
+        )
+
+    # ── Cloud account (add / update / clear) ─────────────────────────
+
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add, update, or clear the XBloom cloud account after initial setup.
+
+        Mirrors the optional account step from the initial ConfigFlow, but
+        lives here so users who skipped it there can add credentials later
+        (or change/clear them) without deleting and re-adding the
+        integration. Persists to ``entry.data`` directly (not
+        ``entry.options``, which this flow's own async_create_entry always
+        writes to) — the existing options-update-listener reload picks up
+        the change on the next coordinator setup either way.
+        """
+        errors: dict[str, str] = {}
+        stored_email = self._entry.data.get(CONF_EMAIL, "")
+        has_existing = bool(stored_email and self._entry.data.get(CONF_PASSWORD))
+
+        if user_input is not None:
+            email = (user_input.get(CONF_EMAIL) or "").strip()
+            password = user_input.get(CONF_PASSWORD) or ""
+
+            new_data: dict[str, Any] | None = None
+            if not email and not password:
+                if has_existing:
+                    new_data = {
+                        k: v
+                        for k, v in self._entry.data.items()
+                        if k not in (CONF_EMAIL, CONF_PASSWORD)
+                    }
+                # else: nothing stored, nothing entered — no-op.
+            elif email and password:
+                new_data = {**self._entry.data, CONF_EMAIL: email, CONF_PASSWORD: password}
+            elif email and not password:
+                if not (email == stored_email and has_existing):
+                    errors["base"] = "account_password_required"
+                # else: unchanged resubmit — no-op.
+            else:  # password and not email
+                errors["base"] = "account_email_required"
+
+            if not errors:
+                if new_data is not None:
+                    self.hass.config_entries.async_update_entry(self._entry, data=new_data)
+                return self.async_create_entry(title="", data=dict(self._entry.options))
+
+        return self.async_show_form(
+            step_id="account",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_EMAIL, default=stored_email): str,
+                    vol.Optional(CONF_PASSWORD): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
         )
 
     # ── Settings (telemetry + session timeout) ───────────────────────

@@ -21,6 +21,7 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = idle seconds between steeps; the firmware drives pour → soak → siphon-drain internally.
 - **Selected-recipe inspection** — the recipe select entity exposes the full recipe (pours, bypass, temperatures, etc.) under its `recipe` attribute. View at Developer Tools → States → `select.xbloom_recipe`, or in templates via `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
 - **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
+- **Optional cloud recipe sync** — link an XBloom account to search, import, create, edit, and delete recipes on your XBloom cloud account, alongside the local layers above. Entirely optional; every other feature works fully without one. See [Cloud recipe sync](#cloud-recipe-sync-optional) below.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
 - **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
@@ -62,36 +63,36 @@ xbloom:
     - name: Morning V60
       cup_type: omni_dripper      # x_pod | omni_dripper | other | tea
       grind_size: 35
-      bean_weight: 18
-      total_water: 250
+      dose_g: 18
+      ratio: 13.9                 # total water = dose_g * ratio
       bypass_volume: 0            # 0 disables the bypass
       bypass_temperature: 0
       pours:
-        - volume: 50
-          temperature: 93
+        - volume_ml: 50
+          temperature_c: 93
           flow_rate: 3.0
-          pausing: 30
+          pause_seconds: 30
           pattern: spiral         # center | circular | spiral
           vibration: after        # none | before | after | both
-        - volume: 200
-          temperature: 92
+        - volume_ml: 200
+          temperature_c: 92
           flow_rate: 3.0
-          pausing: 0
+          pause_seconds: 0
           pattern: spiral
     - name: Sencha
-      cup_type: tea               # grind_size + bean_weight must be 0
+      cup_type: tea               # dose_g must be 0; ratio is meaningless for tea
       grind_size: 0
-      bean_weight: 0
+      dose_g: 0
       pours:
-        - volume: 120
-          temperature: 80
-          pausing: 60             # idle seconds before the next steep
-        - volume: 120
-          temperature: 80
-          pausing: 0
+        - volume_ml: 120
+          temperature_c: 80
+          pause_seconds: 60       # idle seconds before the next steep
+        - volume_ml: 120
+          temperature_c: 80
+          pause_seconds: 0
 ```
 
-For tea recipes, each pour represents one steep. The xBloom Omni Tea Brewer's siphon triggers at ~120 ml (leaf-volume dependent) — `pausing` is *idle time between steeps*, not actual steep time. See [`brewing-notes.md`](./brewing-notes.md) for the full siphon-mechanics explanation.
+For tea recipes, each pour represents one steep. The xBloom Omni Tea Brewer's siphon triggers at ~120 ml (leaf-volume dependent) — `pause_seconds` is *idle time between steeps*, not actual steep time. See [`brewing-notes.md`](./brewing-notes.md) for the full siphon-mechanics explanation.
 
 See the **YAML recipe shape** above for the field-by-field reference.
 
@@ -105,6 +106,40 @@ Settings → Devices & Services → XBloom → ⋯ → **Configure** → menu:
 - **Delete a recipe** — pick from UI-managed recipes and confirm.
 
 Bundled defaults and YAML recipes don't appear in the Edit/Delete dropdowns by design — those are sourced from code or files outside HA's UI ownership. To remove a default, override it by adding a same-named recipe via OptionsFlow.
+
+## Cloud recipe sync (optional)
+
+Linking your XBloom app account lets you search, import, create, edit, and delete
+recipes on your XBloom cloud account — the same recipes visible in the official app —
+independently of the three local layers above. Nothing about local recipe management
+requires an account; skip this entirely if you don't want it.
+
+**Setup**: enter your XBloom app email/password in the config flow's "XBloom Cloud
+Account" step during initial setup (both fields optional, skippable), or add / update /
+remove it later via Settings → Devices & Services → XBloom → ⋯ → **Configure** →
+**Cloud account**. Signed in with Apple and have no XBloom password? Use XBloom's own
+"forgot password" flow (with the email Apple relays, visible in the app's account
+settings) to set one, then enter that.
+
+Six services become available (Developer Tools → Actions, or `xbloom.cloud_*`):
+
+| Service | Does |
+| --- | --- |
+| `cloud_search_recipes` | List every recipe on the account, optionally filtered by name. |
+| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link or share id and save it as a local recipe. No account needed — works even without a cloud account configured. |
+| `cloud_create_recipe` | Create a new cloud recipe, either from inline `recipe_yaml` (same shape as "Add a recipe" above) or by pushing an existing local recipe by `recipe_name`. Returns the new `table_id` and `share_url`. |
+| `cloud_edit_recipe` | Change one or more fields of an existing cloud recipe by `table_id`; fields you omit are left unchanged (fetches the current recipe first, then patches). |
+| `cloud_delete_recipe` | Permanently delete a cloud recipe by `table_id`. Cannot be undone. |
+
+```yaml
+service: xbloom.cloud_import_recipe
+data:
+  share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
+```
+
+Through Assist (LLM), only `cloud_import_recipe` is currently exposed as a tool
+(`import_xbloom_cloud_recipe`); the other four cloud services are HA services only
+for now — Assist tools for them are planned.
 
 ## Grind size reference (XBloom Studio scale, 0–80)
 

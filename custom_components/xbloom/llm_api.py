@@ -15,6 +15,7 @@ from .const import (
     XBLOOM_LLM_PROMPT,
 )
 from .coordinator import XBloomCoordinator
+from .llm_tools.cloud_recipe import XBloomImportCloudRecipeTool
 from .llm_tools.pour import XBloomPourTool
 from .llm_tools.recipe import (
     XBloomExecuteRecipeTool,
@@ -56,6 +57,7 @@ class XBloomCoffeeAPI(llm.API):
             XBloomExecuteRecipeTool(self.coordinator, self.hass),
             XBloomWriteEasySlotTool(self.coordinator, self.hass),
             XBloomTareScaleTool(self.coordinator, self.hass),
+            XBloomImportCloudRecipeTool(self.coordinator, self.hass),
         ]
         return llm.APIInstance(
             api=self,

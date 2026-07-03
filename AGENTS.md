@@ -52,6 +52,61 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 
 Helpful constants live in `src/xbloom/protocol/constants.py`; the most thoroughly-decoded protocol reference is `src/xbloom-ble/PROTOCOL.md` (HCI snoop captures from the official iOS app). Notable inbound responses: `RD_MachineInfo` (40521), `RD_WATER_VOLUME` (40523), `RD_BREWER_PAUSE` (9010), `RD_TEA_RECIP_PAUSE` (40515), `RD_ENJOY` (40512), `RD_BLOOM`, `RD_BREWER_BEGIN`, `RD_Brewer_Stop`, `RD_GRINDER_BEGIN`, `RD_Grinder_Stop`. Notable outbound commands: `APP_BREWER_START`, `APP_RECIPE_SEND_AUTO` (8001, with grinding), `APP_RECIPE_SEND_MANUAL` (8004, no grinding), `APP_TEA_RECIP_CODE` (4513) / `APP_TEA_RECIP_MAKE` (4512, the live tea path), `APP_RECIPE_EXECUTE` (8002), `APP_RECIPE_STOP` (40519), `8022` (Back to Home, sent at the start of every recipe).
 
+## XBloom cloud API
+
+`_cloud_client.py` (HA-side, no vendored library — this API has no upstream) talks to
+`https://client-api.xbloom.com` for optional cloud-account recipe management
+(`cloud_search_recipes` / `cloud_create_recipe` / `cloud_edit_recipe` /
+`cloud_delete_recipe` / `cloud_import_recipe` services, wired through
+`coordinator.async_*_cloud_recipe` / `async_import_cloud_recipe`). Entirely separate
+from the BLE protocol above — this is plain HTTPS, reverse-engineered from
+[`denull0/xbloom-agent`](https://github.com/denull0/xbloom-agent)'s `index.ts` and
+live-verified against a real account (2026-07-03). Login is optional; without
+`CONF_EMAIL`/`CONF_PASSWORD` (set via the config-flow account step) the integration
+behaves exactly as it does BLE-only.
+
+**Endpoints** (form/JSON POST): `tMemberLogin.thtml` (login, plaintext), `RecipeDetail.html`
+(fetch a public share link, plaintext, no auth), `tuMyTeaRecipeCreated.tuhtml` (list —
+yes, this literal tea-sounding name lists *every* recipe type), `tuRecipeAdd.tuhtml`
+(create), `tuRecipeUpdate.tuhtml` (edit, full-replace not merge-patch — fetch current
+recipe first and overlay), `tuRecipeDelete.tuhtml` (delete). Every authenticated call
+after login is whole-payload RSA-encrypted (`_rsa_encrypt`/`_post_encrypted`); only
+login and the public share fetch are plaintext.
+
+**Four wire-API requirements that aren't obvious from the reference source and were
+only found by live-testing against a real account** — get any of these wrong and the
+API returns a generic non-actionable "abnormal pour data" (or similar) error with no
+error code:
+
+1. **Every pour object needs a `theName` field.** `"Bloom"` for the first pour,
+   `"Pour {n+1}"` for the rest (`_local_pour_to_cloud`). Omitting it is silently
+   rejected.
+2. **`sum(pours[].volume_ml) + bypass_volume` must equal `dose_g * ratio`** for
+   dosed (coffee-style, bypass-off) recipes — `validate_pour_volume_consistency()`
+   checks this client-side before any network call. **Bypass-ON payload
+   requirements are still unconfirmed live** — no currently-live example recipe has
+   bypass enabled, so flag this before recommending `cloud_create_recipe`/
+   `cloud_edit_recipe` (via `recipe_name`) for a local recipe with nonzero
+   `bypass_volume`.
+3. **`share_url` is server-assigned, not derivable client-side.** The reference
+   implementation's own `btoa(String(tableId))` guess is wrong — decoding a real
+   `shareRecipeLink` shows 16 bytes of opaque binary, not the table id's ASCII
+   digits. `create_recipe()` does a follow-up `get_recipe(table_id)` call and reads
+   the real `shareRecipeLink` back; never guess it.
+4. **`delete_recipe` is idempotent for a previously-valid id, not for a
+   never-existed one.** Deleting an id that *was* a real recipe returns success
+   again on a second call; an id that never existed returns failure. The two
+   aren't the same "already gone" case.
+
+**Pattern/vibration mapping** (local schema, `schema.py`, was deliberately *not*
+renumbered to match cloud — see `tasks/todo.md` Phase 1 deviation note): local
+`pattern` ints `0/1/2` = `center/circular/spiral`; cloud ints `1/2/3` =
+`centered/spiral/circular` — note both names and numbers differ, mapped through
+`_LOCAL_PATTERN_TO_CLOUD`/`_CLOUD_PATTERN_TO_LOCAL` in `_cloud_client.py`, never
+copied directly. Local `vibration` (single enum `none/before/after/both`) maps to
+cloud's two independent booleans `isEnableVibrationBefore`/`After` via
+`_local_vibration_to_cloud`/`_cloud_vibration_to_local`.
+
 ## Entity translation flow
 
 `_attr_has_entity_name = True` + `_attr_translation_key = "<key>"` →
