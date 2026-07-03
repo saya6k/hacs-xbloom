@@ -16,7 +16,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_RECIPES, DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
+from .const import (
+    CONF_ACCOUNT_RECIPES_SEEDED,
+    CONF_RECIPES,
+    CONF_RECIPES_SEEDED,
+    DOMAIN,
+    DEFAULT_MODE,
+    DEFAULT_WATER_SOURCE,
+)
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
 from ._cloud_client import (
     XBloomCloudClient,
@@ -25,7 +32,7 @@ from ._cloud_client import (
     validate_pour_volume_consistency,
 )
 from . import brewing
-from .schema import RECIPE_SCHEMA, compute_total_water_ml
+from .schema import RECIPE_SCHEMA, compute_total_water_ml, new_recipe_uid
 from xbloom.models.types import (
     CupType,
     PourPattern,
@@ -1136,6 +1143,123 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 else:
                     merged[name] = recipe
         self.recipes = merged
+
+    def seed_bundled_recipes(self) -> None:
+        """Fresh-install fallback: write the bundled defaults as local recipes.
+
+        Runs synchronously at setup (no network) so the recipe dropdown is
+        never empty before the one-time cloud seed (a background task)
+        completes. Only acts when ``entry.options[CONF_RECIPES]`` is
+        empty/absent — on any later boot the store is non-empty (or the
+        user deleted everything on purpose, which we respect via the
+        ``CONF_RECIPES_SEEDED`` flag).
+        """
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        if entry.options.get(CONF_RECIPES) or entry.options.get(CONF_RECIPES_SEEDED):
+            return
+        seeded: Dict[str, dict] = {}
+        defaults = self.hass.data.get(DOMAIN, {}).get("default_recipes") or {}
+        for name, recipe in defaults.items():
+            local = dict(recipe)
+            local["uid"] = new_recipe_uid()
+            local["source"] = "seed_bundled"
+            seeded[name] = local
+        if not seeded:
+            return
+        new_options = dict(entry.options)
+        new_options[CONF_RECIPES] = seeded
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info("Seeded %d bundled recipe(s) into the local store", len(seeded))
+
+    async def async_seed_recipes(self) -> None:
+        """One-time seed of the local recipe store from the cloud.
+
+        Replaces the old always-on hourly sync layer: the local store
+        (``entry.options[CONF_RECIPES]``) is the source of truth, and the
+        cloud is consulted exactly once per install — the account's own
+        recipes if a cloud account is configured (tracked by
+        ``CONF_ACCOUNT_RECIPES_SEEDED``, so adding an account later
+        triggers one more seed on the reload that follows), else XBloom's
+        official public recipes (``CONF_RECIPES_SEEDED``). Fetched recipes
+        become ordinary local recipes (uid + source metadata); names
+        already taken locally — including tombstones (= user deletions)
+        and YAML recipes — are skipped. A failed fetch leaves the flag
+        unset so the next HA start retries; never raises.
+        """
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        account = self.cloud_login_configured
+        flag = CONF_ACCOUNT_RECIPES_SEEDED if account else CONF_RECIPES_SEEDED
+        if entry.options.get(flag):
+            return
+
+        fetched: Optional[list] = None
+        source = ""
+        if account:
+            if await self.async_ensure_cloud_login():
+                cloud_list = await self.cloud_client.list_recipes()
+                if cloud_list is not None:
+                    fetched = []
+                    for raw in cloud_list:
+                        local = cloud_recipe_to_local(raw)
+                        # Keep the cloud identity alongside the local uid so
+                        # cloud_export_recipe can update in place later.
+                        if raw.get("tableId") is not None:
+                            local["cloud_table_id"] = raw["tableId"]
+                        if raw.get("shareRecipeLink"):
+                            local["share_url"] = raw["shareRecipeLink"]
+                        fetched.append(local)
+                    source = "seed_cloud"
+        else:
+            official = await self.cloud_client.fetch_official_recipes(
+                limit=_OFFICIAL_RECIPE_SYNC_LIMIT
+            )
+            if official is not None:
+                fetched = official
+                source = "seed_official"
+
+        if fetched is None:
+            _LOGGER.info(
+                "One-time recipe seed fetch failed (account=%s); "
+                "will retry on next HA start", account,
+            )
+            return
+
+        options_recipes = dict(entry.options.get(CONF_RECIPES) or {})
+        yaml_names = set(self.hass.data.get(DOMAIN, {}).get("yaml_recipes") or {})
+        added = 0
+        for local in fetched:
+            try:
+                validated = RECIPE_SCHEMA(local)
+            except vol.Invalid as exc:
+                _LOGGER.warning(
+                    "Skipping seed recipe %r: %s", local.get("name"), exc
+                )
+                continue
+            name = validated["name"]
+            # Existing local recipes, tombstones (user deletions), and
+            # YAML recipes all win over the seed.
+            if name in options_recipes or name in yaml_names:
+                continue
+            validated["uid"] = new_recipe_uid()
+            validated["source"] = source
+            options_recipes[name] = validated
+            added += 1
+
+        new_options = dict(entry.options)
+        new_options[CONF_RECIPES] = options_recipes
+        new_options[flag] = True
+        if account:
+            # An account seed also satisfies the initial seed — don't pull
+            # official recipes on top if the account is removed later.
+            new_options[CONF_RECIPES_SEEDED] = True
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        self._rebuild_recipes()
+        self.async_update_listeners()
+        _LOGGER.info("Recipe seed complete: source=%s added=%d", source, added)
 
     async def async_sync_cloud_recipes(self) -> dict:
         """Refresh the cloud-synced recipe layer and rebuild ``self.recipes``.

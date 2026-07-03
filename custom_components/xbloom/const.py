@@ -10,6 +10,12 @@ CONF_RECIPES = "recipes"
 CONF_WATER_SOURCE = "water_source"   # persisted in entry.options
 CONF_MODE = "mode"                   # persisted in entry.options
 
+# One-time recipe seed flags (entry.options). The local recipe store is the
+# source of truth; the cloud is only consulted once per install (and once
+# more when an account is added later) — see coordinator.async_seed_recipes.
+CONF_RECIPES_SEEDED = "recipes_seeded"
+CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
+
 # XBloom cloud account — both optional. Absent entirely (not just empty
 # strings) when the user skips the account step; cloud-backed services/LLM
 # tools must check for their absence and fail gracefully, never assume they
