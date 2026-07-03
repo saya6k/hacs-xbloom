@@ -99,8 +99,9 @@ cloud_import_recipe:
     share_url:
       name: Share URL
       description: >-
-        A share-h5.xbloom.com link, e.g. from the official app's Share
-        button. Provide this or recipe_id, not both.
+        A share-h5.xbloom.com link (e.g. from the official app's Share
+        button) or a collective.xbloom.com/recipe/<id> community-hub link.
+        Provide this or recipe_id, not both.
       required: false
       example: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
       selector:

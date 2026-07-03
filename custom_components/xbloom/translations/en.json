@@ -286,7 +286,7 @@
       "fields": {
         "share_url": {
           "name": "Share URL",
-          "description": "A share-h5.xbloom.com link, e.g. from the official app's Share button. Provide this or recipe_id, not both."
+          "description": "A share-h5.xbloom.com link (e.g. from the official app's Share button) or a collective.xbloom.com/recipe/<id> community-hub link. Provide this or recipe_id, not both."
         },
         "recipe_id": {
           "name": "Recipe ID",

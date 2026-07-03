@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import time
 from urllib.parse import parse_qs, urlparse
 
@@ -28,6 +29,20 @@ _LOGGER = logging.getLogger(__name__)
 
 API_BASE = "https://client-api.xbloom.com"
 SHARE_BASE = "https://share-h5.xbloom.com"
+
+# A separate, newer public "Coffee Recipe Hub" web frontend
+# (collective.xbloom.com) and its own backend (collective-api.xbloom.com) —
+# unrelated to API_BASE/client-api.xbloom.com, discovered by reading its
+# React bundle (2026-07-03; live-verified: POST communityRecipe/recipe/detail
+# {"id": <int>, "type": 1} -> {"code": 200, "data": {..., "shareRecipeLink":
+# "https://share-h5.xbloom.com/?id=..."}}, no auth required). We only use it
+# to resolve a collective.xbloom.com/recipe/<id> link to its equivalent
+# share-h5.xbloom.com link, then hand off to the already-verified
+# RecipeDetail.html path below — avoids a second translation function for a
+# response shape that differs subtly (e.g. cupType comes back as a string
+# there, not the int RecipeDetail.html/cloud_recipe_to_local expects).
+COLLECTIVE_API_BASE = "https://collective-api.xbloom.com"
+_COLLECTIVE_RECIPE_URL_RE = re.compile(r"collective\.xbloom\.com/recipe/(\d+)")
 
 # Verified verbatim against the raw denull0/xbloom-agent source (hutool-style
 # RSA-1024, PKCS1v1.5 padding — see module docstring).
@@ -351,13 +366,42 @@ class XBloomCloudClient:
         self.token = str(token)
         return True
 
+    async def _resolve_collective_link(self, community_recipe_id: str) -> str | None:
+        """Resolve a collective.xbloom.com/recipe/<id> link to its
+        share-h5.xbloom.com share link, via the separate collective-api.xbloom.com
+        backend (see the module-level comment by ``COLLECTIVE_API_BASE``).
+        Returns ``None`` on any failure — never raises.
+        """
+        try:
+            async with self._session.post(
+                f"{COLLECTIVE_API_BASE}/communityRecipe/recipe/detail",
+                json={"id": int(community_recipe_id), "type": 1},
+                headers=_HEADERS,
+                timeout=_TIMEOUT,
+            ) as resp:
+                body = await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            _LOGGER.warning("XBloom collective-api call failed: %s", exc)
+            return None
+        if not body or body.get("code") != 200:
+            return None
+        return (body.get("data") or {}).get("shareRecipeLink")
+
     async def fetch_shared_recipe(self, share_url_or_id: str) -> dict | None:
-        """Fetch a recipe by share URL or bare id. No login required.
+        """Fetch a recipe by share URL, collective.xbloom.com/recipe/<id>
+        URL, or bare share id. No login required.
 
         Returns a dict shaped for ``schema.RECIPE_SCHEMA``, or ``None`` if
         the id can't be parsed or the API call fails/returns not-found.
         """
-        share_id = _parse_share_id(share_url_or_id)
+        value = share_url_or_id.strip()
+        collective_match = _COLLECTIVE_RECIPE_URL_RE.search(value)
+        if collective_match:
+            resolved = await self._resolve_collective_link(collective_match.group(1))
+            if not resolved:
+                return None
+            value = resolved
+        share_id = _parse_share_id(value)
         if not share_id:
             return None
         resp = await self._post_plain(
