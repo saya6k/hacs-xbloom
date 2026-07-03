@@ -337,6 +337,16 @@
           "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
         }
       }
+    },
+    "cloud_export_recipe": {
+      "name": "로컬 레시피를 XBloom 클라우드로 내보내기",
+      "description": "기존 로컬 레시피를 설정된 XBloom 클라우드 계정으로 내보내 새 클라우드 레시피를 만듭니다. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
+      "fields": {
+        "recipe_name": {
+          "name": "레시피 이름",
+          "description": "클라우드로 내보낼 로컬(기본, YAML, 또는 UI 관리) 레시피의 이름입니다."
+        }
+      }
     }
   }
 }

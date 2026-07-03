@@ -247,3 +247,33 @@ cloud_delete_recipe:
         number:
           min: 1
           mode: box
+
+cloud_export_recipe:
+  name: Export local recipe to XBloom cloud
+  description: >-
+    Push an existing local recipe to the configured XBloom cloud account
+    (visible in the official app), creating a new cloud recipe. Returns
+    the new recipe's table ID and share URL. Requires an XBloom account to
+    be configured for the machine (Settings → Devices & Services → XBloom
+    → Configure).
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose configured cloud account to export the
+        recipe to. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    recipe_name:
+      name: Recipe name
+      description: >-
+        Name of the local (default, YAML, or UI-managed) recipe to push
+        to the cloud.
+      required: true
+      example: Morning V60
+      selector:
+        text:

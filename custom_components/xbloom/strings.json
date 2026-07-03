@@ -337,6 +337,16 @@
           "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
         }
       }
+    },
+    "cloud_export_recipe": {
+      "name": "Export local recipe to XBloom cloud",
+      "description": "Push an existing local recipe to the configured XBloom cloud account, creating a new cloud recipe. Returns the new recipe's table ID and share URL.",
+      "fields": {
+        "recipe_name": {
+          "name": "Recipe name",
+          "description": "Name of the local (default, YAML, or UI-managed) recipe to push to the cloud."
+        }
+      }
     }
   }
 }

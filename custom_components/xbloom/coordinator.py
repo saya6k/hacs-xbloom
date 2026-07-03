@@ -1176,6 +1176,25 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             }
         return {"success": True, "table_id": table_id}
 
+    async def async_export_local_recipe(self, recipe_name: str) -> dict:
+        """Push an existing local recipe to the XBloom cloud account.
+
+        Per D2 in tasks/plan.md, every export is a fresh create (no
+        ``table_id`` tracked against the local recipe) — delegates
+        entirely to :meth:`async_create_cloud_recipe` after looking the
+        recipe up by name, so the two paths can't drift apart. Returns a
+        structured ``{"success": bool, ...}`` dict rather than raising.
+        """
+        raw = (self.recipes or {}).get(recipe_name)
+        if raw is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No local recipe named {recipe_name!r} found.",
+            }
+        recipe = RECIPE_SCHEMA(raw)
+        return await self.async_create_cloud_recipe(recipe)
+
     async def async_delete_cloud_recipe(self, table_id: int) -> dict:
         """Delete a recipe from the configured XBloom cloud account.
 
