@@ -306,11 +306,15 @@
     },
     "cloud_create_recipe": {
       "name": "Create XBloom cloud recipe",
-      "description": "Create a new recipe directly on the configured XBloom cloud account from a YAML recipe definition. Returns the new recipe's table ID and share URL.",
+      "description": "Create a new recipe on the configured XBloom cloud account, either from an inline YAML recipe definition or by pushing an existing local recipe by name. Provide recipe_yaml or recipe_name, not both. Returns the new recipe's table ID and share URL.",
       "fields": {
         "recipe_yaml": {
           "name": "Recipe (YAML)",
-          "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step."
+          "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step. Provide this or recipe_name, not both."
+        },
+        "recipe_name": {
+          "name": "Recipe name (push an existing local recipe)",
+          "description": "Name of an existing local recipe to push to the cloud instead of defining one inline. Provide this or recipe_yaml, not both."
         }
       }
     },
@@ -335,16 +339,6 @@
         "table_id": {
           "name": "Recipe table ID",
           "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
-        }
-      }
-    },
-    "cloud_export_recipe": {
-      "name": "Export local recipe to XBloom cloud",
-      "description": "Push an existing local recipe to the configured XBloom cloud account, creating a new cloud recipe. Returns the new recipe's table ID and share URL.",
-      "fields": {
-        "recipe_name": {
-          "name": "Recipe name",
-          "description": "Name of the local (default, YAML, or UI-managed) recipe to push to the cloud."
         }
       }
     }

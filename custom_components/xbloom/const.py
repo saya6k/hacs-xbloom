@@ -52,8 +52,6 @@ ATTR_TABLE_ID = "table_id"
 
 SERVICE_CLOUD_DELETE_RECIPE = "cloud_delete_recipe"
 
-SERVICE_CLOUD_EXPORT_RECIPE = "cloud_export_recipe"
-
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
 XBLOOM_LLM_API_NAME = "XBloom Coffee Machine"

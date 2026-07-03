@@ -306,11 +306,15 @@
     },
     "cloud_create_recipe": {
       "name": "XBloom 클라우드 레시피 만들기",
-      "description": "YAML 레시피 정의로 설정된 XBloom 클라우드 계정에 새 레시피를 직접 만듭니다. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
+      "description": "설정된 XBloom 클라우드 계정에 새 레시피를 만듭니다. YAML 레시피 정의를 직접 입력하거나, 기존 로컬 레시피 이름으로 내보낼 수 있습니다. recipe_yaml 또는 recipe_name 중 하나만 입력하세요. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
       "fields": {
         "recipe_yaml": {
           "name": "레시피 (YAML)",
-          "description": "로컬 '레시피 추가' 옵션 플로우 단계와 동일한 YAML 형식의 레시피 정의입니다."
+          "description": "로컬 '레시피 추가' 옵션 플로우 단계와 동일한 YAML 형식의 레시피 정의입니다. recipe_name 대신 이것을 입력하세요."
+        },
+        "recipe_name": {
+          "name": "레시피 이름 (기존 로컬 레시피 내보내기)",
+          "description": "직접 정의하는 대신 클라우드로 내보낼 기존 로컬 레시피의 이름입니다. recipe_yaml 대신 이것을 입력하세요."
         }
       }
     },
@@ -335,16 +339,6 @@
         "table_id": {
           "name": "레시피 테이블 ID",
           "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
-        }
-      }
-    },
-    "cloud_export_recipe": {
-      "name": "로컬 레시피를 XBloom 클라우드로 내보내기",
-      "description": "기존 로컬 레시피를 설정된 XBloom 클라우드 계정으로 내보내 새 클라우드 레시피를 만듭니다. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
-      "fields": {
-        "recipe_name": {
-          "name": "레시피 이름",
-          "description": "클라우드로 내보낼 로컬(기본, YAML, 또는 UI 관리) 레시피의 이름입니다."
         }
       }
     }
