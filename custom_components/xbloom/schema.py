@@ -77,6 +77,23 @@ RECIPE_SCHEMA = vol.Schema(
 )
 
 
+RECIPE_PROTECTED_FIELDS = ("uid", "cloud_table_id", "share_url", "source")
+
+
+def strip_protected_recipe_fields(recipe: dict) -> dict:
+    """Drop system-managed identity/cloud-metadata fields from
+    user-supplied recipe input (create_recipe's YAML, edit_recipe's
+    changes YAML).
+
+    ``uid``/``cloud_table_id``/``share_url``/``source`` are assigned only
+    by create/import/export — never by user input — so a raw YAML blob
+    can't spoof another recipe's identity or point cloud_export_recipe at
+    a cloud_table_id it doesn't own. Returns a new dict; ``recipe`` is not
+    mutated.
+    """
+    return {k: v for k, v in recipe.items() if k not in RECIPE_PROTECTED_FIELDS}
+
+
 def new_recipe_uid() -> str:
     """Mint a local recipe uid (12 hex chars, distinct from cloud ids)."""
     return uuid4().hex[:12]

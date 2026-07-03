@@ -45,6 +45,7 @@ from .schema import (
     find_recipe,
     new_recipe_uid,
     scale_pours_to_total,
+    strip_protected_recipe_fields,
 )
 from xbloom.models.types import (
     CupType,
@@ -1351,9 +1352,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         A name collision gets the `` (2)`` suffix rather than a rejection
         — same rule as import, so callers never silently overwrite.
+        User input is never trusted for identity/cloud metadata — a
+        create_recipe YAML that includes ``uid``/``cloud_table_id``/
+        ``share_url``/``source`` (accidentally or otherwise) has all four
+        stripped before validation; every new recipe starts as its own
+        local-only identity.
         """
         try:
-            validated = RECIPE_SCHEMA(recipe)
+            validated = RECIPE_SCHEMA(strip_protected_recipe_fields(recipe))
         except vol.Invalid as exc:
             return {
                 "success": False,
@@ -1366,7 +1372,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         name = dedupe_name(validated["name"], self.recipes or {})
         validated["name"] = name
         validated["uid"] = new_recipe_uid()
-        validated.setdefault("source", "manual")
+        validated["source"] = "manual"
         options_recipes[name] = validated
         self._write_options_recipes(options_recipes)
         return {"success": True, "uid": validated["uid"], "name": name}
@@ -1392,11 +1398,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             }
         old_name, current = resolved
 
-        merged = {**current, **(changes or {})}
         # Identity is never patchable — it's what the edit is anchored to.
-        for key in ("uid", "cloud_table_id", "share_url", "source"):
-            if current.get(key) is not None:
-                merged[key] = current[key]
+        # Stripping (rather than "restore if current already has one")
+        # also blocks injecting a field current doesn't have yet, e.g.
+        # a never-exported recipe's changes claiming a cloud_table_id.
+        merged = {**current, **strip_protected_recipe_fields(changes or {})}
         try:
             validated = RECIPE_SCHEMA(merged)
         except vol.Invalid as exc:

@@ -36,7 +36,12 @@ from .const import (
     DEFAULT_WEIGHT_UNIT,
     DOMAIN,
 )
-from .schema import RECIPE_SCHEMA
+from .schema import (
+    RECIPE_PROTECTED_FIELDS,
+    RECIPE_SCHEMA,
+    new_recipe_uid,
+    strip_protected_recipe_fields,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -408,6 +413,8 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                     errors["base"] = "recipe_exists"
                     placeholders["error"] = recipe["name"]
                 else:
+                    recipe["uid"] = new_recipe_uid()
+                    recipe["source"] = "manual"
                     existing_opts = _options_recipes(self._entry)
                     existing_opts[recipe["name"]] = recipe
                     return self.async_create_entry(
@@ -473,6 +480,16 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
             if err:
                 errors["base"], placeholders["error"] = err
             else:
+                # _parse_and_validate strips uid/cloud_table_id/share_url/
+                # source (blocking a pasted-YAML spoof) — restore the
+                # original recipe's own values for those, same as
+                # coordinator.async_edit_local_recipe. The textarea shows
+                # them pre-filled, but a user leaving them untouched (or
+                # editing other fields) must not lose the real identity.
+                original = visible[self._editing]
+                for key in RECIPE_PROTECTED_FIELDS:
+                    if key in original:
+                        recipe[key] = original[key]
                 # Allow rename — drop the old key from options, add under the
                 # new name.  If the original recipe lives in a lower layer
                 # (defaults / YAML) it wasn't in options to begin with, so the
@@ -541,7 +558,14 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
 
 def _parse_and_validate(raw: str) -> tuple[dict | None, tuple[str, str] | None]:
     """Parse YAML + RECIPE_SCHEMA. Returns (recipe, None) on success or
-    (None, (error_key, detail)) on failure."""
+    (None, (error_key, detail)) on failure.
+
+    Strips uid/cloud_table_id/share_url/source before validating — same
+    as coordinator.create_local_recipe/async_edit_local_recipe — so
+    pasted YAML here can't spoof another recipe's identity or claim a
+    cloud_table_id it doesn't own either. Callers assign/preserve those
+    fields themselves afterward.
+    """
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
@@ -549,6 +573,6 @@ def _parse_and_validate(raw: str) -> tuple[dict | None, tuple[str, str] | None]:
     if not isinstance(parsed, dict):
         return None, ("invalid_yaml", "recipe must be a YAML mapping")
     try:
-        return RECIPE_SCHEMA(parsed), None
+        return RECIPE_SCHEMA(strip_protected_recipe_fields(parsed)), None
     except vol.Invalid as exc:
         return None, ("invalid_recipe", str(exc))
