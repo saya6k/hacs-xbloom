@@ -17,7 +17,12 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -26,6 +31,7 @@ from .const import (
     ATTR_BYPASS_TEMPERATURE,
     ATTR_BYPASS_VOLUME,
     ATTR_GRIND_SIZE,
+    ATTR_QUERY,
     ATTR_RECIPE_ID,
     ATTR_RECIPE_NAME,
     ATTR_RPM,
@@ -43,6 +49,7 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DOMAIN,
     SERVICE_CLOUD_IMPORT_RECIPE,
+    SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
 )
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
@@ -104,6 +111,13 @@ CLOUD_IMPORT_RECIPE_SCHEMA = vol.All(
         extra=vol.ALLOW_EXTRA,
     ),
     cv.has_at_least_one_key(ATTR_SHARE_URL, ATTR_RECIPE_ID),
+)
+
+CLOUD_SEARCH_RECIPES_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_QUERY): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
 )
 
 
@@ -196,6 +210,32 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_IMPORT_RECIPE,
         _handle_cloud_import_recipe,
         schema=CLOUD_IMPORT_RECIPE_SCHEMA,
+    )
+
+    async def _handle_cloud_search_recipes(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        # A cloud account is per-machine (per-config-entry) credentials, not
+        # a shared account across every targeted machine — search against
+        # the first match's account, matching how a device-target selector
+        # is normally used for a single-result query (unlike execute_recipe/
+        # cloud_import_recipe, which apply the same action to every match).
+        result = await coordinators[0].async_list_cloud_recipes(
+            query=call.data.get(ATTR_QUERY)
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_search_recipes failed")
+            )
+        return {"recipes": result["recipes"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_SEARCH_RECIPES,
+        _handle_cloud_search_recipes,
+        schema=CLOUD_SEARCH_RECIPES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
 
@@ -402,7 +442,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(data, dict) and DATA_COORDINATOR in data
         ]
         if not remaining:
-            for service in (SERVICE_EXECUTE_RECIPE, SERVICE_CLOUD_IMPORT_RECIPE):
+            for service in (
+                SERVICE_EXECUTE_RECIPE,
+                SERVICE_CLOUD_IMPORT_RECIPE,
+                SERVICE_CLOUD_SEARCH_RECIPES,
+            ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
     return unload_ok

@@ -1028,6 +1028,57 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.hass.config_entries.async_update_entry(entry, options=new_options)
         return {"success": True, "recipe_name": name}
 
+    async def async_list_cloud_recipes(self, query: Optional[str] = None) -> dict:
+        """List every recipe on the configured XBloom cloud account.
+
+        Unlike :meth:`async_import_cloud_recipe`, this requires a
+        configured + working login (``tuMyTeaRecipeCreated.tuhtml`` is an
+        authenticated endpoint). Returns a structured
+        ``{"success": bool, ...}`` dict rather than raising, matching the
+        error-shape convention of the rest of this class. ``query``, if
+        given, filters the results client-side by a case-insensitive
+        substring match against the recipe name — the wire API has no
+        server-side search parameter.
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        cloud_list = await self.cloud_client.list_recipes()
+        if cloud_list is None:
+            return {
+                "success": False,
+                "error": "list_failed",
+                "message": "Could not fetch recipes from the XBloom cloud account.",
+            }
+        recipes = [
+            {
+                "table_id": r.get("tableId"),
+                "name": r.get("theName"),
+                "dose_g": r.get("dose"),
+                "ratio": r.get("grandWater"),
+                "grind_size": r.get("grinderSize"),
+                "rpm": r.get("rpm"),
+                "share_url": r.get("shareRecipeLink"),
+            }
+            for r in cloud_list
+        ]
+        if query:
+            needle = query.strip().lower()
+            recipes = [r for r in recipes if needle in (r["name"] or "").lower()]
+        return {"success": True, "recipes": recipes}
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

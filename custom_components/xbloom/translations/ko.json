@@ -282,6 +282,16 @@
           "description": "공유 URL의 ?id= 뒤에 오는 base64 값 자체. share_url 또는 recipe_id 중 하나만 입력하세요."
         }
       }
+    },
+    "cloud_search_recipes": {
+      "name": "XBloom 클라우드 레시피 검색",
+      "description": "설정된 XBloom 클라우드 계정에 저장된 모든 레시피를 나열합니다. 이름으로 필터링할 수 있습니다.",
+      "fields": {
+        "query": {
+          "name": "검색어",
+          "description": "이름에 이 텍스트가 포함된 레시피만 표시합니다(대소문자 구분 없음). 생략하면 모든 레시피를 나열합니다."
+        }
+      }
     }
   }
 }

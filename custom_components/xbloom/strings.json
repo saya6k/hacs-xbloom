@@ -282,6 +282,16 @@
           "description": "The bare share id (the base64 value after ?id= in a share URL). Provide this or share_url, not both."
         }
       }
+    },
+    "cloud_search_recipes": {
+      "name": "Search XBloom cloud recipes",
+      "description": "List every recipe saved on the configured XBloom cloud account, optionally filtered by name.",
+      "fields": {
+        "query": {
+          "name": "Query",
+          "description": "Filter results to recipes whose name contains this text (case-insensitive). Omit to list every recipe."
+        }
+      }
     }
   }
 }

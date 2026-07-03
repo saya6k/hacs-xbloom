@@ -113,3 +113,32 @@ cloud_import_recipe:
       required: false
       selector:
         text:
+
+cloud_search_recipes:
+  name: Search XBloom cloud recipes
+  description: >-
+    List every recipe saved on the configured XBloom cloud account,
+    optionally filtered by name. Requires an XBloom account to be
+    configured for the machine (Settings → Devices & Services → XBloom →
+    Configure).
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose configured cloud account to search.
+        Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    query:
+      name: Query
+      description: >-
+        Filter results to recipes whose name contains this text
+        (case-insensitive). Omit to list every recipe.
+      required: false
+      example: Morning
+      selector:
+        text:

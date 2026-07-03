@@ -41,6 +41,9 @@ SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
 ATTR_SHARE_URL = "share_url"
 ATTR_RECIPE_ID = "recipe_id"
 
+SERVICE_CLOUD_SEARCH_RECIPES = "cloud_search_recipes"
+ATTR_QUERY = "query"
+
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
 XBLOOM_LLM_API_NAME = "XBloom Coffee Machine"

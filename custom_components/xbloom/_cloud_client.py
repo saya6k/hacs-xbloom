@@ -56,6 +56,24 @@ _HEADERS = {
 
 _TIMEOUT = aiohttp.ClientTimeout(total=15)
 
+# Spread into every authenticated call after login — verified verbatim
+# against the reference source's authBase(). See tasks/plan.md "Verified
+# facts".
+_AUTH_INTERFACE_VERSION = 20240918
+_AUTH_SKEY = "testskey"
+
+
+def _auth_base(member_id: int, token: str) -> dict:
+    return {
+        "interfaceVersion": _AUTH_INTERFACE_VERSION,
+        "skey": _AUTH_SKEY,
+        "phoneType": "Android",
+        "memberId": member_id,
+        "clientType": 2,
+        "languageType": 1,
+        "token": token,
+    }
+
 
 def _rsa_encrypt(payload: dict) -> str:
     """Hutool-style chunked RSA encryption matching the official app.
@@ -164,15 +182,26 @@ class XBloomCloudClient:
     def logged_in(self) -> bool:
         return self.member_id is not None and self.token is not None
 
-    async def _post_plain(self, endpoint: str, payload: dict) -> dict | None:
+    async def _post(self, endpoint: str, body: object) -> dict | None:
         try:
             async with self._session.post(
-                f"{API_BASE}/{endpoint}", json=payload, headers=_HEADERS, timeout=_TIMEOUT,
+                f"{API_BASE}/{endpoint}", json=body, headers=_HEADERS, timeout=_TIMEOUT,
             ) as resp:
                 return await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             _LOGGER.warning("XBloom cloud call to %s failed: %s", endpoint, exc)
             return None
+
+    async def _post_plain(self, endpoint: str, payload: dict) -> dict | None:
+        return await self._post(endpoint, payload)
+
+    async def _post_encrypted(self, endpoint: str, payload: dict) -> dict | None:
+        """Authenticated call — the whole payload is RSA-chunk-encrypted and
+        sent as a JSON-encoded *string* body (matching the reference
+        ``postEncrypted``: ``body: JSON.stringify(encrypted)`` where
+        ``encrypted`` is itself the base64 ciphertext string, not an
+        object wrapping it)."""
+        return await self._post(endpoint, _rsa_encrypt(payload))
 
     async def login(self, email: str, password: str) -> bool:
         """Log in and cache member_id/token. Returns False on any failure
@@ -216,3 +245,27 @@ class XBloomCloudClient:
         if not resp or resp.get("result") != "success":
             return None
         return cloud_recipe_to_local(resp.get("recipeVo") or {})
+
+    async def list_recipes(self) -> list[dict] | None:
+        """List every recipe on the logged-in account.
+
+        Wraps ``tuMyTeaRecipeCreated.tuhtml`` (the literal endpoint name
+        used for listing *all* recipe types, not just tea — see
+        tasks/plan.md "Verified facts"). Requires a prior successful
+        :meth:`login`; returns ``None`` if not logged in or the call
+        fails — never raises. Each list entry is the raw cloud shape
+        (``tableId``, ``theName``, ``dose``, ``grandWater``,
+        ``grinderSize``, ``rpm``, ``shareRecipeLink``, ``pourList``, ...).
+        """
+        if not self.logged_in:
+            return None
+        payload = {
+            **_auth_base(self.member_id, self.token),
+            "pageNumber": 1,
+            "countPerPage": 100,
+            "adaptedModel": 1,
+        }
+        resp = await self._post_encrypted("tuMyTeaRecipeCreated.tuhtml", payload)
+        if not resp or resp.get("result") != "success":
+            return None
+        return resp.get("list") or []
