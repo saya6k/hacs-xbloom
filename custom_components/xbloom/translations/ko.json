@@ -443,8 +443,8 @@
   "selector": {
     "collective_machine": {
       "options": {
-        "J15": "스튜디오",
-        "J20": "오리지널"
+        "j15": "스튜디오",
+        "j20": "오리지널"
       }
     },
     "collective_cup_type": {

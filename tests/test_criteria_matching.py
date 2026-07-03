@@ -24,6 +24,15 @@ def test_code_match_wins_over_name():
     assert unmatched == []
 
 
+def test_code_match_case_insensitive_resolves_to_live_casing():
+    # services.yaml/strings.json option keys are lowercased ("j15") to
+    # satisfy HA's translation-key rules, but the live API code is "J15" —
+    # a lowercase submission must still resolve, and to the real casing.
+    resolved, unmatched = _resolve_criteria_values(["j15", "j20"], FACET)
+    assert resolved == ["J15", "J20"]
+    assert unmatched == []
+
+
 def test_unknown_reported_unmatched():
     resolved, unmatched = _resolve_criteria_values(["Mars"], FACET)
     assert resolved == []

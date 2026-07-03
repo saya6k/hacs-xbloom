@@ -443,8 +443,8 @@
   "selector": {
     "collective_machine": {
       "options": {
-        "J15": "Studio",
-        "J20": "Original"
+        "j15": "Studio",
+        "j20": "Original"
       }
     },
     "collective_cup_type": {

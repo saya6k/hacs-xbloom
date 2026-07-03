@@ -315,8 +315,8 @@ cloud_search_collective_recipes:
           custom_value: true
           translation_key: collective_machine
           options:
-            - "J15"
-            - "J20"
+            - "j15"
+            - "j20"
     cup_type:
       name: Cup type
       description: >-

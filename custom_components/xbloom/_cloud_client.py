@@ -62,10 +62,13 @@ def _resolve_criteria_values(
     """Match user-provided ``names`` against one criteria facet's
     ``[{"name": ..., "value": ...}]`` list.
 
-    Each entry is matched as a raw code first (exact ``value`` match —
+    Each entry is matched as a raw code first (case-insensitively —
     what the services.yaml multi-select submits, and the escape hatch
-    when upstream adds a category our snapshot doesn't know yet), then
-    as a case-insensitive display name. Codes are also the only way to
+    when upstream adds a category our snapshot doesn't know yet; the
+    strings.json/services.yaml option keys are lowercased to satisfy HA's
+    translation-key rules even where the live code itself has uppercase
+    letters, e.g. machine codes ``J15``/``J20``), then as a
+    case-insensitive display name. Codes are also the only way to
     address facets with duplicate display names (the live varietal list
     carries e.g. three distinct "Catimor" codes). Returns
     ``(resolved_values, unmatched_names)`` — unmatched entries are
@@ -73,14 +76,15 @@ def _resolve_criteria_values(
     the user."""
     if not names:
         return [], []
-    codes = {str(item["value"]) for item in facet_list}
+    codes_by_lower = {str(item["value"]).lower(): str(item["value"]) for item in facet_list}
     by_name = {str(item["name"]).strip().lower(): item["value"] for item in facet_list}
     resolved: list[str] = []
     unmatched: list[str] = []
     for name in names:
         key = str(name).strip()
-        if key in codes:
-            resolved.append(key)
+        code = codes_by_lower.get(key.lower())
+        if code is not None:
+            resolved.append(code)
             continue
         value = by_name.get(key.lower())
         if value is not None:
