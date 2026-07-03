@@ -27,9 +27,9 @@ Tea BLE sequence:
     8022  Back to Home          — reset machine UI state
     8102  Set Bypass            — bypass off, dose=0 (no beans)
     8104  Set Cup               — tea bounds (200, 0)
-    4513  APP_TEA_RECIP_CODE    — tea recipe payload (pattern=3 for
-                                  steep separation, from AML225's
-                                  cloud-API JSON schema)
+    4513  APP_TEA_RECIP_CODE    — tea recipe payload; see
+                                  ``_build_tea_payload`` for the
+                                  steep-separation/soak/siphon encoding
     4512  APP_TEA_RECIP_MAKE    — execute the queued tea recipe
 """
 from __future__ import annotations
@@ -357,16 +357,12 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
     # tea mode — it just brewed as no-grind multi-pour coffee. So
     # 4513/4512 is mandatory for real tea behavior.
     #
-    # The downside: 4513/4512 puts the firmware in a tea state that no
-    # documented command exits. The coffee-brew prelude in
-    # ``_async_brew_coffee`` (RECIPE_STOP + BREWER_QUIT + GRINDER_QUIT
-    # + RECIPE_START_QUIT + BACK_TO_HOME) is the current attempt to
-    # clear it before subsequent coffee brews.
+    # A coffee brew after this grinds normally as long as
+    # ``_async_brew_coffee`` sends only its 8022 prelude — no tea-mode
+    # exit command is needed (see its module docstring).
     #
-    # ``_build_tea_payload`` substitutes pattern=3 in the substep byte
-    # (AML225's cloud-API JSON schema uses that value for every tea
-    # steep). Without it the firmware flattens multi-pour tea into a
-    # single coffee-style pour.
+    # ``_build_tea_payload`` encodes steep separation / soak / siphon
+    # handling; see its docstring for the current (pattern=1) encoding.
     payload = _build_tea_payload(recipe)
     await client._send_command_raw(
         XBloomCommand.APP_TEA_RECIP_CODE, payload,

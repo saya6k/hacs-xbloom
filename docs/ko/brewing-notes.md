@@ -37,11 +37,11 @@ brAzzi64 HCI 캡처는 omni_dripper에 대해 (110, 90)을 실측했으나, vend
 8022  RD_BackToHome
 8102  APP_SET_BYPASS  [0, 0, 0]
 8104  APP_SET_CUP     [200, 0]    ← 티 bounds
-4513  APP_TEA_RECIP_CODE  (build_tea_payload — pattern=3 hack)
+4513  APP_TEA_RECIP_CODE  (build_tea_payload)
 4512  APP_TEA_RECIP_MAKE  (페이로드 재송신, vendored execute_recipe 미러)
 ```
 
-`_build_tea_payload`는 substep의 pattern 바이트를 3으로 치환(AML225 cloud-API JSON 스키마 차용). **이는 틀린 것으로 판명됨:** 공식 앱 캡처는 tea steep에 pattern=1(circular)을 쓰며, pattern=3 hack이 있어도 steep이 여전히 flatten됨. 바이트 단위 차이와 실제 원인은 아래 [미해결 — 티 다중 스팁 flatten](#미해결--티-다중-스팁-flatten) 참고.
+`_build_tea_payload`는 각 스팁의 wire 볼륨을 `_TEA_SIPHON_CAP`(90ml, 펌웨어가 소크 후 자동 탑업해 배수하도록)으로 캡하고, substep pattern=1(circular — 커피와 동일)을 쓰며, 소크 시간을 timing 블록의 byte[1]에 기록함. 이 구조가 어떻게 발견됐는지는 [해결됨 — 티 다중 스팁 flatten](#해결됨--티-다중-스팁-flatten) 참고 — 과거 pattern=3 hack(AML225 cloud-API JSON 차용)은 동작하지 않아 교체됨.
 
 ## 해결됨 — 티 brew 이후 그라인딩 (2026-05-29)
 
@@ -57,11 +57,11 @@ brAzzi64 HCI 캡처는 omni_dripper에 대해 (110, 90)을 실측했으나, vend
 
 `_async_brew_coffee`에서 QUIT 4개를 제거하고 `8022 RD_BackToHome`만 유지(8022는 푸어 패턴 해석을 독립적으로 복원 — 없으면 커피 푸어가 레시피의 spiral 대신 center로 떨어짐). 2026-05-29 실기 확인: 티 → 커피가 그라인딩 + spiral 푸어 + 온도 + 진동 모두 정상. 전원 재시작 워크어라운드는 더 이상 필요 없음.
 
-> 참고: 이 문서는 과거 QUIT 프렐류드가 "티 다중 스팁 분리를 복원했다"고 적었으나, 그건 우연한 상관관계였음 — 공식 캡처상 티 스팁 분리는 커피 측 프렐류드가 아니라 **티 레시피 페이로드(pattern 바이트 + 스팁별 timing)**로만 결정됨. 아래 미해결 항목 참고.
+> 참고: 이 문서는 과거 QUIT 프렐류드가 "티 다중 스팁 분리를 복원했다"고 적었으나, 그건 우연한 상관관계였음 — 공식 캡처상 티 스팁 분리는 커피 측 프렐류드가 아니라 **티 레시피 페이로드(pattern 바이트 + 스팁별 timing)**로만 결정됨. 아래 참고.
 
-## 미해결 — 티 다중 스팁 flatten
+## 해결됨 — 티 다중 스팁 flatten
 
-다중 스팁 티 레시피(예: 홍차 — 120ml @95°C 소크 180s + 120ml @95°C 소크 120s)가 2개 스팁이 아니라 **단일 ~316ml 푸어**로 추출됨. 같은 공식 앱 캡처로 4513 페이로드를 바이트 비교해 원인을 특정함:
+**상태: 수정됨 (2026-05-29, 실기 확정).** 다중 스팁 티 레시피(예: 홍차 — 120ml @95°C 소크 180s + 120ml @95°C 소크 120s)가 2개 스팁이 아니라 **단일 ~316ml 푸어**로 추출되던 문제. 공식 앱 캡처로 4513 페이로드를 바이트 비교해 원인을 특정함:
 
 ```
 ha-xbloom: 10 | 78 5f 03 00 | 4c 00 00 1e | 78 5f 03 00 | 88 00 00 1e | 00 60

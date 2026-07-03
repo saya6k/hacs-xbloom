@@ -13,18 +13,17 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Features
 
-- **Manual control** — pour with custom temperature/volume, grind with custom size/RPM, **tare** the scale, vibrate the tray.
-- **Recipes — three layers**:
-  1. **Cloud-synced recipes**, refreshed automatically on install and every hour: the account's own cloud recipes if one is linked, otherwise XBloom's official public recipes from the community hub. If the sync can't reach the network at all (e.g. no internet at first boot), a small bundled fallback set (`default_recipes.py`) is used until the next successful sync. Read-only at runtime — see below to override one.
-  2. **`configuration.yaml`** recipes (the legacy path) override synced recipes by name.
-  3. **OptionsFlow CRUD** lets you add / edit / delete recipes from the UI without restarting HA. Overrides synced and YAML recipes by name. Settings → Devices & Services → XBloom → ⋯ → **Configure**.
-- **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = idle seconds between steeps; the firmware drives pour → soak → siphon-drain internally.
+- **Local recipes are the source of truth** — every recipe gets a stable local `uid` and lives in HA; that's what the Recipe dropdown shows and brews. Seeded once at install (from your cloud account if linked, else XBloom's official public recipes), then no background sync — manage it from the HA UI, the recipe services, or `configuration.yaml`.
+- **Cross-identifier addressing** — every service/tool takes one `recipe` field: local uid, cloud table id, share URL/id, or exact name.
+- **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
+- **Per-brew overrides** — brew a recipe with adjusted grind, RPM, dose, ratio, cup type, or bypass without editing it (dose/ratio rescales the pours proportionally); selecting a recipe also syncs the Grind Size / RPM sliders to it.
+- **Tea recipes** (`cup_type: tea`) — each steep is a pour with `pausing` = soak seconds; the firmware handles pour → soak → siphon-drain internally. See [`brewing-notes.md`](./brewing-notes.md) for the siphon mechanics.
 - **Selected-recipe inspection** — the recipe select entity exposes the full recipe (pours, bypass, temperatures, etc.) under its `recipe` attribute. View at Developer Tools → States → `select.xbloom_recipe`, or in templates via `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
-- **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
-- **Optional cloud account** — link an XBloom account to also search, create, edit, delete, and import individual recipes on your cloud account or XBloom's public community hub, beyond the automatic sync above. Entirely optional; every other feature works fully without one. See [Cloud recipe sync](#cloud-recipe-sync-optional) below.
+- **Easy Mode slot writing** — push any recipe to onboard slot A/B/C via the slot buttons, the slot text entities, or the `write_recipe_to_easy_slot` service (auto-imports a share URL that isn't local yet).
+- **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse XBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export. See [Recipe services](#recipe-services) below.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
-- **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
-- **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
+- **Event entities** — errors (water shortage, no beans, abnormal dose/gear) and notifications (grinding/brewing/pour/bloom/pause/complete/tea soaking).
+- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale, delete).
 - **Korean and English** UI translations.
 
 ## Installation (HACS)
@@ -45,17 +44,9 @@ The initial config flow handles MAC address + telemetry interval + idle disconne
 
 ### Recipes
 
-Three layers, in increasing precedence:
+On first install the recipe store is seeded **once**: a small bundled set is written immediately (so the dropdown is never empty), then a background task fetches your XBloom cloud account's recipes (if linked in the config flow's account step) or XBloom's official public recipes otherwise, skipping any name that already exists. A failed fetch (e.g. no internet at first boot) retries on the next restart. Linking an account **later** seeds its recipes once at that point. No background sync after that — the local store is yours.
 
-| Layer | Where | Mutable from | Notes |
-| --- | --- | --- | --- |
-| Cloud-synced | `coordinator.cloud_synced_recipes` (in-memory) | not directly — see below | Account recipes (if linked) or XBloom's official public recipes (if not), refreshed on install and hourly. Falls back to a small bundled set (`default_recipes.py`) only if both fetches fail. Read-only at runtime. |
-| YAML | `configuration.yaml` `xbloom: recipes:` | edit + restart HA | Same shape as below. Overrides synced recipes by name. |
-| OptionsFlow | `entry.options[CONF_RECIPES]` | HA UI | Add / edit / delete. Overrides everything by name. |
-
-To override a synced recipe, just add a same-named recipe in YAML or via the OptionsFlow — the synced original stays intact underneath and reappears if you delete the override.
-
-### YAML recipe shape
+Recipes can also be defined in `configuration.yaml` — lower priority than the local store (a same-named store recipe wins; deleting a YAML recipe from the UI hides it):
 
 ```yaml
 xbloom:
@@ -86,53 +77,54 @@ xbloom:
       pours:
         - volume_ml: 120
           temperature_c: 80
-          pause_seconds: 60       # idle seconds before the next steep
+          pause_seconds: 60       # soak time before the next steep
         - volume_ml: 120
           temperature_c: 80
           pause_seconds: 0
 ```
 
-For tea recipes, each pour represents one steep. The xBloom Omni Tea Brewer's siphon triggers at ~120 ml (leaf-volume dependent) — `pause_seconds` is *idle time between steeps*, not actual steep time. See [`brewing-notes.md`](./brewing-notes.md) for the full siphon-mechanics explanation.
+For tea recipes, each pour represents one steep. `pause_seconds` is the real soak time (water held in the brewer), as long as the per-steep volume stays under the siphon threshold, which the integration enforces automatically — see [`brewing-notes.md`](./brewing-notes.md) for the full siphon-mechanics explanation.
 
-See the **YAML recipe shape** above for the field-by-field reference.
+### Recipe management via UI
 
-### Recipe management via UI (OptionsFlow)
+Settings → Devices & Services → XBloom → ⋯ → **Configure** → **Add a recipe** / **Edit a recipe** / **Delete a recipe**. Deleting is local-only and immediate; a copy on your cloud account is never touched. YAML recipes appear in Edit/Delete too — editing one saves the edit as a local override (the YAML file is never written to); deleting one tombstones it (add a same-named recipe to restore it).
 
-Settings → Devices & Services → XBloom → ⋯ → **Configure** → menu:
+### Per-brew overrides
 
-- **Settings** — telemetry interval, idle disconnect timeout.
-- **Add a recipe** — paste a YAML block; validated against the schema; saved into options; integration auto-reloads.
-- **Edit a recipe** — pick from UI-managed recipes (defaults / YAML are read-only here); edit the pre-filled YAML; renaming via `name:` is allowed.
-- **Delete a recipe** — pick from UI-managed recipes and confirm.
+A saved recipe can be run with adjustments for a single brew without editing it. Choosing a recipe in the **Recipe** select syncs the **Grind Size** / **Grinder RPM** sliders to its values; whatever they hold at brew time is used. Tea and no-grind recipes ignore grind/RPM.
 
-Bundled defaults and YAML recipes don't appear in the Edit/Delete dropdowns by design — those are sourced from code or files outside HA's UI ownership. To remove a default, override it by adding a same-named recipe via OptionsFlow.
+Every top-level scalar can be overridden per brew: `grind_size`, `rpm`, `dose_g`, `ratio`, `cup_type`, `bypass_volume`, `bypass_temperature`. A `dose_g`/`ratio` override rescales the pour volumes proportionally (sum of pours + bypass = dose × ratio). Bypass can be added even to recipes that have none; tea recipes never bypass or grind.
 
-## Cloud recipe sync (optional)
+```yaml
+service: xbloom.execute_recipe
+target:
+  device_id: <your xbloom device>   # optional if you only have one machine
+data:
+  recipe: Morning V60   # uid / cloud id / share URL / name — optional, defaults to the selected recipe
+  grind_size: 42
+  rpm: 90
+  dose_g: 20            # pours rescale to keep total water = dose × ratio
+  bypass_volume: 50
+  bypass_temperature: 92
+```
 
-Linking your XBloom app account lets you search, import, create, edit, and delete
-recipes on your XBloom cloud account — the same recipes visible in the official app —
-independently of the three local layers above. Nothing about local recipe management
-requires an account; skip this entirely if you don't want it.
+Through Assist (LLM), `get_xbloom_recipe` returns a recipe's full detail (grind, RPM, bypass, and each pour's volume / flow rate / pattern) and `execute_xbloom_recipe` accepts the same scalar overrides plus per-pour `pour_overrides` (volume / flow rate / pattern keyed by 0-based `pour_index`), so an agent can tune individual pours on request.
 
-**Setup**: enter your XBloom app email/password in the config flow's "XBloom Cloud
-Account" step during initial setup (both fields optional, skippable), or add / update /
-remove it later via Settings → Devices & Services → XBloom → ⋯ → **Configure** →
-**Cloud account**. Signed in with Apple and have no XBloom password? Use XBloom's own
-"forgot password" flow (with the email Apple relays, visible in the app's account
-settings) to set one, then enter that.
+## Recipe services
 
-Seven services become available (Developer Tools → Actions, or `xbloom.cloud_*`);
-`cloud_import_recipe` and `cloud_search_collective_recipes` need no account at
-all, the rest need one configured:
+Nine services cover the whole recipe surface (Developer Tools → Actions). Wherever a service takes a `recipe`, it accepts the recipe's local **uid**, **cloud table id**, **share URL/id**, or exact **name** — `list_recipes` returns the uids.
 
 | Service | Does |
 | --- | --- |
-| `cloud_search_recipes` | List every recipe on **your own** cloud account, optionally filtered by name. |
-| `cloud_search_collective_recipes` | Search XBloom's **public** community recipe hub (collective.xbloom.com) — recipes shared by xBloom and other users. No account needed. Filter by keyword, coffee/tea, machine, official/user, cup type, origin, varietal, process, roast, flavor, and sort — bean-profile filters accept free-text names matched against the hub's current options. |
-| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/{id}` community-hub link, or a share id, and save it as a local recipe. No account needed — works even without a cloud account configured. |
-| `cloud_create_recipe` | Create a new cloud recipe, either from inline `recipe_yaml` (same shape as "Add a recipe" above) or by pushing an existing local recipe by `recipe_name`. Returns the new `table_id` and `share_url`. |
-| `cloud_edit_recipe` | Change one or more fields of an existing cloud recipe by `table_id`; fields you omit are left unchanged (fetches the current recipe first, then patches). |
-| `cloud_delete_recipe` | Permanently delete a cloud recipe by `table_id`. Cannot be undone. |
+| `list_recipes` | List every local recipe (uid, source, cup type, dose, grind, pour count, and any cloud id / share URL), optionally filtered by a name query. |
+| `create_recipe` | Create a new local recipe from inline `recipe_yaml`. Returns its `uid`. Nothing is uploaded. |
+| `edit_recipe` | Change one or more fields of a local recipe; omitted fields keep their values. Pointing it at a share URL that isn't local yet imports a copy first and edits that. |
+| `delete_recipe` | Delete a local recipe — the dropdown updates immediately. A copy on your cloud account is **not** touched (cloud deletion happens in the official app). |
+| `execute_recipe` | Brew a recipe, with optional per-brew scalar overrides (see above). |
+| `write_recipe_to_easy_slot` | Store a recipe on onboard Easy Mode slot A/B/C. A share URL that isn't local yet is auto-imported first. |
+| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/{id}` community-hub link, or a share id, and save it locally (with a new uid). No account needed. |
+| `cloud_export_recipe` | Push a local recipe to **your** XBloom cloud account and return its cloud `id`, share `link`, and the recipe. Re-exporting the same recipe updates the same cloud entry (the link stays stable). Without an account configured, nothing is uploaded and only the recipe is returned. |
+| `cloud_search_collective_recipes` | Search XBloom's **public** community recipe hub (collective.xbloom.com) — no account needed. Filter by keyword, coffee/tea, official/user, and multi-select machine / cup type / origin / varietal / process / roast / flavor facets, with sorting. |
 
 ```yaml
 service: xbloom.cloud_import_recipe
@@ -140,12 +132,11 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Through Assist (LLM), all seven operations are exposed as tools:
-`import_xbloom_cloud_recipe`, `search_xbloom_cloud_recipes`,
-`search_xbloom_collective_recipes`, `create_xbloom_cloud_recipe`,
-`export_xbloom_recipe_to_cloud`, `edit_xbloom_cloud_recipe`, and
-`delete_xbloom_cloud_recipe` (the last requires explicit confirmation before
-deleting, same as the brewing tool's beans/filter confirmation).
+The collective-search facet dropdowns are a snapshot of the hub's category codes. If XBloom adds a category the dropdown doesn't know yet, type its numeric code directly (the fields accept custom values) — and please [open an issue](https://github.com/saya6k/ha-xbloom/issues) with the code so it can be added to the snapshot and translated in the next release.
+
+**Cloud account (optional)** — only `cloud_export_recipe` needs one. Enter your XBloom app email/password in the config flow's "XBloom Cloud Account" step during initial setup, or add/update/remove it later via Settings → Devices & Services → XBloom → ⋯ → **Configure** → **Cloud account**. Signed in with Apple and have no XBloom password? Use XBloom's own "forgot password" flow (with the email Apple relays, visible in the app's account settings) to set one first.
+
+Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes`, `get_xbloom_recipe`, `create_xbloom_recipe`, `edit_xbloom_recipe`, `delete_xbloom_recipe` (asks for explicit confirmation before deleting), `execute_xbloom_recipe`, `write_xbloom_easy_slot`, `import_xbloom_cloud_recipe`, `export_xbloom_recipe`, and `search_xbloom_collective_recipes`.
 
 ## Grind size reference (XBloom Studio scale, 0–80)
 
@@ -167,16 +158,15 @@ deleting, same as the brewing tool's beans/filter confirmation).
 
 ## Known limitations
 
-- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher). XBloom **Original** connects over Wi-Fi instead — an entirely different protocol this integration doesn't implement — and the maintainer doesn't own an Original unit to test against. The cloud API also hardcodes `adaptedModel: 1` (Studio) in `list_recipes()` / `create_recipe()` (`_cloud_client.py`), so cloud recipe sync/create is unverified for an Original-only account.
-- **Tea → coffee grinding fails**: after any tea brew, the next coffee brew skips the grinder phase (pour still works, but no beans are ground). No documented BLE command restores the grinder once the firmware enters the tea state — see [`brewing-notes.md`](./brewing-notes.md#known-limitation--grinding-fails-after-a-tea-brew). **Workaround:** power-cycle the machine between a tea brew and the next coffee brew.
-- **Tea siphon is flash-extract, not long-soak**: the xBloom Omni Tea Brewer drains at ~120 ml regardless of `pausing`. Recipes designed for long submersion (matcha, gong-fu styles with sub-minute steeps that need water in the brewer) won't behave as expected. Detail in [`brewing-notes.md`](./brewing-notes.md#xbloom-omni-tea-brewer--siphon-mechanics).
-- **MachineInfo on some firmwares**: certain XBloom firmware revisions do not push the `RD_MachineInfo` BLE notification, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection (RD_ErrorLackOfWater) on those firmwares.
-- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g. The LLM `execute_xbloom_recipe` tool will ask for explicit confirmation when this happens.
-- **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed). Recipe execution does not — the firmware controls its own pour sequence internally.
+- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
+- **MachineInfo on some firmwares**: certain firmware revisions never push `RD_MachineInfo`, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection on those firmwares.
+- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `execute_xbloom_recipe` tool asks for explicit confirmation when this happens.
+- **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed); recipe execution does not — the firmware runs its own pour sequence internally.
+- **Tea soak timing is approximately calibrated**: the wait between steeps is scaled from the recipe's `pausing` seconds using a factor derived from a couple of stopwatch measurements — see [`brewing-notes.md`](./brewing-notes.md) for details if you need tighter timing.
 
 ## Development
 
-See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, known limitations (tea → coffee grinding, etc.), and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md).
+See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md).
 
 A devcontainer is provided for testing the integration against a real Home Assistant install. Open the folder in VS Code with the Dev Containers extension and run:
 
@@ -188,4 +178,4 @@ HA binds the standard port 8123 inside the container. The container's hostname i
 
 ## License
 
-[MIT](LICENSE) — preserves both vendored upstream copyrights (`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, each carrying its own MIT `LICENSE` file) and adds the integration's own copyright line.
+[MIT](../../LICENSE) — preserves both vendored upstream copyrights (`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, each carrying its own MIT `LICENSE` file) and adds the integration's own copyright line.

@@ -59,17 +59,34 @@ _COLLECTIVE_SORT_DIRECTION = {"asc": 1, "desc": 2}
 def _resolve_criteria_values(
     names: list[str] | None, facet_list: list[dict]
 ) -> tuple[list[str], list[str]]:
-    """Case-insensitive match of user-provided ``names`` against one
-    criteria facet's ``[{"name": ..., "value": ...}]`` list. Returns
-    ``(resolved_values, unmatched_names)`` — unmatched names are reported
-    back rather than silently dropped, so the caller can tell the user."""
+    """Match user-provided ``names`` against one criteria facet's
+    ``[{"name": ..., "value": ...}]`` list.
+
+    Each entry is matched as a raw code first (case-insensitively —
+    what the services.yaml multi-select submits, and the escape hatch
+    when upstream adds a category our snapshot doesn't know yet; the
+    strings.json/services.yaml option keys are lowercased to satisfy HA's
+    translation-key rules even where the live code itself has uppercase
+    letters, e.g. machine codes ``J15``/``J20``), then as a
+    case-insensitive display name. Codes are also the only way to
+    address facets with duplicate display names (the live varietal list
+    carries e.g. three distinct "Catimor" codes). Returns
+    ``(resolved_values, unmatched_names)`` — unmatched entries are
+    reported back rather than silently dropped, so the caller can tell
+    the user."""
     if not names:
         return [], []
+    codes_by_lower = {str(item["value"]).lower(): str(item["value"]) for item in facet_list}
     by_name = {str(item["name"]).strip().lower(): item["value"] for item in facet_list}
     resolved: list[str] = []
     unmatched: list[str] = []
     for name in names:
-        value = by_name.get(str(name).strip().lower())
+        key = str(name).strip()
+        code = codes_by_lower.get(key.lower())
+        if code is not None:
+            resolved.append(code)
+            continue
+        value = by_name.get(key.lower())
         if value is not None:
             resolved.append(value)
         else:
@@ -570,8 +587,8 @@ class XBloomCloudClient:
         include them — so each result needs its own
         :meth:`fetch_shared_recipe` round-trip for the full recipe.
         ``limit`` bounds how many of those extra round-trips this makes,
-        since callers may run this unattended on a timer (see
-        ``coordinator.async_sync_cloud_recipes``). Returns ``None`` only
+        since the caller runs unattended at startup (see
+        ``coordinator.async_seed_recipes``). Returns ``None`` only
         if the initial search itself fails (e.g. no network) — an
         individual recipe's detail fetch failing is skipped, not fatal.
         """
@@ -704,7 +721,7 @@ class XBloomCloudClient:
 
         ``cloud_fields`` must already be a complete cloud-shape payload —
         the wire API is full-replace, not a merge patch, so the caller
-        (:meth:`XBloomCoordinator.async_edit_cloud_recipe`) is responsible
+        (:meth:`XBloomCoordinator.async_export_recipe`) is responsible
         for filling in every unchanged field from the recipe's current
         state first (via :meth:`get_recipe`). Requires a prior successful
         login. Returns ``False`` on any failure — never raises.

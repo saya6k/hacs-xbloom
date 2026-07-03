@@ -16,13 +16,14 @@ from .const import (
 )
 from .coordinator import XBloomCoordinator
 from .llm_tools.cloud_recipe import (
-    XBloomCreateCloudRecipeTool,
-    XBloomDeleteCloudRecipeTool,
-    XBloomEditCloudRecipeTool,
     XBloomExportRecipeTool,
     XBloomImportCloudRecipeTool,
-    XBloomSearchCloudRecipesTool,
     XBloomSearchCollectiveRecipesTool,
+)
+from .llm_tools.local_recipe import (
+    XBloomCreateRecipeTool,
+    XBloomDeleteRecipeTool,
+    XBloomEditRecipeTool,
 )
 from .llm_tools.pour import XBloomPourTool
 from .llm_tools.recipe import (
@@ -61,17 +62,16 @@ class XBloomCoffeeAPI(llm.API):
             XBloomStatusTool(self.coordinator, self.hass),
             XBloomListRecipesTool(self.coordinator, self.hass),
             XBloomGetRecipeTool(self.coordinator, self.hass),
+            XBloomCreateRecipeTool(self.coordinator, self.hass),
+            XBloomEditRecipeTool(self.coordinator, self.hass),
+            XBloomDeleteRecipeTool(self.coordinator, self.hass),
             XBloomPourTool(self.coordinator, self.hass),
             XBloomExecuteRecipeTool(self.coordinator, self.hass),
             XBloomWriteEasySlotTool(self.coordinator, self.hass),
             XBloomTareScaleTool(self.coordinator, self.hass),
             XBloomImportCloudRecipeTool(self.coordinator, self.hass),
-            XBloomSearchCloudRecipesTool(self.coordinator, self.hass),
             XBloomSearchCollectiveRecipesTool(self.coordinator, self.hass),
-            XBloomCreateCloudRecipeTool(self.coordinator, self.hass),
             XBloomExportRecipeTool(self.coordinator, self.hass),
-            XBloomEditCloudRecipeTool(self.coordinator, self.hass),
-            XBloomDeleteCloudRecipeTool(self.coordinator, self.hass),
         ]
         return llm.APIInstance(
             api=self,

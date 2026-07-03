@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
 from ..coordinator import POUR_PATTERN_OPTIONS, WATER_SOURCE_TANK
-from ..schema import compute_total_water_ml
+from ..schema import compute_total_water_ml, find_recipe
 from .base import XBloomBaseTool
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,13 +25,42 @@ _PATTERN_INT_TO_NAME = {v: k for k, v in POUR_PATTERN_OPTIONS.items()}
 def _summarize_recipe(raw: dict) -> dict:
     """Pull the user-facing fields out of a raw YAML recipe dict."""
     pours = raw.get("pours") or []
-    return {
+    summary = {
+        "uid": raw.get("uid"),
         "name": raw.get("name"),
+        "source": raw.get("source"),
         "cup_type": raw.get("cup_type", "omni_dripper"),
         "dose_g": raw.get("dose_g"),
         "grind_size": raw.get("grind_size"),
         "total_water_ml": compute_total_water_ml(raw),
         "pour_count": len(pours),
+    }
+    if raw.get("cloud_table_id") is not None:
+        summary["cloud_table_id"] = raw["cloud_table_id"]
+    if raw.get("share_url"):
+        summary["share_url"] = raw["share_url"]
+    return summary
+
+
+_RECIPE_ID_DESCRIPTION = (
+    "Which recipe — its local uid, cloud table id, share URL/id, or exact "
+    "name (from list_xbloom_recipes)."
+)
+
+
+def _resolve_or_error(coordinator, identifier: str):
+    """find_recipe + the shared not-found tool response."""
+    resolved = find_recipe(coordinator.recipes or {}, identifier)
+    if resolved is not None:
+        return resolved, None
+    return None, {
+        "success": False,
+        "error": "recipe_not_found",
+        "available_recipes": list((coordinator.recipes or {}).keys()),
+        "instruction": (
+            "Tell the user that recipe was not found and list the "
+            "available recipes so they can pick one."
+        ),
     }
 
 
@@ -75,7 +104,7 @@ class XBloomGetRecipeTool(XBloomBaseTool):
 
     name = "get_xbloom_recipe"
     description = (
-        "Get the full configuration of one saved XBloom recipe by name: "
+        "Get the full configuration of one saved XBloom recipe: "
         "grind size, RPM, bean weight, total water, and every pour's "
         "volume, temperature, flow rate, and pour pattern (with 0-based "
         "pour_index). Use this before execute_xbloom_recipe when the user "
@@ -85,10 +114,7 @@ class XBloomGetRecipeTool(XBloomBaseTool):
     )
     parameters = vol.Schema(
         {
-            vol.Required(
-                "recipe_name",
-                description="The exact name of the configured recipe.",
-            ): str,
+            vol.Required("recipe", description=_RECIPE_ID_DESCRIPTION): str,
         }
     )
 
@@ -98,21 +124,14 @@ class XBloomGetRecipeTool(XBloomBaseTool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> dict:
-        recipe_name = tool_input.tool_args["recipe_name"]
-        recipes = self.coordinator.recipes or {}
-        if recipe_name not in recipes:
-            return {
-                "success": False,
-                "error": "recipe_not_found",
-                "available_recipes": list(recipes.keys()),
-                "instruction": (
-                    "Tell the user that recipe was not found and list the "
-                    "available recipes so they can pick one."
-                ),
-            }
+        resolved, err = _resolve_or_error(
+            self.coordinator, tool_input.tool_args["recipe"]
+        )
+        if err:
+            return err
         return {
             "success": True,
-            "recipe": _detail_recipe(recipes[recipe_name]),
+            "recipe": _detail_recipe(resolved[1]),
             "instruction": (
                 "Use these values to decide any grind_size / rpm / "
                 "pour_overrides you pass to execute_xbloom_recipe. Only "
@@ -126,11 +145,22 @@ class XBloomListRecipesTool(XBloomBaseTool):
 
     name = "list_xbloom_recipes"
     description = (
-        "List the names of recipes configured for the XBloom in "
-        "configuration.yaml, along with a short summary of each "
-        "(cup type, bean weight, total water, number of pours)."
+        "List every local XBloom recipe (the source of truth — what the "
+        "Recipe dropdown shows), with a short summary of each: local uid, "
+        "cup type, bean weight, total water, number of pours, and any "
+        "cloud id / share URL if the recipe has been imported/exported."
     )
-    parameters = vol.Schema({})
+    parameters = vol.Schema(
+        {
+            vol.Optional(
+                "query",
+                description=(
+                    "Filter to recipes whose name contains this text "
+                    "(case-insensitive). Omit to list all."
+                ),
+            ): str,
+        }
+    )
 
     async def async_call(
         self,
@@ -139,16 +169,23 @@ class XBloomListRecipesTool(XBloomBaseTool):
         llm_context: llm.LLMContext,
     ) -> dict:
         recipes = self.coordinator.recipes or {}
-        if not recipes:
+        query = (tool_input.tool_args.get("query") or "").strip().lower()
+        rows = [
+            _summarize_recipe(r)
+            for name, r in recipes.items()
+            if not query or query in name.lower()
+        ]
+        if not rows:
             return {
                 "recipes": [],
                 "instruction": (
-                    "Tell the user no recipes are configured and they can add "
-                    "some under the xbloom section in configuration.yaml."
+                    "Tell the user no recipes matched. They can create one "
+                    "with create_xbloom_recipe or import one from a share "
+                    "link with import_xbloom_cloud_recipe."
                 ),
             }
         return {
-            "recipes": [_summarize_recipe(r) for r in recipes.values()],
+            "recipes": rows,
             "instruction": (
                 "Read out the recipe names. Mention details only if the user "
                 "asks for them."
@@ -161,7 +198,10 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
 
     name = "execute_xbloom_recipe"
     description = (
-        "Execute a saved XBloom recipe by name. SAFETY: before calling this "
+        "Execute a saved XBloom recipe. Any top-level scalar (grind_size, "
+        "rpm, dose_g, ratio, cup_type, bypass) can be overridden for this "
+        "brew only — the stored recipe is unchanged, and a dose/ratio "
+        "override rescales the pour volumes proportionally. SAFETY: before calling this "
         "tool you MUST ask the user to confirm: (1) that beans (or tea "
         "leaves, for tea recipes) have been added, (2) that the paper "
         "coffee filter has been installed (the machine cannot detect the "
@@ -178,10 +218,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
     )
     parameters = vol.Schema(
         {
-            vol.Required(
-                "recipe_name",
-                description="The exact name of the configured recipe to run.",
-            ): str,
+            vol.Required("recipe", description=_RECIPE_ID_DESCRIPTION): str,
             vol.Required(
                 "beans_confirmed",
                 description=(
@@ -231,6 +268,28 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 ),
             ): vol.All(int, vol.Range(min=60, max=120)),
             vol.Optional(
+                "dose_g",
+                description=(
+                    "Optional coffee-dose override in grams for this brew "
+                    "only. Pour volumes are rescaled so total water stays "
+                    "dose_g × ratio. Coffee recipes only."
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1, max=100)),
+            vol.Optional(
+                "ratio",
+                description=(
+                    "Optional water-ratio override (total water = dose_g × "
+                    "ratio) for this brew only. Pour volumes are rescaled "
+                    "to match. Coffee recipes only."
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
+            vol.Optional(
+                "cup_type",
+                description=(
+                    "Optional cup/brewer type override for this brew only."
+                ),
+            ): vol.In(["x_pod", "omni_dripper", "other", "tea"]),
+            vol.Optional(
                 "bypass_volume",
                 description=(
                     "Optional bypass water volume in ml (0-200) for this brew "
@@ -278,25 +337,16 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> dict:
-        recipe_name = tool_input.tool_args["recipe_name"]
         beans_confirmed = bool(tool_input.tool_args["beans_confirmed"])
         filter_confirmed = bool(tool_input.tool_args["filter_confirmed"])
         cup_confirmed = bool(tool_input.tool_args["cup_confirmed"])
 
-        recipes = self.coordinator.recipes or {}
-        if recipe_name not in recipes:
-            available = list(recipes.keys())
-            return {
-                "success": False,
-                "error": "recipe_not_found",
-                "available_recipes": available,
-                "instruction": (
-                    "Tell the user that recipe was not found. If there are "
-                    "available recipes, mention them so the user can pick one."
-                ),
-            }
-
-        recipe = recipes[recipe_name]
+        resolved, err = _resolve_or_error(
+            self.coordinator, tool_input.tool_args["recipe"]
+        )
+        if err:
+            return err
+        recipe_name, recipe = resolved
         cup_type = (recipe.get("cup_type") or "omni_dripper").lower()
         is_tea = cup_type == "tea"
         ingredient = "tea leaves" if is_tea else "beans"
@@ -400,6 +450,11 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 bypass_volume = float(args["bypass_volume"])
             if "bypass_temperature" in args:
                 bypass_temperature = float(args["bypass_temperature"])
+        overrides = {
+            key: args[key]
+            for key in ("dose_g", "ratio", "cup_type")
+            if key in args
+        }
 
         pour_overrides = []
         for ov in args.get("pour_overrides") or []:
@@ -414,6 +469,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
 
         try:
             await self.coordinator.async_execute_recipe(
+                overrides=overrides or None,
                 pour_overrides=pour_overrides or None,
                 bypass_volume=bypass_volume,
                 bypass_temperature=bypass_temperature,

@@ -1,10 +1,12 @@
 execute_recipe:
   name: Execute recipe
   description: >-
-    Run a saved XBloom recipe, optionally overriding the grind size and/or
-    grinder RPM for this brew only (coffee grinding recipes only; ignored for
-    tea / no-grind recipes). Selecting a recipe also syncs the Grind Size and
-    Grinder RPM number entities to it.
+    Run a saved XBloom recipe, optionally overriding any top-level recipe
+    scalar (grind size, RPM, dose, ratio, cup type, bypass) for this brew
+    only — the stored recipe is unchanged. Overriding dose/ratio rescales
+    the pour volumes proportionally to match the new total water.
+    Selecting a recipe also syncs the Grind Size and Grinder RPM number
+    entities to it.
   fields:
     device_id:
       name: Machine
@@ -16,15 +18,54 @@ execute_recipe:
           filter:
             - integration: xbloom
           multiple: true
-    recipe_name:
-      name: Recipe name
+    recipe:
+      name: Recipe
       description: >-
-        Name of the saved recipe to run. Defaults to the currently selected
-        recipe if omitted.
+        Which recipe to run — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name. Defaults to the currently
+        selected recipe if omitted.
       required: false
       example: Morning V60
       selector:
         text:
+    dose_g:
+      name: Dose
+      description: >-
+        Override the coffee dose in grams for this brew only. Pour volumes
+        are rescaled to keep total water = dose × ratio.
+      required: false
+      example: 18
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 0.5
+          unit_of_measurement: g
+          mode: box
+    ratio:
+      name: Water ratio
+      description: >-
+        Override the water ratio (total water = dose × ratio) for this
+        brew only. Pour volumes are rescaled to match.
+      required: false
+      example: 16
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 0.5
+          mode: box
+    cup_type:
+      name: Cup type
+      description: Override the cup/brewer type for this brew only.
+      required: false
+      selector:
+        select:
+          options:
+            - x_pod
+            - omni_dripper
+            - other
+            - tea
     grind_size:
       name: Grind size
       description: >-
@@ -77,6 +118,47 @@ execute_recipe:
           unit_of_measurement: "°C"
           mode: slider
 
+write_recipe_to_easy_slot:
+  name: Write recipe to Easy Mode slot
+  description: >-
+    Store a recipe in one of the machine's three onboard Easy Mode slots
+    (A/B/C) so it can be run from the machine's physical buttons. This
+    does not brew anything; existing slot contents are overwritten. A
+    share URL that isn't local yet is imported first. The slot's text
+    entity updates to show the recipe name.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine to write the slot on. Defaults to the first
+        configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    slot:
+      name: Slot
+      description: Target Easy Mode slot.
+      required: true
+      selector:
+        select:
+          options:
+            - A
+            - B
+            - C
+    recipe:
+      name: Recipe
+      description: >-
+        Which recipe to store — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name. Defaults to the currently
+        selected recipe if omitted.
+      required: false
+      example: Morning V60
+      selector:
+        text:
+
 cloud_import_recipe:
   name: Import recipe from XBloom cloud
   description: >-
@@ -115,19 +197,50 @@ cloud_import_recipe:
       selector:
         text:
 
-cloud_search_recipes:
-  name: Search XBloom cloud recipes
+cloud_export_recipe:
+  name: Export recipe to XBloom cloud
   description: >-
-    List every recipe saved on the configured XBloom cloud account,
-    optionally filtered by name. Requires an XBloom account to be
-    configured for the machine (Settings → Devices & Services → XBloom →
-    Configure).
+    Export a local recipe to the configured XBloom cloud account. With an
+    account configured, the recipe is created on the account (or, if it
+    was exported before, the same cloud recipe is updated in place) and
+    the response includes its cloud id and share link. Without an
+    account, nothing is uploaded — the response contains only the recipe
+    definition.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to search.
-        Defaults to the first configured machine.
+        The XBloom machine whose recipe (and configured cloud account) to
+        export from. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    recipe:
+      name: Recipe
+      description: >-
+        Which recipe to export — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
+      required: true
+      example: Morning V60
+      selector:
+        text:
+
+list_recipes:
+  name: List recipes
+  description: >-
+    List every local recipe (the ones shown in the Recipe dropdown),
+    optionally filtered by name. Each result includes the recipe's local
+    uid and, if it has been imported from / exported to the XBloom cloud,
+    its cloud id and share URL.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose recipes to list. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
@@ -148,9 +261,10 @@ cloud_search_collective_recipes:
   name: Search XBloom collective recipes
   description: >-
     Search XBloom's public community recipe hub (collective.xbloom.com) —
-    recipes shared by xBloom and other users. Entirely separate from
-    cloud_search_recipes (which searches the user's own private cloud
-    account) — no XBloom account is required for this.
+    recipes shared by xBloom and other users. No XBloom account is
+    required. The category filters are multi-select; besides the listed
+    options you can type a raw code (or a display name) directly, which
+    also covers categories added upstream after this list was snapshotted.
   fields:
     device_id:
       name: Machine
@@ -192,49 +306,277 @@ cloud_search_collective_recipes:
     machine:
       name: Machine model
       description: >-
-        Comma-separated machine model(s) to filter by, e.g. "Studio,
-        Original".
+        Machine model(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_machine
+          options:
+            - "j15"
+            - "j20"
     cup_type:
       name: Cup type
       description: >-
-        Comma-separated cup/brewer type(s) to filter by, e.g. "xPod, Omni,
-        Other, Omni Brewer".
+        Cup/brewer type(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_cup_type
+          options:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
     origin:
       name: Origin
-      description: Comma-separated coffee origin(s), e.g. "Ethiopia, Colombia".
+      description: >-
+        Coffee origin(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_origin
+          options:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
+            - "6"
+            - "7"
+            - "8"
+            - "9"
+            - "10"
+            - "11"
+            - "12"
+            - "13"
+            - "14"
+            - "15"
+            - "16"
+            - "17"
+            - "18"
+            - "19"
+            - "20"
+            - "21"
+            - "183"
+            - "184"
+            - "185"
+            - "186"
+            - "187"
+            - "188"
+            - "189"
     varietal:
       name: Varietal
-      description: Comma-separated varietal(s), e.g. "Bourbon, Geisha".
+      description: >-
+        Varietal(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_varietal
+          options:
+            - "22"
+            - "23"
+            - "24"
+            - "25"
+            - "26"
+            - "27"
+            - "28"
+            - "29"
+            - "30"
+            - "31"
+            - "32"
+            - "33"
+            - "34"
+            - "35"
+            - "36"
+            - "37"
+            - "38"
+            - "39"
+            - "40"
+            - "153"
+            - "154"
+            - "155"
+            - "156"
+            - "157"
+            - "158"
+            - "159"
+            - "160"
+            - "161"
+            - "162"
+            - "163"
+            - "164"
+            - "165"
+            - "166"
+            - "167"
+            - "168"
+            - "169"
+            - "170"
+            - "171"
+            - "172"
+            - "173"
+            - "174"
+            - "175"
+            - "176"
+            - "177"
+            - "178"
+            - "179"
+            - "180"
+            - "181"
+            - "182"
     process:
       name: Process
-      description: Comma-separated process(es), e.g. "Washed, Natural, Honey".
+      description: >-
+        Process(es) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_process
+          options:
+            - "86"
+            - "87"
+            - "88"
+            - "89"
+            - "90"
+            - "91"
+            - "92"
+            - "93"
+            - "94"
     roast:
       name: Roast
-      description: Comma-separated roast level(s), e.g. "Light Roast, Dark Roast".
+      description: >-
+        Roast level(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_roast
+          options:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
     flavor:
       name: Flavor
-      description: Comma-separated flavor note(s), e.g. "Blueberry, Caramel".
+      description: >-
+        Flavor note(s) to filter by. Multi-select; a raw code or display name can also be
+        typed directly.
       required: false
       selector:
-        text:
+        select:
+          multiple: true
+          custom_value: true
+          translation_key: collective_flavor
+          options:
+            - "46"
+            - "47"
+            - "48"
+            - "49"
+            - "50"
+            - "51"
+            - "52"
+            - "53"
+            - "54"
+            - "55"
+            - "56"
+            - "57"
+            - "58"
+            - "59"
+            - "60"
+            - "61"
+            - "62"
+            - "63"
+            - "64"
+            - "65"
+            - "66"
+            - "67"
+            - "68"
+            - "69"
+            - "70"
+            - "71"
+            - "72"
+            - "73"
+            - "74"
+            - "75"
+            - "76"
+            - "77"
+            - "78"
+            - "79"
+            - "80"
+            - "81"
+            - "82"
+            - "83"
+            - "98"
+            - "99"
+            - "100"
+            - "101"
+            - "102"
+            - "103"
+            - "104"
+            - "105"
+            - "106"
+            - "107"
+            - "108"
+            - "109"
+            - "110"
+            - "111"
+            - "112"
+            - "113"
+            - "114"
+            - "115"
+            - "116"
+            - "117"
+            - "118"
+            - "119"
+            - "120"
+            - "121"
+            - "122"
+            - "123"
+            - "124"
+            - "125"
+            - "126"
+            - "127"
+            - "128"
+            - "129"
+            - "130"
+            - "131"
+            - "132"
+            - "133"
+            - "134"
+            - "135"
+            - "136"
+            - "137"
+            - "138"
+            - "139"
+            - "140"
+            - "141"
+            - "142"
+            - "143"
+            - "144"
+            - "145"
+            - "146"
+            - "147"
+            - "148"
+            - "149"
+            - "150"
+            - "151"
+            - "152"
     sort:
       name: Sort by
       description: date, likes, or downloads. Defaults to likes.
@@ -255,21 +597,19 @@ cloud_search_collective_recipes:
             - asc
             - desc
 
-cloud_create_recipe:
-  name: Create XBloom cloud recipe
+create_recipe:
+  name: Create recipe
   description: >-
-    Create a new recipe on the configured XBloom cloud account (visible in
-    the official app), either from an inline YAML recipe definition or by
-    pushing an existing local recipe by name. Provide recipe_yaml or
-    recipe_name, not both. Returns the new recipe's table ID and share
-    URL. Requires an XBloom account to be configured for the machine
-    (Settings → Devices & Services → XBloom → Configure).
+    Create a new local recipe from an inline YAML definition. It appears
+    in the Recipe dropdown immediately and gets a local uid (returned in
+    the response). To publish it to the XBloom cloud afterwards, call
+    cloud_export_recipe.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to create the
-        recipe on. Defaults to the first configured machine.
+        The XBloom machine to create the recipe on. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
@@ -281,93 +621,77 @@ cloud_create_recipe:
       description: >-
         The recipe definition in the same YAML format used by the local
         "Add a recipe" options-flow step (name, grind_size, rpm, dose_g,
-        ratio, cup_type, bypass_volume, bypass_temperature, pours). Provide
-        this or recipe_name, not both.
-      required: false
+        ratio, cup_type, bypass_volume, bypass_temperature, pours).
+      required: true
       selector:
         text:
           multiline: true
-    recipe_name:
-      name: Recipe name (push an existing local recipe)
-      description: >-
-        Name of an existing local (default, YAML, or UI-managed) recipe to
-        push to the cloud instead of defining one inline. Provide this or
-        recipe_yaml, not both.
-      required: false
-      example: Morning V60
-      selector:
-        text:
 
-cloud_edit_recipe:
-  name: Edit XBloom cloud recipe
+edit_recipe:
+  name: Edit recipe
   description: >-
-    Change one or more fields of an existing recipe on the configured
-    XBloom cloud account. Only the fields present in the YAML are changed
-    — every omitted field keeps its current value on the account (fetches
-    the current recipe first, then patches). Requires an XBloom account to
-    be configured for the machine (Settings → Devices & Services → XBloom
-    → Configure).
+    Change one or more fields of a local recipe. Only the fields present
+    in the YAML are changed — every omitted field keeps its current value.
+    Cloud recipes cannot be edited directly: pointing this at a share URL
+    that isn't local yet first imports a local copy (with its own uid) and
+    edits that, leaving only the edited local version.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to edit the
-        recipe on. Defaults to the first configured machine.
+        The XBloom machine whose recipe to edit. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
           filter:
             - integration: xbloom
           multiple: true
-    table_id:
-      name: Recipe table ID
+    recipe:
+      name: Recipe
       description: >-
-        The cloud recipe's table ID, from cloud_search_recipes or
-        cloud_create_recipe's response.
+        Which recipe to edit — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
       required: true
-      example: 12345
+      example: Morning V60
       selector:
-        number:
-          min: 1
-          mode: box
-    recipe_yaml:
+        text:
+    changes:
       name: Fields to change (YAML)
       description: >-
         A YAML mapping of only the fields to change, using the same field
         names as "Add a recipe" (e.g. just `name: New Name` to rename).
         Omitted fields are left unchanged.
       required: true
-      example: "name: New Name"
+      example: "grind_size: 55"
       selector:
         text:
           multiline: true
 
-cloud_delete_recipe:
-  name: Delete XBloom cloud recipe
+delete_recipe:
+  name: Delete recipe
   description: >-
-    Permanently delete a recipe from the configured XBloom cloud account.
-    This cannot be undone. Requires an XBloom account to be configured for
-    the machine (Settings → Devices & Services → XBloom → Configure).
+    Delete a local recipe. It disappears from the Recipe dropdown
+    immediately. A copy on the XBloom cloud account (if any) is NOT
+    touched — manage cloud copies from the official app.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to delete the
-        recipe from. Defaults to the first configured machine.
+        The XBloom machine whose recipe to delete. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
           filter:
             - integration: xbloom
           multiple: true
-    table_id:
-      name: Recipe table ID
+    recipe:
+      name: Recipe
       description: >-
-        The cloud recipe's table ID, from cloud_search_recipes or
-        cloud_create_recipe's response.
+        Which recipe to delete — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
       required: true
-      example: 12345
+      example: Morning V60
       selector:
-        number:
-          min: 1
-          mode: box
+        text:

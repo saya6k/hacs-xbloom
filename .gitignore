@@ -10,6 +10,7 @@
 !/custom_components/
 !/docs/
 !/scripts/
+!/tests/
 
 # Tracked top-level files
 !/.gitattributes
@@ -18,6 +19,8 @@
 !/LICENSE
 !/README.md
 !/hacs.json
+!/pyproject.toml
+!/requirements_test.txt
 !/zensical.en.toml
 !/zensical.ko.toml
 

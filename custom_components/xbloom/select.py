@@ -68,6 +68,10 @@ class XBloomRecipeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
             return None
         return {
             "recipe": {
+                "uid": recipe.get("uid"),
+                "source": recipe.get("source"),
+                "cloud_table_id": recipe.get("cloud_table_id"),
+                "share_url": recipe.get("share_url"),
                 "name": recipe.get("name"),
                 "cup_type": recipe.get("cup_type"),
                 "grind_size": recipe.get("grind_size"),

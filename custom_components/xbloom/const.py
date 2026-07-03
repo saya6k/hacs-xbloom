@@ -10,6 +10,17 @@ CONF_RECIPES = "recipes"
 CONF_WATER_SOURCE = "water_source"   # persisted in entry.options
 CONF_MODE = "mode"                   # persisted in entry.options
 
+# One-time recipe seed flags (entry.options). The local recipe store is the
+# source of truth; the cloud is only consulted once per install (and once
+# more when an account is added later) — see coordinator.async_seed_recipes.
+CONF_RECIPES_SEEDED = "recipes_seeded"
+CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
+
+# entry.options: what HA last wrote to each Easy Mode slot —
+# {"A": {"uid": ..., "name": ...}, ...}. The machine never reports slot
+# contents, so this record is the only source for the slot text entities.
+CONF_EASY_SLOTS = "easy_slots"
+
 # XBloom cloud account — both optional. Absent entirely (not just empty
 # strings) when the user skips the account step; cloud-backed services/LLM
 # tools must check for their absence and fail gracefully, never assume they
@@ -29,28 +40,40 @@ DATA_LLM_UNREGISTER = "llm_unregister"
 
 # Services
 SERVICE_EXECUTE_RECIPE = "execute_recipe"
-ATTR_RECIPE_NAME = "recipe_name"
 ATTR_GRIND_SIZE = "grind_size"
 ATTR_RPM = "rpm"
+ATTR_DOSE_G = "dose_g"
+ATTR_RATIO = "ratio"
 ATTR_BYPASS_VOLUME = "bypass_volume"
 ATTR_BYPASS_TEMPERATURE = "bypass_temperature"
 
-# Cloud recipe services (cloud_ prefix avoids colliding with the existing
-# local-recipe OptionsFlow steps of the same bare name — see tasks/plan.md D1).
+# Cross-identifier field shared by every recipe-addressing service: accepts
+# a local uid, a cloud table id, a share URL/id, or the exact recipe name
+# (resolution order in schema.find_recipe).
+ATTR_RECIPE = "recipe"
+
+# Local recipe store services — the local store (entry.options[CONF_RECIPES])
+# is the source of truth; these never touch the cloud.
+SERVICE_LIST_RECIPES = "list_recipes"
+ATTR_QUERY = "query"
+
+SERVICE_CREATE_RECIPE = "create_recipe"
+ATTR_RECIPE_YAML = "recipe_yaml"
+
+SERVICE_EDIT_RECIPE = "edit_recipe"
+ATTR_CHANGES = "changes"
+
+SERVICE_DELETE_RECIPE = "delete_recipe"
+
+SERVICE_WRITE_RECIPE_TO_EASY_SLOT = "write_recipe_to_easy_slot"
+ATTR_SLOT = "slot"
+
+# Cloud boundary services (cloud_ prefix = the network is involved).
 SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
 ATTR_SHARE_URL = "share_url"
 ATTR_RECIPE_ID = "recipe_id"
 
-SERVICE_CLOUD_SEARCH_RECIPES = "cloud_search_recipes"
-ATTR_QUERY = "query"
-
-SERVICE_CLOUD_CREATE_RECIPE = "cloud_create_recipe"
-ATTR_RECIPE_YAML = "recipe_yaml"
-
-SERVICE_CLOUD_EDIT_RECIPE = "cloud_edit_recipe"
-ATTR_TABLE_ID = "table_id"
-
-SERVICE_CLOUD_DELETE_RECIPE = "cloud_delete_recipe"
+SERVICE_CLOUD_EXPORT_RECIPE = "cloud_export_recipe"
 
 # Public collective.xbloom.com community recipe hub search — a separate,
 # unauthenticated API from the rest of the cloud_* services above (which all
@@ -78,16 +101,35 @@ XBLOOM_LLM_PROMPT = (
     "You can control the XBloom Studio coffee machine. "
     "Use get_xbloom_status to check connection state, current temperature, "
     "weight, and brew state. "
-    "Use list_xbloom_recipes to see configured recipes. "
-    "Use get_xbloom_recipe to read one recipe's full detail (grind, RPM, and "
-    "each pour's volume / flow rate / pattern) before tweaking it. "
+    "LOCAL RECIPES are the source of truth — what the Recipe dropdown "
+    "shows and what you brew from. Use list_xbloom_recipes to see them "
+    "(optionally filtered by a name query). Use get_xbloom_recipe to read "
+    "one recipe's full detail (grind, RPM, and each pour's volume / flow "
+    "rate / pattern) before tweaking it. Every tool that takes a `recipe` "
+    "argument accepts the recipe's local uid, cloud table id, share "
+    "URL/id, or exact name — prefer the uid from list_xbloom_recipes when "
+    "you have it. "
+    "Use create_xbloom_recipe to build a new local recipe from scratch, "
+    "edit_xbloom_recipe to change fields of an existing one (pass only "
+    "the fields to change; a full pours list replaces the pours), and "
+    "delete_xbloom_recipe to remove one locally (a cloud copy, if any, "
+    "is untouched). Deleting is destructive — you MUST ask the user to "
+    "confirm which recipe before passing confirmed=true. "
     "Use pour_xbloom to start a manual pour with a specific temperature (°C) "
-    "and volume (ml). "
-    "Use execute_xbloom_recipe to run a saved recipe by name. To run it with "
+    "and volume (ml). Use tare_xbloom_scale to zero the scale. "
+    "Use execute_xbloom_recipe to run a saved recipe. To run it with "
     "adjustments for this brew only, pass grind_size and/or rpm (coffee "
-    "recipes only), and/or pour_overrides (per-pour volume / flow_rate / "
-    "pattern keyed by 0-based pour_index from get_xbloom_recipe). Only "
-    "override what the user asked to change. "
+    "recipes only), dose_g and/or ratio (pour volumes rescale so total "
+    "water stays dose × ratio), cup_type, and/or pour_overrides (per-pour "
+    "volume / flow_rate / pattern keyed by 0-based pour_index from "
+    "get_xbloom_recipe). Overrides never change the stored recipe — use "
+    "edit_xbloom_recipe for permanent changes. Only override what the "
+    "user asked to change. "
+    "Use write_xbloom_easy_slot to store a recipe on one of the machine's "
+    "three onboard Easy Mode slots (A/B/C) so the user can run it from "
+    "the device without Home Assistant — it does not brew anything. A "
+    "share URL that isn't a local recipe yet is imported automatically "
+    "first. "
     "All tools automatically connect over Bluetooth if the machine is not "
     "currently connected — you do not need a separate connect step. Only "
     "tell the user about the connection if a connect attempt fails. "
@@ -109,28 +151,21 @@ XBLOOM_LLM_PROMPT = (
     "or wants advice on tuning a recipe, pick a value inside the matching "
     "range (start mid-range and adjust finer for slower extraction or "
     "coarser for faster). Tea recipes do not grind, so grind_size is ignored. "
-    "Use import_xbloom_cloud_recipe to import a recipe from an XBloom cloud "
-    "share URL or id (e.g. from the official app's Share button) — no "
-    "XBloom account is needed for this. It saves the recipe locally so it "
-    "then shows up in list_xbloom_recipes / execute_xbloom_recipe. "
-    "CLOUD vs LOCAL recipes: local tools (list/get/execute_xbloom_recipe) "
-    "manage recipes stored on this machine and are what you use to brew. "
-    "The cloud tools (search/create/export/edit/delete_xbloom_cloud_recipe) "
-    "manage recipes on the user's XBloom cloud account, visible in the "
-    "official app — use them only when the user explicitly wants to "
-    "browse, save, share, or clean up their cloud account, not for "
-    "brewing. All cloud tools except import require an XBloom account to "
-    "be configured for the machine; if one isn't, they return a "
-    "cloud_not_configured error — tell the user to add an account under "
-    "Settings > Devices & Services > XBloom > Configure. "
-    "delete_xbloom_cloud_recipe is destructive and permanent — like "
-    "execute_xbloom_recipe's beans/filter checks, you MUST ask the user "
-    "to explicitly confirm which recipe before passing confirmed=true. "
-    "search_xbloom_collective_recipes is a THIRD, separate recipe source: "
-    "XBloom's public community recipe hub (collective.xbloom.com), browsable "
-    "by anyone with no XBloom account. Use it when the user wants to "
-    "discover new recipes shared by XBloom or other users (by keyword, "
-    "coffee/tea category, origin, roast, flavor notes, etc.) rather than "
-    "manage their own saved recipes. Results include a share_url — pass "
-    "that straight to import_xbloom_cloud_recipe to save one locally."
+    "CLOUD BOUNDARY: use import_xbloom_cloud_recipe to save a recipe from "
+    "an XBloom share URL or id (e.g. from the official app's Share button, "
+    "or a collective.xbloom.com/recipe link) as a local recipe — no XBloom "
+    "account is needed. Use export_xbloom_recipe to push a local recipe to "
+    "the user's XBloom cloud account (visible in the official app) and get "
+    "a share link; re-exporting updates the same cloud recipe in place. "
+    "Without a configured account nothing is uploaded and no link is "
+    "returned — tell the user they can add one under Settings > Devices & "
+    "Services > XBloom > Configure. Cloud recipes cannot be deleted from "
+    "here — that's done in the official app. "
+    "search_xbloom_collective_recipes browses XBloom's public community "
+    "recipe hub (collective.xbloom.com) — no account needed. Use it when "
+    "the user wants to discover new recipes shared by XBloom or other "
+    "users (by keyword, coffee/tea category, origin, roast, flavor notes, "
+    "etc.) rather than manage their own saved recipes. Results include a "
+    "share_url — pass that to import_xbloom_cloud_recipe to save one "
+    "locally."
 )

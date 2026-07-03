@@ -61,8 +61,9 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # Bumped 1 -> 2: recipe schema field rename (bean_weight/total_water ->
     # dose_g/ratio, pour volume/temperature/pausing -> volume_ml/
-    # temperature_c/pause_seconds). See __init__.async_migrate_entry.
-    VERSION = 2
+    # temperature_c/pause_seconds). Bumped 2 -> 3: stored recipes gained
+    # local-store metadata (uid/source). See __init__.async_migrate_entry.
+    VERSION = 3
 
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []
@@ -217,29 +218,14 @@ def _options_recipes(entry: config_entries.ConfigEntry) -> dict[str, dict]:
     return {k: v for k, v in raw.items() if v is not None}
 
 
-def _synced_recipes(entry: config_entries.ConfigEntry, hass) -> dict[str, dict]:
-    """The current cloud-synced recipe layer — the account's own cloud
-    recipes, XBloom's official public recipes, or the bundled fallback,
-    whichever ``coordinator.async_sync_cloud_recipes()`` last populated
-    (see coordinator.py). Falls back to the static bundled
-    ``default_recipes.py`` list directly if the coordinator isn't set up
-    yet — shouldn't normally happen for an already-configured entry's
-    OptionsFlow, but defensive.
-    """
-    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(DATA_COORDINATOR)
-    if coordinator is not None:
-        return dict(coordinator.cloud_synced_recipes or {})
-    return dict(hass.data.get(DOMAIN, {}).get("default_recipes", {}))
-
-
 def _all_visible_recipes(entry: config_entries.ConfigEntry, hass) -> dict[str, dict]:
-    """Merge cloud-synced + YAML + options recipes, respecting tombstones.
+    """Merge YAML + options recipes, respecting tombstones.
 
     A ``None`` value in options is a tombstone that hides a same-named
-    recipe from a lower layer (cloud-synced or YAML).
+    recipe from the YAML layer. Mirrors ``coordinator._rebuild_recipes``
+    — if the merge logic changes in one place, check the other.
     """
     merged: dict[str, dict] = {}
-    merged.update(_synced_recipes(entry, hass))
     merged.update(hass.data.get(DOMAIN, {}).get("yaml_recipes", {}))
     options_raw = entry.options.get(CONF_RECIPES) or {}
     if isinstance(options_raw, dict):

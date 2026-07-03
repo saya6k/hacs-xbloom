@@ -42,7 +42,7 @@ ha_xbloom/
 
 - **The machine ignores every command until it receives the `8100` MTU handshake.** Per `src/xbloom-ble/PROTOCOL.md`, writes succeed at the BLE level but produce no display wake, no LED indicator, and no `RD_MachineInfo` (40521) until the handshake — `build_packet_type1(8100, [185, 1])` — has been sent. The vendored `XBloomClient.connect` / `_reset_state` send `APP_RECIPE_STOP`/`BREWER_QUIT`/`GRINDER_QUIT` but **never** the handshake, so on strict firmwares MachineInfo never fires and the cleanup commands are silently dropped. `_client.XBloomClientWithEvents._reset_state` overrides the upstream to send `8100` first, and `coordinator._machine_info_retry_loop` re-sends the handshake (not `APP_RECIPE_STOP`) when MachineInfo hasn't arrived. Use `client.async_send_handshake()` if you need to retrigger it from elsewhere.
 - **`RD_MachineInfo` (cmd 40521) may still arrive late or not at all on some firmwares.** The retry loop in `coordinator.py:_machine_info_retry_loop` and the manual-signature scanner in `_client.py:_scan_for_machine_info` handle the common cases, plus a GATT 180A read fallback. If all three fail, the Model / Serial / Firmware sensors will stay `unknown`. `_status.water_level_ok` (set only inside the `RD_MachineInfo` handler at `src/xbloom/core/client.py:272`) likewise stays `False` — `coordinator._async_update_data` therefore *cannot* trust the raw flag at idle. It uses `serial_number` non-empty as a proxy for "MachineInfo has been seen"; otherwise it derives water-shortage state from the `water_shortage` error event stream.
-- **Tea recipes use the dedicated `4513`/`4512` path — NOT `8004`.** A PacketLogger HCI capture of the official iOS app (2026-05-28, all packets CRC-verified) shows tea brews go `8104` (set_cup, `(200, 80)`) → `4513` (`APP_TEA_RECIP_CODE`) → `4512` (`APP_TEA_RECIP_MAKE`). The earlier claim here that the app used the no-grind `8004` path was inferred from upstreams, never measured, and is **wrong** — `8004` with tea cup bounds was tested locally and the firmware did NOT enter tea mode (no tea UI, no siphon). `4513`/`4512` is the only known tea-mode trigger. The tea sequence lives in `brewing.py` (`_async_brew_tea`); do not patch the vendored library. Caveat: ha-xbloom's `4513` payload still differs from the official one (pattern/timing/footer bytes), so multi-steep recipes currently flatten into one pour — see `docs/en/brewing-notes.md`.
+- **Tea recipes use the dedicated `4513`/`4512` path — NOT `8004`.** A PacketLogger HCI capture of the official iOS app (2026-05-28, CRC-verified) confirmed `8104` (set_cup) → `4513` (`APP_TEA_RECIP_CODE`) → `4512` (`APP_TEA_RECIP_MAKE`); `8004` with tea cup bounds was tested locally and the firmware did NOT enter tea mode (no tea UI, no siphon). Lives in `brewing.py` (`_async_brew_tea`/`_build_tea_payload`); do not patch the vendored library. Multi-steep separation, real soak, and tea→coffee grinding were all fixed 2026-05-29 (pattern=1 substep byte + siphon-cap top-up trick + dropping a QUIT prelude that was killing the grinder) — see `docs/en/brewing-notes.md` for the byte-level history.
 - **MachineInfo string fields are 0xFF-padded, not NUL-padded.** The `theModel` slice of the `RD_MachineInfo` (40521) payload is filled with `0xFF` on machines that don't populate it. A naive `decode('utf-8', errors='ignore')` lets some `0xFF` runs through whenever they form valid UTF-8 sequences with neighboring bytes — produces garbage in the Model sensor. Always run MachineInfo / GATT 180A bytes through `_client.strict_ascii()` (printable 0x20–0x7E only), cherry-picked from `src/xbloom-ble/python/xbloom.py:_handshake_notify._hex_ascii`.
 - **Easy Mode slot writes (cmd 11510) are type-2 packets** — the type byte at packet offset 2 is `0x02`, not the usual `0x01`. Use `client._send_command_raw(11510, payload, type_code=2)`. Payload prefix is `[slot_index][flags]` followed by the same recipe blob `build_recipe_payload` produces for 8001/8004 brews.
 - **Tea steeps end on `RD_TEA_RECIP_PAUSE` (40515) → "paused"** or `RD_ENJOY` (40512) → "recipe_complete". The firmware fires these between steeps inside one `8004` recipe — entities can listen via the event bus rather than orchestrating per-steep.
@@ -56,11 +56,12 @@ Helpful constants live in `src/xbloom/protocol/constants.py`; the most thoroughl
 ## XBloom cloud API
 
 `_cloud_client.py` (HA-side, no vendored library — this API has no upstream) talks to
-`https://client-api.xbloom.com` for optional cloud-account recipe management
-(`cloud_search_recipes` / `cloud_create_recipe` / `cloud_edit_recipe` /
-`cloud_delete_recipe` / `cloud_import_recipe` services, wired through
-`coordinator.async_*_cloud_recipe` / `async_import_cloud_recipe`). Entirely separate
-from the BLE protocol above — this is plain HTTPS, reverse-engineered from
+`https://client-api.xbloom.com` for optional cloud-account recipe management —
+`cloud_import_recipe` / `cloud_export_recipe` services, wired through
+`coordinator.async_import_cloud_recipe` / `async_export_recipe` (plus the one-time
+account seed, `async_seed_recipes`; see the Recipe store architecture section
+below). Entirely separate from the BLE protocol above — this is plain HTTPS,
+reverse-engineered from
 [`denull0/xbloom-agent`](https://github.com/denull0/xbloom-agent)'s `index.ts` and
 live-verified against a real account (2026-07-03). Login is optional; without
 `CONF_EMAIL`/`CONF_PASSWORD` (set via the config-flow account step) the integration
@@ -74,14 +75,13 @@ recipe first and overlay), `tuRecipeDelete.tuhtml` (delete). Every authenticated
 after login is whole-payload RSA-encrypted (`_rsa_encrypt`/`_post_encrypted`); only
 login and the public share fetch are plaintext.
 
-**`adaptedModel: 1` (Studio) is hardcoded** in both `list_recipes()`'s
+**`adaptedModel: 1` (Studio) is hardcoded** in `list_recipes()`'s
 `tuMyTeaRecipeCreated.tuhtml` payload and `create_recipe()`'s
 `_CREATE_STATIC_FIELDS` — copied from the reference implementation, never
-parameterized. This integration only supports XBloom Studio at all (BLE-only;
-see the top-level "XBloom Original is not supported" limitation), so this
-hasn't been an issue in practice, but it means the private-account cloud
-sync/create path is unverified for whatever `adaptedModel` value Original
-uses — nobody with an Original + cloud account has tested it.
+parameterized. Since this integration only supports Studio (see the
+Original limitation above), this hasn't mattered in practice, but the
+account recipe seed and `cloud_export_recipe` are both unverified for
+whatever `adaptedModel` value Original uses.
 
 **Four wire-API requirements that aren't obvious from the reference source and were
 only found by live-testing against a real account** — get any of these wrong and the
@@ -95,9 +95,8 @@ error code:
    dosed (coffee-style, bypass-off) recipes — `validate_pour_volume_consistency()`
    checks this client-side before any network call. **Bypass-ON payload
    requirements are still unconfirmed live** — no currently-live example recipe has
-   bypass enabled, so flag this before recommending `cloud_create_recipe`/
-   `cloud_edit_recipe` (via `recipe_name`) for a local recipe with nonzero
-   `bypass_volume`.
+   bypass enabled, so `cloud_export_recipe` proceeds but attaches a `warning`
+   for any recipe with nonzero `bypass_volume`.
 3. **`share_url` is server-assigned, not derivable client-side.** The reference
    implementation's own `btoa(String(tableId))` guess is wrong — decoding a real
    `shareRecipeLink` shows 16 bytes of opaque binary, not the table id's ASCII
@@ -117,82 +116,84 @@ copied directly. Local `vibration` (single enum `none/before/after/both`) maps t
 cloud's two independent booleans `isEnableVibrationBefore`/`After` via
 `_local_vibration_to_cloud`/`_cloud_vibration_to_local`.
 
-**A second, unrelated public frontend/API exists: `collective.xbloom.com` /
-`collective-api.xbloom.com`** (a "Coffee Recipe Hub" community site, discovered
-2026-07-03 by reading its React bundle — not documented anywhere, no relation to
-`denull0/xbloom-agent`). A `collective.xbloom.com/recipe/{id}` link is a *different*
-identifier space than the `share-h5.xbloom.com` share id (`<id>` here is the plain
-numeric `communityRecipeId`, not the opaque base64 share id — `client-api.xbloom.com`'s
-`RecipeDetail.html` rejects it directly). Live-verified: `POST
-https://collective-api.xbloom.com/communityRecipe/recipe/detail {"id": <int>, "type":
-1}` (no auth) returns `{"code": 200, "data": {..., "shareRecipeLink":
-"https://share-h5.xbloom.com/?id=..."}}` — same recipe, cross-confirmed by fetching
-both URLs for community recipe 317445 and diffing the translated result (identical).
-`_cloud_client.fetch_shared_recipe()` detects a `collective.xbloom.com/recipe/{id}`
-URL, resolves it to its `shareRecipeLink` via this second API, then hands off to the
-normal `RecipeDetail.html` path rather than writing a second translation function —
-the collective-api response shape differs subtly (`cupType` comes back as a string
-there, e.g. `"Omni"`, plus a separate `cupTypeInt`, instead of the int
-`RecipeDetail.html`/`cloud_recipe_to_local` expect).
+**A second, unrelated public API exists: `collective.xbloom.com` /
+`collective-api.xbloom.com`** (a "Coffee Recipe Hub" community site, found
+2026-07-03 by reading its React bundle — undocumented, unrelated to
+`denull0/xbloom-agent`). Its `collective.xbloom.com/recipe/{id}` uses a
+*different* identifier space than `share-h5.xbloom.com` — `<id>` is the
+plain numeric `communityRecipeId`, not the opaque share id, and
+`RecipeDetail.html` rejects it directly. `POST
+collective-api.xbloom.com/communityRecipe/recipe/detail {"id", "type": 1}`
+(no auth) returns the same recipe's `shareRecipeLink`, cross-confirmed
+against `RecipeDetail.html`. `_cloud_client.fetch_shared_recipe()` resolves
+a collective link to its `shareRecipeLink` via this API, then hands off to
+the normal `RecipeDetail.html` path — the collective response shape
+differs subtly (`cupType` is a string there, e.g. `"Omni"`, plus a
+separate `cupTypeInt`), so it isn't reused directly.
 
-**The same collective-api.xbloom.com backend also powers the hub's search
-(`cloud_search_collective_recipes` service / `search_xbloom_collective_recipes`
-LLM tool)** — live-verified 2026-07-03, wired through
-`XBloomCloudClient.search_collective_recipes()`. `POST
-communityRecipe/index/page` takes `pageIndex`/`pageSize`/`keyword`/`recipeType`
-(1=coffee,2=tea)/`recipeUserType` (1=official,2=user)/`sort`
-(1=date,2=likes,3=downloads)/`sortType` (1=asc,2=desc)/`originIds`/`varietalIds`/
-`processIds`/`roastList`/`flavorIds`/`machineList`/`cupTypeList` — the last seven
-are lists of numeric-or-string **ids**, not names. Those ids come from `POST
-communityRecipe/recipe/criteria` (no auth, cached per `XBloomCloudClient`
-instance in `_collective_criteria`), which returns `{originList, varietalList,
-processingList (not "processList"), roastList, flavorList, machineList,
-cupTypeList}`, each a `[{"name": ..., "value": ...}]` list. Rather than
-hardcoding ~28 origins / ~49 varietals / ~93 flavors as static enums,
-`search_collective_recipes()` resolves caller-supplied free-text names against
-this live table case-insensitively (`_resolve_criteria_values`) and reports any
-that don't match back in an `unmatched` dict instead of silently dropping them.
-Each result row's `roast` field comes back as a numeric id (unlike
-origin/varietal/process/flavor, which are already human-readable strings) —
-`_collective_result_to_summary()` reverse-maps it through the same
-`roastList` fetched for the request.
+**The same backend powers the hub's search**
+(`cloud_search_collective_recipes` service /
+`search_xbloom_collective_recipes` LLM tool, `XBloomCloudClient.search_collective_recipes()`).
+`POST communityRecipe/index/page` takes `pageIndex`/`pageSize`/`keyword`/
+`recipeType` (1=coffee,2=tea)/`recipeUserType` (1=official,2=user)/`sort`/
+`sortType`/`originIds`/`varietalIds`/`processIds`/`roastList`/`flavorIds`/
+`machineList`/`cupTypeList` — the last seven are id lists, not names. The
+ids come from `POST communityRecipe/recipe/criteria` (no auth, cached per
+client in `_collective_criteria`): `{originList, varietalList,
+processingList, roastList, flavorList, machineList, cupTypeList}`, each
+`[{"name", "value"}]`. `_resolve_criteria_values` matches a raw **code**
+first (exact `value` — what the services.yaml multi-select submits, and
+the escape hatch for categories our snapshot doesn't know yet), then a
+case-insensitive **name**; unmatched entries are reported back in an
+`unmatched` dict rather than dropped. Values aren't hardcoded as static
+enums — the live criteria table is always the source of truth, and
+services.yaml/strings.json only hold a UI-convenience snapshot. Each
+result row's `roast` comes back as a numeric id (unlike
+origin/varietal/process/flavor) — `_collective_result_to_summary()`
+reverse-maps it through the same `roastList`.
 
-## Recipe sync architecture
+## Recipe store architecture (local source of truth)
 
-`default_recipes.py`'s bundled `DEFAULT_RECIPES` is **not** an always-active
-recipe layer anymore — it's now only a network-failure fallback. The lowest
-recipe-precedence layer is `coordinator.cloud_synced_recipes`, populated by
-`coordinator.async_sync_cloud_recipes()`: the account's own private cloud
-recipes (`cloud_client.list_recipes()`, already includes full `pourList`) if
-a cloud account is configured and login succeeds, otherwise XBloom's official
-public recipes from the collective hub (`cloud_client.fetch_official_recipes()`
-— capped at `_OFFICIAL_RECIPE_SYNC_LIMIT` since each one needs its own
-`fetch_shared_recipe()` round-trip, unlike the account list). Only if *both*
-of those fail (e.g. no network at all) does it fall back to the bundled
-`default_recipes.py` list.
+> Replaces an earlier always-on cloud sync layer (`cloud_synced_recipes` /
+> hourly interval); see `SPEC.md` + `tasks/plan.md` for the rework, and
+> `tasks/archive/2026-06-cloud-recipes-{plan,todo}.md` for what preceded it.
 
-`__init__.py`'s `async_setup_entry` seeds `cloud_synced_recipes` synchronously
-with the bundled list (no network call) so `coordinator.recipes` is never
-empty, then kicks off the real sync via `hass.async_create_task(...)` —
-**not** awaited inline — so a slow/unreachable cloud API can't stall
-integration setup (fetching `_OFFICIAL_RECIPE_SYNC_LIMIT` official recipes is
-one detail-fetch per recipe; awaiting that inline could push entry setup past
-HA's own timeout). It also registers `async_track_time_interval(...,
-CLOUD_RECIPE_SYNC_INTERVAL)` (hourly) so recipes added to the account (or new
-official recipes) eventually show up without a manual reload.
-`coordinator._rebuild_recipes()` recomputes `self.recipes` from
-`cloud_synced_recipes` < YAML < `entry.options[CONF_RECIPES]` (unchanged
-tombstone-by-`None` override semantics) and is called both at setup and at
-the end of every sync; `async_sync_cloud_recipes()` also calls
-`self.async_update_listeners()` so the recipe select entity and any other
-`CoordinatorEntity` pick up the change immediately.
+**`entry.options[CONF_RECIPES]`, keyed by name, is the single source of
+truth.** Each recipe dict carries optional metadata (`RECIPE_SCHEMA`):
+`uid` (`uuid4().hex[:12]`, assigned on create/import/seed; YAML recipes get
+a deterministic `"yaml-" + sha1(name)[:8]`), `cloud_table_id` + `share_url`
+(set on export/import), and `source` (`manual`/`import`/`seed_*`/`yaml`).
+Brewing ignores these fields. `schema.find_recipe(recipes, identifier)`
+resolves the cross-identifier every service/LLM tool takes — uid → cloud
+table id (int) → share URL/id → exact name, returning `(name, recipe)` —
+and `coordinator._looks_like_share_ref()` decides whether an unresolved
+identifier triggers auto-import (edit/write-slot do; execute doesn't).
 
-**`config_flow.py`'s `_all_visible_recipes()` duplicates this merge** (needed
-because the OptionsFlow doesn't have direct access to `coordinator.recipes`
-at the time it needs to know what's "visible" for Add/Edit/Delete) — it reads
-`coordinator.cloud_synced_recipes` via `_synced_recipes()`, not the static
-`hass.data[DOMAIN]["default_recipes"]` directly. If the merge logic changes
-in one place, check the other.
+**Seeding is one-time, not a sync.** `async_setup_entry` writes the
+bundled `default_recipes.py` set synchronously (only when the store is
+empty and `CONF_RECIPES_SEEDED` is unset, so the dropdown is never empty),
+then backgrounds `coordinator.async_seed_recipes()` via
+`hass.async_create_task(...)` so a slow cloud API can't stall setup. That
+task fetches the account's own recipes if a login is configured (flag
+`CONF_ACCOUNT_RECIPES_SEEDED` — linking an account later seeds once more)
+or XBloom's official public recipes otherwise (flag `CONF_RECIPES_SEEDED`,
+capped at `_OFFICIAL_RECIPE_SYNC_LIMIT`); names already present locally —
+tombstones and YAML names included — are skipped, and a failed fetch
+leaves its flag unset for the next HA start to retry.
+
+`coordinator._rebuild_recipes()` merges two layers only: YAML
+(`hass.data[DOMAIN]["yaml_recipes"]`) < the local store, where a `None`
+store value tombstones a YAML name. All CRUD (`create_local_recipe` /
+`async_edit_local_recipe` / `delete_local_recipe`, plus import/export)
+funnels through `_write_options_recipes()`, which persists, rebuilds, and
+calls `async_update_listeners()`. Name collisions get a ` (2)` suffix
+(`dedupe_name`), never an overwrite. Config entry **v3**
+(`async_migrate_entry`) injects `uid`/`source` into pre-existing recipes,
+preserving tombstones.
+
+`config_flow.py`'s `_all_visible_recipes()` duplicates this two-layer
+merge (the OptionsFlow needs it without going through the coordinator) —
+change both together.
 
 ## Entity translation flow
 
@@ -210,7 +211,10 @@ Use the devcontainer:
 scripts/develop          # boots HA on :8123 with this integration mounted
 ```
 
-There is no automated test suite yet. The integration is validated by:
+`pytest tests/` covers the pure-logic pieces (uid metadata, `find_recipe`
+resolution, pour scaling, v2→v3 migration, name dedupe, criteria matching,
+LLM-prompt/tool-name consistency) and runs without an HA instance. Everything
+BLE-facing is still validated manually:
 
 1. Starting the devcontainer.
 2. Adding the integration via Settings → Devices & Services with a real BLE MAC.
@@ -234,5 +238,5 @@ continuously as PRs merge to `main`.
 
 - Localization broken? Check (2) above before anything else.
 - Sensor stuck `unknown`? Check the firmware-quirks section.
-- Tea recipe doing nothing? It must go through `brewing.async_execute_recipe` (8022 → 8102 → 8104 → 8004 → 8002), not the firmware's `4512`/`4513` constants — see the firmware-quirks entry.
+- Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. See the firmware-quirks entry.
 - Adding a new entity? Update `strings.json` AND every file under `translations/`. Add an `icons.json` entry. Don't set `_attr_name` or `_attr_icon` on the class.
