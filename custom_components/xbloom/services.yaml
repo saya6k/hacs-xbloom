@@ -144,6 +144,117 @@ cloud_search_recipes:
       selector:
         text:
 
+cloud_search_collective_recipes:
+  name: Search XBloom collective recipes
+  description: >-
+    Search XBloom's public community recipe hub (collective.xbloom.com) —
+    recipes shared by xBloom and other users. Entirely separate from
+    cloud_search_recipes (which searches the user's own private cloud
+    account) — no XBloom account is required for this.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        Any configured XBloom machine (this search isn't tied to a specific
+        machine or account). Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    keyword:
+      name: Keyword
+      description: Free-text search across recipe names.
+      required: false
+      example: pour
+      selector:
+        text:
+    category:
+      name: Category
+      description: Filter by coffee or tea.
+      required: false
+      selector:
+        select:
+          options:
+            - coffee
+            - tea
+    src:
+      name: Source
+      description: >-
+        official (xBloom-published) or user (community-submitted) recipes.
+      required: false
+      selector:
+        select:
+          options:
+            - official
+            - user
+    machine:
+      name: Machine model
+      description: >-
+        Comma-separated machine model(s) to filter by, e.g. "Studio,
+        Original".
+      required: false
+      selector:
+        text:
+    cup_type:
+      name: Cup type
+      description: >-
+        Comma-separated cup/brewer type(s) to filter by, e.g. "xPod, Omni,
+        Other, Omni Brewer".
+      required: false
+      selector:
+        text:
+    origin:
+      name: Origin
+      description: Comma-separated coffee origin(s), e.g. "Ethiopia, Colombia".
+      required: false
+      selector:
+        text:
+    varietal:
+      name: Varietal
+      description: Comma-separated varietal(s), e.g. "Bourbon, Geisha".
+      required: false
+      selector:
+        text:
+    process:
+      name: Process
+      description: Comma-separated process(es), e.g. "Washed, Natural, Honey".
+      required: false
+      selector:
+        text:
+    roast:
+      name: Roast
+      description: Comma-separated roast level(s), e.g. "Light Roast, Dark Roast".
+      required: false
+      selector:
+        text:
+    flavor:
+      name: Flavor
+      description: Comma-separated flavor note(s), e.g. "Blueberry, Caramel".
+      required: false
+      selector:
+        text:
+    sort:
+      name: Sort by
+      description: date, likes, or downloads. Defaults to likes.
+      required: false
+      selector:
+        select:
+          options:
+            - date
+            - likes
+            - downloads
+    sort_direction:
+      name: Sort direction
+      description: asc or desc. Defaults to desc.
+      required: false
+      selector:
+        select:
+          options:
+            - asc
+            - desc
+
 cloud_create_recipe:
   name: Create XBloom cloud recipe
   description: >-

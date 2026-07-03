@@ -304,6 +304,60 @@
         }
       }
     },
+    "cloud_search_collective_recipes": {
+      "name": "Search XBloom collective recipes",
+      "description": "Search XBloom's public community recipe hub (collective.xbloom.com) — recipes shared by xBloom and other users. Separate from cloud_search_recipes (the user's own private cloud account) — no XBloom account required.",
+      "fields": {
+        "keyword": {
+          "name": "Keyword",
+          "description": "Free-text search across recipe names."
+        },
+        "category": {
+          "name": "Category",
+          "description": "Filter by coffee or tea."
+        },
+        "src": {
+          "name": "Source",
+          "description": "official (xBloom-published) or user (community-submitted) recipes."
+        },
+        "machine": {
+          "name": "Machine model",
+          "description": "Comma-separated machine model(s) to filter by, e.g. \"Studio, Original\"."
+        },
+        "cup_type": {
+          "name": "Cup type",
+          "description": "Comma-separated cup/brewer type(s) to filter by, e.g. \"xPod, Omni, Other, Omni Brewer\"."
+        },
+        "origin": {
+          "name": "Origin",
+          "description": "Comma-separated coffee origin(s), e.g. \"Ethiopia, Colombia\"."
+        },
+        "varietal": {
+          "name": "Varietal",
+          "description": "Comma-separated varietal(s), e.g. \"Bourbon, Geisha\"."
+        },
+        "process": {
+          "name": "Process",
+          "description": "Comma-separated process(es), e.g. \"Washed, Natural, Honey\"."
+        },
+        "roast": {
+          "name": "Roast",
+          "description": "Comma-separated roast level(s), e.g. \"Light Roast, Dark Roast\"."
+        },
+        "flavor": {
+          "name": "Flavor",
+          "description": "Comma-separated flavor note(s), e.g. \"Blueberry, Caramel\"."
+        },
+        "sort": {
+          "name": "Sort by",
+          "description": "date, likes, or downloads. Defaults to likes."
+        },
+        "sort_direction": {
+          "name": "Sort direction",
+          "description": "asc or desc. Defaults to desc."
+        }
+      }
+    },
     "cloud_create_recipe": {
       "name": "Create XBloom cloud recipe",
       "description": "Create a new recipe on the configured XBloom cloud account, either from an inline YAML recipe definition or by pushing an existing local recipe by name. Provide recipe_yaml or recipe_name, not both. Returns the new recipe's table ID and share URL.",

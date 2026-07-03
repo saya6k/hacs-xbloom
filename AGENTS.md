@@ -125,6 +125,28 @@ the collective-api response shape differs subtly (`cupType` comes back as a stri
 there, e.g. `"Omni"`, plus a separate `cupTypeInt`, instead of the int
 `RecipeDetail.html`/`cloud_recipe_to_local` expect).
 
+**The same collective-api.xbloom.com backend also powers the hub's search
+(`cloud_search_collective_recipes` service / `search_xbloom_collective_recipes`
+LLM tool)** — live-verified 2026-07-03, wired through
+`XBloomCloudClient.search_collective_recipes()`. `POST
+communityRecipe/index/page` takes `pageIndex`/`pageSize`/`keyword`/`recipeType`
+(1=coffee,2=tea)/`recipeUserType` (1=official,2=user)/`sort`
+(1=date,2=likes,3=downloads)/`sortType` (1=asc,2=desc)/`originIds`/`varietalIds`/
+`processIds`/`roastList`/`flavorIds`/`machineList`/`cupTypeList` — the last seven
+are lists of numeric-or-string **ids**, not names. Those ids come from `POST
+communityRecipe/recipe/criteria` (no auth, cached per `XBloomCloudClient`
+instance in `_collective_criteria`), which returns `{originList, varietalList,
+processingList (not "processList"), roastList, flavorList, machineList,
+cupTypeList}`, each a `[{"name": ..., "value": ...}]` list. Rather than
+hardcoding ~28 origins / ~49 varietals / ~93 flavors as static enums,
+`search_collective_recipes()` resolves caller-supplied free-text names against
+this live table case-insensitively (`_resolve_criteria_values`) and reports any
+that don't match back in an `unmatched` dict instead of silently dropping them.
+Each result row's `roast` field comes back as a numeric id (unlike
+origin/varietal/process/flavor, which are already human-readable strings) —
+`_collective_result_to_summary()` reverse-maps it through the same
+`roastList` fetched for the request.
+
 ## Entity translation flow
 
 `_attr_has_entity_name = True` + `_attr_translation_key = "<key>"` →

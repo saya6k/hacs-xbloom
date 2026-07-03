@@ -22,6 +22,7 @@ from .llm_tools.cloud_recipe import (
     XBloomExportRecipeTool,
     XBloomImportCloudRecipeTool,
     XBloomSearchCloudRecipesTool,
+    XBloomSearchCollectiveRecipesTool,
 )
 from .llm_tools.pour import XBloomPourTool
 from .llm_tools.recipe import (
@@ -66,6 +67,7 @@ class XBloomCoffeeAPI(llm.API):
             XBloomTareScaleTool(self.coordinator, self.hass),
             XBloomImportCloudRecipeTool(self.coordinator, self.hass),
             XBloomSearchCloudRecipesTool(self.coordinator, self.hass),
+            XBloomSearchCollectiveRecipesTool(self.coordinator, self.hass),
             XBloomCreateCloudRecipeTool(self.coordinator, self.hass),
             XBloomExportRecipeTool(self.coordinator, self.hass),
             XBloomEditCloudRecipeTool(self.coordinator, self.hass),

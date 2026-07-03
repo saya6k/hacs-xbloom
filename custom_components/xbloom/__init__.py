@@ -31,14 +31,26 @@ from homeassistant.helpers import device_registry as dr
 from .const import (
     ATTR_BYPASS_TEMPERATURE,
     ATTR_BYPASS_VOLUME,
+    ATTR_CATEGORY,
+    ATTR_CUP_TYPE,
+    ATTR_FLAVOR,
     ATTR_GRIND_SIZE,
+    ATTR_KEYWORD,
+    ATTR_MACHINE,
+    ATTR_ORIGIN,
+    ATTR_PROCESS,
     ATTR_QUERY,
     ATTR_RECIPE_ID,
     ATTR_RECIPE_NAME,
     ATTR_RECIPE_YAML,
+    ATTR_ROAST,
     ATTR_RPM,
     ATTR_SHARE_URL,
+    ATTR_SORT,
+    ATTR_SORT_DIRECTION,
+    ATTR_SRC,
     ATTR_TABLE_ID,
+    ATTR_VARIETAL,
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
     CONF_PASSWORD,
@@ -55,6 +67,7 @@ from .const import (
     SERVICE_CLOUD_DELETE_RECIPE,
     SERVICE_CLOUD_EDIT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
+    SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
     SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
 )
@@ -122,6 +135,38 @@ CLOUD_IMPORT_RECIPE_SCHEMA = vol.All(
 CLOUD_SEARCH_RECIPES_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_QUERY): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+
+def _csv_list(value):
+    """Accept either a list or a comma-separated string for the collective
+    search's free-text facet filters (machine/cup_type/origin/varietal/
+    process/roast/flavor) — services.yaml has no good selector for an
+    open-ended multi-value list, so the YAML/UI service form uses a plain
+    comma-separated text field; the LLM tool passes a real list directly."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+CLOUD_SEARCH_COLLECTIVE_RECIPES_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_KEYWORD): cv.string,
+        vol.Optional(ATTR_CATEGORY): vol.In(["coffee", "tea"]),
+        vol.Optional(ATTR_SRC): vol.In(["official", "user"]),
+        vol.Optional(ATTR_MACHINE): _csv_list,
+        vol.Optional(ATTR_CUP_TYPE): _csv_list,
+        vol.Optional(ATTR_ORIGIN): _csv_list,
+        vol.Optional(ATTR_VARIETAL): _csv_list,
+        vol.Optional(ATTR_PROCESS): _csv_list,
+        vol.Optional(ATTR_ROAST): _csv_list,
+        vol.Optional(ATTR_FLAVOR): _csv_list,
+        vol.Optional(ATTR_SORT, default="likes"): vol.In(["date", "likes", "downloads"]),
+        vol.Optional(ATTR_SORT_DIRECTION, default="desc"): vol.In(["asc", "desc"]),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -271,6 +316,46 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_SEARCH_RECIPES,
         _handle_cloud_search_recipes,
         schema=CLOUD_SEARCH_RECIPES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_search_collective_recipes(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        # Public, unauthenticated, and not tied to any one machine's cloud
+        # account — reuses the first targeted machine's coordinator purely
+        # for its HTTP session / cached criteria lookup, same device
+        # resolution convention as cloud_search_recipes.
+        result = await coordinators[0].async_search_collective_recipes(
+            keyword=call.data.get(ATTR_KEYWORD),
+            category=call.data.get(ATTR_CATEGORY),
+            src=call.data.get(ATTR_SRC),
+            machine=call.data.get(ATTR_MACHINE),
+            cup_type=call.data.get(ATTR_CUP_TYPE),
+            origin=call.data.get(ATTR_ORIGIN),
+            varietal=call.data.get(ATTR_VARIETAL),
+            process=call.data.get(ATTR_PROCESS),
+            roast=call.data.get(ATTR_ROAST),
+            flavor=call.data.get(ATTR_FLAVOR),
+            sort=call.data.get(ATTR_SORT, "likes"),
+            sort_direction=call.data.get(ATTR_SORT_DIRECTION, "desc"),
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_search_collective_recipes failed")
+            )
+        return {
+            "recipes": result["list"],
+            "total": result.get("total"),
+            "unmatched": result.get("unmatched"),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
+        _handle_cloud_search_collective_recipes,
+        schema=CLOUD_SEARCH_COLLECTIVE_RECIPES_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -571,6 +656,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_EXECUTE_RECIPE,
                 SERVICE_CLOUD_IMPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_RECIPES,
+                SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
                 SERVICE_CLOUD_CREATE_RECIPE,
                 SERVICE_CLOUD_EDIT_RECIPE,
                 SERVICE_CLOUD_DELETE_RECIPE,

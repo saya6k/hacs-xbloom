@@ -52,6 +52,24 @@ ATTR_TABLE_ID = "table_id"
 
 SERVICE_CLOUD_DELETE_RECIPE = "cloud_delete_recipe"
 
+# Public collective.xbloom.com community recipe hub search — a separate,
+# unauthenticated API from the rest of the cloud_* services above (which all
+# act on the user's own private cloud account). See _cloud_client.py's
+# COLLECTIVE_API_BASE module comment.
+SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES = "cloud_search_collective_recipes"
+ATTR_KEYWORD = "keyword"
+ATTR_CATEGORY = "category"
+ATTR_SRC = "src"
+ATTR_MACHINE = "machine"
+ATTR_CUP_TYPE = "cup_type"
+ATTR_ORIGIN = "origin"
+ATTR_VARIETAL = "varietal"
+ATTR_PROCESS = "process"
+ATTR_ROAST = "roast"
+ATTR_FLAVOR = "flavor"
+ATTR_SORT = "sort"
+ATTR_SORT_DIRECTION = "sort_direction"
+
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
 XBLOOM_LLM_API_NAME = "XBloom Coffee Machine"
@@ -107,5 +125,12 @@ XBLOOM_LLM_PROMPT = (
     "Settings > Devices & Services > XBloom > Configure. "
     "delete_xbloom_cloud_recipe is destructive and permanent — like "
     "execute_xbloom_recipe's beans/filter checks, you MUST ask the user "
-    "to explicitly confirm which recipe before passing confirmed=true."
+    "to explicitly confirm which recipe before passing confirmed=true. "
+    "search_xbloom_collective_recipes is a THIRD, separate recipe source: "
+    "XBloom's public community recipe hub (collective.xbloom.com), browsable "
+    "by anyone with no XBloom account. Use it when the user wants to "
+    "discover new recipes shared by XBloom or other users (by keyword, "
+    "coffee/tea category, origin, roast, flavor notes, etc.) rather than "
+    "manage their own saved recipes. Results include a share_url — pass "
+    "that straight to import_xbloom_cloud_recipe to save one locally."
 )

@@ -118,12 +118,14 @@ Devices & Services → XBloom → **Configure** → **Cloud account**. Signed in
 and have no XBloom password? Use XBloom's own "forgot password" flow (with the email
 Apple relays, visible in the app's account settings) to set one first.
 
-Six services are available once an account is configured (Developer Tools → Actions,
-or `xbloom.cloud_*`):
+Seven services are available (Developer Tools → Actions, or `xbloom.cloud_*`);
+`cloud_import_recipe` and `cloud_search_collective_recipes` work with no account
+configured at all, the rest need one:
 
 | Service | Does |
 | --- | --- |
-| `cloud_search_recipes` | List every recipe on the account, optionally filtered by name. |
+| `cloud_search_recipes` | List every recipe on **your own** cloud account, optionally filtered by name. |
+| `cloud_search_collective_recipes` | Search XBloom's **public** community recipe hub (collective.xbloom.com) — recipes shared by xBloom and other users. No account needed. Filter by keyword, coffee/tea, machine, official/user, cup type, origin, varietal, process, roast, flavor, and sort. |
 | `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/{id}` community-hub link, or a share id, and save it locally. No account needed — works even without the cloud account configured. |
 | `cloud_create_recipe` | Create a new cloud recipe, either from inline `recipe_yaml` or by pushing an existing local recipe by `recipe_name`. Returns the new `table_id` and `share_url`. |
 | `cloud_edit_recipe` | Change one or more fields of an existing cloud recipe by `table_id`; omitted fields are left unchanged. |
@@ -135,12 +137,12 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Through Assist (LLM), all six operations are exposed as tools:
+Through Assist (LLM), all seven operations are exposed as tools:
 `import_xbloom_cloud_recipe`, `search_xbloom_cloud_recipes`,
-`create_xbloom_cloud_recipe`, `export_xbloom_recipe_to_cloud`,
-`edit_xbloom_cloud_recipe`, and `delete_xbloom_cloud_recipe` (the last requires
-explicit confirmation before deleting, same as the brewing tool's beans/filter
-confirmation).
+`search_xbloom_collective_recipes`, `create_xbloom_cloud_recipe`,
+`export_xbloom_recipe_to_cloud`, `edit_xbloom_cloud_recipe`, and
+`delete_xbloom_cloud_recipe` (the last requires explicit confirmation before
+deleting, same as the brewing tool's beans/filter confirmation).
 
 ## Grind size reference (XBloom Studio scale, 0–80)
 

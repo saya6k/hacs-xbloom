@@ -121,12 +121,14 @@ XBloom 앱 계정을 연결하면 공식 앱에서 보이는 것과 동일한 XB
 플로우(Apple이 릴레이하는 이메일 사용, 앱의 계정 설정에서 확인 가능)로 비밀번호를
 먼저 설정한 뒤 입력하세요.
 
-계정을 설정하면 6개 서비스를 사용할 수 있습니다 (개발자 도구 → 액션, 또는
-`xbloom.cloud_*`):
+7개 서비스를 사용할 수 있습니다 (개발자 도구 → 액션, 또는 `xbloom.cloud_*`);
+`cloud_import_recipe`와 `cloud_search_collective_recipes`는 계정 없이도 동작하며,
+나머지는 계정 설정이 필요합니다:
 
 | 서비스 | 기능 |
 | --- | --- |
-| `cloud_search_recipes` | 계정의 모든 레시피 목록 조회, 이름으로 필터링 가능. |
+| `cloud_search_recipes` | **본인** 클라우드 계정의 모든 레시피 목록 조회, 이름으로 필터링 가능. |
+| `cloud_search_collective_recipes` | XBloom의 **공개** 커뮤니티 레시피 허브(collective.xbloom.com) 검색 — xBloom과 다른 사용자들이 공유한 레시피. 계정 불필요. 검색어, coffee/tea, 머신, official/user, 컵 타입, 원산지, 품종, 가공 방식, 로스팅, 풍미, 정렬로 필터링 가능 — 원두 프로필 필터는 허브의 현재 옵션과 매칭되는 자유 텍스트 이름을 받습니다. |
 | `cloud_import_recipe` | `share-h5.xbloom.com` 링크, `collective.xbloom.com/recipe/{id}` 커뮤니티 허브 링크, 또는 share id로 레시피를 가져와 로컬 레시피로 저장. 계정 불필요 — 클라우드 계정 설정 없이도 동작. |
 | `cloud_create_recipe` | 인라인 `recipe_yaml`(위 "레시피 추가"와 동일한 형식) 또는 `recipe_name`으로 기존 로컬 레시피를 지정해 클라우드에 새 레시피 생성. 새 `table_id`와 `share_url` 반환. |
 | `cloud_edit_recipe` | `table_id`로 기존 클라우드 레시피의 필드 일부 변경; 생략한 필드는 그대로 유지(먼저 현재 레시피를 가져온 뒤 patch). |
@@ -138,11 +140,11 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Assist(LLM)에서는 6개 작업 모두 도구로 노출되어 있습니다: `import_xbloom_cloud_recipe`,
-`search_xbloom_cloud_recipes`, `create_xbloom_cloud_recipe`,
-`export_xbloom_recipe_to_cloud`, `edit_xbloom_cloud_recipe`,
-`delete_xbloom_cloud_recipe`(마지막 도구는 브루잉 도구의 원두/필터 확인과 동일하게
-삭제 전 명시적 확인이 필요합니다).
+Assist(LLM)에서는 7개 작업 모두 도구로 노출되어 있습니다: `import_xbloom_cloud_recipe`,
+`search_xbloom_cloud_recipes`, `search_xbloom_collective_recipes`,
+`create_xbloom_cloud_recipe`, `export_xbloom_recipe_to_cloud`,
+`edit_xbloom_cloud_recipe`, `delete_xbloom_cloud_recipe`(마지막 도구는 브루잉
+도구의 원두/필터 확인과 동일하게 삭제 전 명시적 확인이 필요합니다).
 
 ## 그라인드 사이즈 참고 (XBloom Studio 스케일, 0–80)
 
