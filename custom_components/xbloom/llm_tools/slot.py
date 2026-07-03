@@ -25,12 +25,13 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
 
     name = "write_xbloom_easy_slot"
     description = (
-        "Save a configured XBloom recipe into one of the machine's three "
-        "onboard Easy Mode slots (A, B, or C). After this the user can run "
-        "the recipe directly from the device's slot button without using "
+        "Save an XBloom recipe into one of the machine's three onboard "
+        "Easy Mode slots (A, B, or C). After this the user can run the "
+        "recipe directly from the device's slot button without using "
         "Home Assistant. This action does NOT brew anything — it only "
         "stores the recipe on the machine. Existing slot contents are "
-        "overwritten."
+        "overwritten. A share URL that isn't a local recipe yet is "
+        "imported first (it also lands in list_xbloom_recipes)."
     )
     parameters = vol.Schema(
         {
@@ -39,11 +40,11 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                 description="Target slot — must be A, B, or C (case-insensitive).",
             ): vol.All(str, vol.Upper, vol.In(VALID_SLOTS)),
             vol.Required(
-                "recipe_name",
+                "recipe",
                 description=(
-                    "Exact name of a recipe configured under the xbloom "
-                    "section in configuration.yaml. Use list_xbloom_recipes "
-                    "to discover available names."
+                    "Which recipe to store — its local uid, cloud table "
+                    "id, share URL/id, or exact name (from "
+                    "list_xbloom_recipes)."
                 ),
             ): str,
         }
@@ -56,7 +57,7 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
         llm_context: llm.LLMContext,
     ) -> dict:
         slot_letter = str(tool_input.tool_args["slot"]).strip().upper()
-        recipe_name = tool_input.tool_args["recipe_name"]
+        identifier = tool_input.tool_args["recipe"]
 
         if slot_letter not in VALID_SLOTS:
             return {
@@ -65,19 +66,6 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                 "instruction": (
                     "Tell the user the slot must be A, B, or C and ask "
                     "which one they meant."
-                ),
-            }
-
-        recipes = self.coordinator.recipes or {}
-        if recipe_name not in recipes:
-            return {
-                "success": False,
-                "error": "recipe_not_found",
-                "available_recipes": list(recipes.keys()),
-                "instruction": (
-                    "Tell the user that recipe was not found. If there are "
-                    "available recipes, mention them so the user can pick "
-                    "one to push to the slot."
                 ),
             }
 
@@ -99,26 +87,25 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                     ),
                 }
 
-        # Mirror the recipe-execute tool: setting selected_recipe lets
-        # the existing coordinator.async_write_easy_slot path do the
-        # YAML→XBloomRecipe conversion in one place.
-        self.coordinator.selected_recipe = recipe_name
-        try:
-            await self.coordinator.async_write_easy_slot(slot_letter)
-        except Exception as exc:
-            _LOGGER.exception("write_xbloom_easy_slot failed: %s", exc)
+        result = await self.coordinator.async_write_easy_slot(
+            slot_letter, identifier=identifier
+        )
+        if not result.get("success"):
             return {
                 "success": False,
-                "error": f"Slot write failed: {exc!s}",
+                "error": result.get("error", "write_failed"),
+                "available_recipes": list((self.coordinator.recipes or {}).keys()),
+                "instruction": (
+                    "Tell the user the slot write failed: "
+                    f"{result.get('message', 'unknown error')}"
+                ),
             }
 
-        # Reflect the selection on the recipe select entity.
-        self.coordinator.async_update_listeners()
-
+        recipe = (self.coordinator.recipes or {}).get(result["name"]) or {}
         return {
             "success": True,
             "slot": slot_letter,
-            "recipe": _summarize_recipe(recipes[recipe_name]),
+            "recipe": _summarize_recipe(recipe),
             "instruction": (
                 f"Confirm to the user that the recipe is now stored on "
                 f"slot {slot_letter}, and remind them they can run it from "

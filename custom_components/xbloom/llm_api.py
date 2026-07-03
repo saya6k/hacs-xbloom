@@ -20,6 +20,11 @@ from .llm_tools.cloud_recipe import (
     XBloomImportCloudRecipeTool,
     XBloomSearchCollectiveRecipesTool,
 )
+from .llm_tools.local_recipe import (
+    XBloomCreateRecipeTool,
+    XBloomDeleteRecipeTool,
+    XBloomEditRecipeTool,
+)
 from .llm_tools.pour import XBloomPourTool
 from .llm_tools.recipe import (
     XBloomExecuteRecipeTool,
@@ -57,6 +62,9 @@ class XBloomCoffeeAPI(llm.API):
             XBloomStatusTool(self.coordinator, self.hass),
             XBloomListRecipesTool(self.coordinator, self.hass),
             XBloomGetRecipeTool(self.coordinator, self.hass),
+            XBloomCreateRecipeTool(self.coordinator, self.hass),
+            XBloomEditRecipeTool(self.coordinator, self.hass),
+            XBloomDeleteRecipeTool(self.coordinator, self.hass),
             XBloomPourTool(self.coordinator, self.hass),
             XBloomExecuteRecipeTool(self.coordinator, self.hass),
             XBloomWriteEasySlotTool(self.coordinator, self.hass),
