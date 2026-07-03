@@ -18,7 +18,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import CONF_RECIPES, DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
-from ._cloud_client import XBloomCloudClient, cloud_recipe_to_local, local_recipe_to_cloud
+from ._cloud_client import (
+    XBloomCloudClient,
+    cloud_recipe_to_local,
+    local_recipe_to_cloud,
+    validate_pour_volume_consistency,
+)
 from . import brewing
 from .schema import RECIPE_SCHEMA, compute_total_water_ml
 from xbloom.models.types import (
@@ -1106,6 +1111,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "error": "invalid_recipe",
                 "message": f"Recipe does not match the schema: {exc}",
             }
+        mismatch = validate_pour_volume_consistency(recipe)
+        if mismatch:
+            return {
+                "success": False,
+                "error": "pour_volume_mismatch",
+                "message": f"Recipe rejected before sending to the cloud: {mismatch}",
+            }
         if not self.cloud_login_configured:
             return {
                 "success": False,
@@ -1172,6 +1184,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "success": False,
                 "error": "invalid_recipe",
                 "message": f"Merged recipe failed validation: {exc}",
+            }
+        mismatch = validate_pour_volume_consistency(validated)
+        if mismatch:
+            return {
+                "success": False,
+                "error": "pour_volume_mismatch",
+                "message": f"Merged recipe rejected before sending to the cloud: {mismatch}",
             }
         cloud_fields = local_recipe_to_cloud(validated)
         for key in _CLOUD_EDIT_PRESERVE_KEYS:

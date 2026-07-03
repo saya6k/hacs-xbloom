@@ -209,6 +209,46 @@ def _local_pour_to_cloud(p: dict, index: int) -> dict:
     }
 
 
+# Tolerance for the float rounding that can creep in through dose_g*ratio
+# vs. summed integer pour_ml volumes.
+_POUR_VOLUME_TOLERANCE_ML = 1.0
+
+
+def validate_pour_volume_consistency(recipe: dict) -> str | None:
+    """Check a wire-level constraint confirmed via live testing (2026-07-03):
+    for a dosed (coffee-style) recipe, ``sum(pours[].volume_ml) +
+    bypass_volume`` must equal ``dose_g * ratio`` (the declared total water
+    budget) — ``tuRecipeAdd.tuhtml``/``tuRecipeUpdate.tuhtml`` silently
+    reject a mismatch with a generic, French, unactionable
+    ``{"result": "fail", "info": "Les données de versement de cette
+    recette sont anormales"}`` (abnormal pour data). This isn't documented
+    anywhere in the reference implementation — confirmed empirically by
+    bisecting a failing live create call.
+
+    Returns ``None`` if the recipe satisfies the constraint, or a
+    human-readable mismatch description otherwise. Zero-dose/no-ratio
+    recipes (tea) have no declared total to check against, so the
+    constraint doesn't apply to them.
+    """
+    dose_g = float(recipe.get("dose_g", 0) or 0)
+    ratio = recipe.get("ratio")
+    if dose_g <= 0 or not ratio:
+        return None
+    total_water = dose_g * float(ratio)
+    pour_sum = sum(float(p.get("volume_ml", 0)) for p in recipe.get("pours", []))
+    bypass_volume = float(recipe.get("bypass_volume", 0) or 0)
+    combined = pour_sum + bypass_volume
+    if abs(combined - total_water) > _POUR_VOLUME_TOLERANCE_ML:
+        return (
+            f"pour volumes ({pour_sum:g} ml) + bypass_volume "
+            f"({bypass_volume:g} ml) = {combined:g} ml, but dose_g * ratio "
+            f"= {total_water:g} ml — the XBloom cloud API requires these "
+            "to match. Adjust the pours, bypass_volume, dose_g, or ratio "
+            "so they add up."
+        )
+    return None
+
+
 def local_recipe_to_cloud(local: dict) -> dict:
     """Translate a ``RECIPE_SCHEMA``-validated local recipe dict into the
     recipe-specific fields of the ``tuRecipeAdd.tuhtml`` create payload.
@@ -374,6 +414,10 @@ class XBloomCloudClient:
         }
         resp = await self._post_encrypted("tuRecipeAdd.tuhtml", payload)
         if not resp or resp.get("result") != "success":
+            _LOGGER.warning(
+                "XBloom cloud create_recipe rejected: %s",
+                (resp or {}).get("info", "no response"),
+            )
             return None
         table_id = resp.get("tableId")
         if table_id is None:
@@ -417,7 +461,13 @@ class XBloomCloudClient:
             "tableId": table_id,
         }
         resp = await self._post_encrypted("tuRecipeUpdate.tuhtml", payload)
-        return bool(resp and resp.get("result") == "success")
+        ok = bool(resp and resp.get("result") == "success")
+        if not ok:
+            _LOGGER.warning(
+                "XBloom cloud update_recipe rejected: %s",
+                (resp or {}).get("info", "no response"),
+            )
+        return ok
 
     async def delete_recipe(self, table_id: int) -> bool:
         """Delete a recipe from the logged-in account.
