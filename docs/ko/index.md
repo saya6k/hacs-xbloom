@@ -166,6 +166,7 @@ Assist(LLM)에서는 7개 작업 모두 도구로 노출되어 있습니다: `im
 
 ## 알려진 제한사항
 
+- **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조). XBloom **Original**은 대신 Wi-Fi로 연결되는 완전히 다른 프로토콜을 사용하며, 이 통합은 이를 구현하지 않습니다 — 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `list_recipes()` / `create_recipe()`(`_cloud_client.py`)에서 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original만 있는 계정에서는 클라우드 레시피 동기화/생성이 검증되지 않았습니다.
 - **티 → 커피 그라인딩 실패**: 티 brew 후 다음 커피 brew에서 그라인더 단계를 건너뜀(추출은 동작하지만 원두를 갈지 않음). 펌웨어가 진입한 티 상태를 빠져나오는 BLE 명령이 문서화되어 있지 않음 — [`brewing-notes.md`](./brewing-notes.md#known-limitation--grinding-fails-after-a-tea-brew). **워크어라운드:** 티 brew와 다음 커피 brew 사이에 머신 전원 재시작.
 - **티 사이펀은 flash-extract 방식**: xBloom Omni Tea Brewer는 `pausing` 값과 무관하게 ~120ml에 사이펀 배수. 장시간 침지를 전제로 한 레시피(말차, 분 미만의 짧은 steep을 여러 번 하는 gong-fu 스타일 등)는 의도대로 동작하지 않음. 상세는 [`brewing-notes.md`](./brewing-notes.md#xbloom-omni-tea-brewer--siphon-mechanics).
 - **일부 펌웨어의 MachineInfo**: 특정 XBloom 펌웨어 리비전은 `RD_MachineInfo` BLE 알림을 푸시하지 않아 Model / Serial / Firmware 센서가 `unknown`으로 남을 수 있음. 이런 펌웨어에서 수위 binary sensor는 이벤트 기반(RD_ErrorLackOfWater) 감지로 fallback.
