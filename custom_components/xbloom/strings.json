@@ -220,6 +220,17 @@
         "name": "Connection"
       }
     },
+    "text": {
+      "easy_slot_a": {
+        "name": "Easy Slot A"
+      },
+      "easy_slot_b": {
+        "name": "Easy Slot B"
+      },
+      "easy_slot_c": {
+        "name": "Easy Slot C"
+      }
+    },
     "event": {
       "error_event": {
         "name": "Error",

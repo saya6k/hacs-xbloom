@@ -125,6 +125,17 @@
       "notification_event": {
         "default": "mdi:bell-outline"
       }
+    },
+    "text": {
+      "easy_slot_a": {
+        "default": "mdi:alpha-a-circle-outline"
+      },
+      "easy_slot_b": {
+        "default": "mdi:alpha-b-circle-outline"
+      },
+      "easy_slot_c": {
+        "default": "mdi:alpha-c-circle-outline"
+      }
     }
   }
 }

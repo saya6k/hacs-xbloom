@@ -220,6 +220,17 @@
         "name": "연결"
       }
     },
+    "text": {
+      "easy_slot_a": {
+        "name": "이지 슬롯 A"
+      },
+      "easy_slot_b": {
+        "name": "이지 슬롯 B"
+      },
+      "easy_slot_c": {
+        "name": "이지 슬롯 C"
+      }
+    },
     "event": {
       "error_event": {
         "name": "오류 이벤트",
