@@ -6,6 +6,9 @@ root (which would create a circular import during config-flow setup).
 """
 from __future__ import annotations
 
+import hashlib
+from uuid import uuid4
+
 import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
@@ -46,6 +49,16 @@ POUR_SCHEMA = vol.Schema(
 
 RECIPE_SCHEMA = vol.Schema(
     {
+        # Local-store metadata (all optional — absent on YAML input, filled
+        # in by the recipe store). `uid` is the stable local identity;
+        # `cloud_table_id`/`share_url` coexist with it once a recipe has
+        # been exported to / imported from the XBloom cloud. None of these
+        # affect brewing (`coordinator._build_recipe_from_yaml` only reads
+        # the brew fields below).
+        vol.Optional("uid"): cv.string,
+        vol.Optional("cloud_table_id"): vol.Coerce(int),
+        vol.Optional("share_url"): cv.string,
+        vol.Optional("source"): cv.string,
         vol.Required("name"): cv.string,
         vol.Optional("grind_size", default=50): vol.Coerce(int),
         vol.Optional("rpm", default=80): vol.Coerce(int),
@@ -61,6 +74,20 @@ RECIPE_SCHEMA = vol.Schema(
         vol.Required("pours"): [POUR_SCHEMA],
     }
 )
+
+
+def new_recipe_uid() -> str:
+    """Mint a local recipe uid (12 hex chars, distinct from cloud ids)."""
+    return uuid4().hex[:12]
+
+
+def yaml_recipe_uid(name: str) -> str:
+    """Deterministic uid for a configuration.yaml recipe.
+
+    YAML recipes are re-loaded from scratch every HA start, so a random
+    uid would change each boot; deriving it from the name keeps it stable.
+    """
+    return "yaml-" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
 
 
 def compute_total_water_ml(recipe: dict) -> float:
