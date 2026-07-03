@@ -570,8 +570,8 @@ class XBloomCloudClient:
         include them — so each result needs its own
         :meth:`fetch_shared_recipe` round-trip for the full recipe.
         ``limit`` bounds how many of those extra round-trips this makes,
-        since callers may run this unattended on a timer (see
-        ``coordinator.async_sync_cloud_recipes``). Returns ``None`` only
+        since the caller runs unattended at startup (see
+        ``coordinator.async_seed_recipes``). Returns ``None`` only
         if the initial search itself fails (e.g. no network) — an
         individual recipe's detail fetch failing is skipped, not fatal.
         """
