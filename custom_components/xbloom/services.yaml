@@ -217,3 +217,33 @@ cloud_edit_recipe:
       selector:
         text:
           multiline: true
+
+cloud_delete_recipe:
+  name: Delete XBloom cloud recipe
+  description: >-
+    Permanently delete a recipe from the configured XBloom cloud account.
+    This cannot be undone. Requires an XBloom account to be configured for
+    the machine (Settings → Devices & Services → XBloom → Configure).
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose configured cloud account to delete the
+        recipe from. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    table_id:
+      name: Recipe table ID
+      description: >-
+        The cloud recipe's table ID, from cloud_search_recipes or
+        cloud_create_recipe's response.
+      required: true
+      example: 12345
+      selector:
+        number:
+          min: 1
+          mode: box

@@ -410,3 +410,18 @@ class XBloomCloudClient:
         }
         resp = await self._post_encrypted("tuRecipeUpdate.tuhtml", payload)
         return bool(resp and resp.get("result") == "success")
+
+    async def delete_recipe(self, table_id: int) -> bool:
+        """Delete a recipe from the logged-in account.
+
+        Requires a prior successful login. Returns ``False`` on any
+        failure — never raises. The wire API has no distinguishable
+        "not found" result (see tasks/plan.md "Verified facts"), so a
+        nonexistent/already-deleted ``table_id`` also just returns
+        ``False`` rather than a specific error.
+        """
+        if not self.logged_in:
+            return False
+        payload = {**_auth_base(self.member_id, self.token), "tableId": table_id}
+        resp = await self._post_encrypted("tuRecipeDelete.tuhtml", payload)
+        return bool(resp and resp.get("result") == "success")

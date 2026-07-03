@@ -52,6 +52,7 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DOMAIN,
     SERVICE_CLOUD_CREATE_RECIPE,
+    SERVICE_CLOUD_DELETE_RECIPE,
     SERVICE_CLOUD_EDIT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_RECIPES,
@@ -136,6 +137,13 @@ CLOUD_EDIT_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
         vol.Required(ATTR_RECIPE_YAML): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_DELETE_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -316,6 +324,27 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_EDIT_RECIPE,
         _handle_cloud_edit_recipe,
         schema=CLOUD_EDIT_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_delete_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        result = await coordinators[0].async_delete_cloud_recipe(
+            call.data[ATTR_TABLE_ID]
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_delete_recipe failed")
+            )
+        return {"table_id": result["table_id"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_DELETE_RECIPE,
+        _handle_cloud_delete_recipe,
+        schema=CLOUD_DELETE_RECIPE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -529,6 +558,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_CLOUD_SEARCH_RECIPES,
                 SERVICE_CLOUD_CREATE_RECIPE,
                 SERVICE_CLOUD_EDIT_RECIPE,
+                SERVICE_CLOUD_DELETE_RECIPE,
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)

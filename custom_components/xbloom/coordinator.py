@@ -1176,6 +1176,41 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             }
         return {"success": True, "table_id": table_id}
 
+    async def async_delete_cloud_recipe(self, table_id: int) -> dict:
+        """Delete a recipe from the configured XBloom cloud account.
+
+        Returns a structured ``{"success": bool, ...}`` dict rather than
+        raising. Deleting a nonexistent/already-deleted ``table_id`` is
+        reported as the same ``delete_failed`` error as any other
+        failure — the wire API gives no distinguishable "not found"
+        signal (see tasks/plan.md "Verified facts").
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        if not await self.cloud_client.delete_recipe(table_id):
+            return {
+                "success": False,
+                "error": "delete_failed",
+                "message": (
+                    f"Could not delete recipe {table_id} from the XBloom "
+                    "cloud account — it may not exist, or the call failed."
+                ),
+            }
+        return {"success": True, "table_id": table_id}
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

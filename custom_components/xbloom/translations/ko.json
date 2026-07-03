@@ -327,6 +327,16 @@
           "description": "변경할 필드만 담은 YAML 매핑입니다 (예: 이름만 바꾸려면 `name: New Name`). 생략된 필드는 그대로 유지됩니다."
         }
       }
+    },
+    "cloud_delete_recipe": {
+      "name": "XBloom 클라우드 레시피 삭제",
+      "description": "설정된 XBloom 클라우드 계정에서 레시피를 영구적으로 삭제합니다. 되돌릴 수 없습니다.",
+      "fields": {
+        "table_id": {
+          "name": "레시피 테이블 ID",
+          "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
+        }
+      }
     }
   }
 }
