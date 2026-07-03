@@ -188,9 +188,17 @@ def _local_vibration_to_cloud(vibration: object) -> tuple[int, int]:
     return (1 if before else 2, 1 if after else 2)
 
 
-def _local_pour_to_cloud(p: dict) -> dict:
+def _local_pour_to_cloud(p: dict, index: int) -> dict:
     before, after = _local_vibration_to_cloud(p.get("vibration"))
     return {
+        # Required by the wire API — a pour object missing theName is
+        # rejected wholesale ("Les données de versement de cette recette
+        # sont anormales" / abnormal pour data). Naming derived purely by
+        # position, matching the reference implementation's buildPourList
+        # verbatim: first pour is always "Bloom", subsequent ones are
+        # "Pour {index+1}" (so the 2nd pour is "Pour 2", not "Pour 1" —
+        # confirmed against xbloom-agent's raw index.ts).
+        "theName": "Bloom" if index == 0 else f"Pour {index + 1}",
         "volume": p.get("volume_ml", 30),
         "temperature": p.get("temperature_c", 93),
         "flowRate": p.get("flow_rate", 3.0),
@@ -213,7 +221,7 @@ def local_recipe_to_cloud(local: dict) -> dict:
     bypass_volume = float(local.get("bypass_volume", 0) or 0)
     bypass_temperature = float(local.get("bypass_temperature", 0) or 0)
     grind_size = int(local.get("grind_size", 0) or 0)
-    pour_list = [_local_pour_to_cloud(p) for p in local.get("pours", [])]
+    pour_list = [_local_pour_to_cloud(p, i) for i, p in enumerate(local.get("pours", []))]
     return {
         "theName": local["name"],
         "dose": local.get("dose_g", 0) or 0,
