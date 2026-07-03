@@ -18,7 +18,7 @@ import base64
 import json
 import logging
 import time
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -398,10 +398,18 @@ class XBloomCloudClient:
         ``local_recipe`` is a ``RECIPE_SCHEMA``-validated dict (same shape
         as a saved local recipe). Requires a prior successful :meth:`login`;
         returns ``None`` if not logged in or the call fails — never raises.
-        On success returns ``{"table_id": int, "share_url": str}`` — the
-        share id/URL are derived client-side the same way the reference
-        implementation does (``btoa(String(tableId))``), not returned by
-        the API itself.
+        On success returns ``{"table_id": int, "share_url": str}``.
+
+        The API's create response only returns ``tableId`` — no share
+        link. The reference implementation guesses one client-side
+        (``btoa(String(tableId))``), but live testing (2026-07-03) proved
+        that guess does NOT resolve via :meth:`fetch_shared_recipe`: a
+        real account's ``shareRecipeLink`` decodes to 16 bytes of opaque
+        binary, not the ASCII digits of a table id — it's server-assigned,
+        not derivable. So this reads the real link back via
+        :meth:`get_recipe` right after creating. ``share_url`` is ``""``
+        if that follow-up lookup doesn't find it (e.g. list eventual
+        consistency) — never a guessed value that's confirmed broken.
         """
         if not self.logged_in:
             return None
@@ -422,8 +430,8 @@ class XBloomCloudClient:
         table_id = resp.get("tableId")
         if table_id is None:
             return None
-        share_id = base64.b64encode(str(table_id).encode("ascii")).decode("ascii")
-        share_url = f"{SHARE_BASE}/?id={quote(share_id, safe='')}"
+        created_raw = await self.get_recipe(table_id)
+        share_url = (created_raw or {}).get("shareRecipeLink") or ""
         return {"table_id": table_id, "share_url": share_url}
 
     async def get_recipe(self, table_id: int) -> dict | None:
@@ -473,10 +481,12 @@ class XBloomCloudClient:
         """Delete a recipe from the logged-in account.
 
         Requires a prior successful login. Returns ``False`` on any
-        failure — never raises. The wire API has no distinguishable
-        "not found" result (see tasks/plan.md "Verified facts"), so a
-        nonexistent/already-deleted ``table_id`` also just returns
-        ``False`` rather than a specific error.
+        failure — never raises. Live testing (2026-07-03) found the
+        wire API is idempotent for a ``table_id`` that *was* a valid
+        recipe on this account: deleting it again after it's already
+        gone still returns success. A ``table_id`` that never existed
+        on the account at all returns ``False``. Either way this method
+        never raises.
         """
         if not self.logged_in:
             return False

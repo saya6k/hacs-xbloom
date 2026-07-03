@@ -1227,10 +1227,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Delete a recipe from the configured XBloom cloud account.
 
         Returns a structured ``{"success": bool, ...}`` dict rather than
-        raising. Deleting a nonexistent/already-deleted ``table_id`` is
-        reported as the same ``delete_failed`` error as any other
-        failure — the wire API gives no distinguishable "not found"
-        signal (see tasks/plan.md "Verified facts").
+        raising. Live testing (2026-07-03) found the wire API is
+        idempotent for a ``table_id`` that was previously a valid recipe
+        on this account — deleting it again after it's already gone
+        still reports success. A ``table_id`` that never existed on the
+        account returns the ``delete_failed`` error below.
         """
         if not self.cloud_login_configured:
             return {
