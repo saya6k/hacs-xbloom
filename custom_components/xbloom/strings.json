@@ -9,11 +9,20 @@
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)"
         }
+      },
+      "account": {
+        "title": "XBloom Cloud Account (optional)",
+        "description": "Optional — enter your XBloom app email/password to enable cloud recipe sync (search, import, export). Leave both blank to skip; the integration works fully over Bluetooth without an account, and cloud-only features will report a clear error instead of running.",
+        "data": {
+          "email": "Email (optional)",
+          "password": "Password (optional)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the XBloom device. Check the MAC address and ensure Bluetooth is enabled.",
       "invalid_mac": "Invalid MAC address format.",
+      "account_incomplete": "Enter both email and password, or leave both blank to skip cloud setup.",
       "unknown": "Unexpected error."
     },
     "abort": {
@@ -257,6 +266,20 @@
         "bypass_temperature": {
           "name": "Bypass temperature",
           "description": "Bypass water temperature in °C (0 = bypass off). Pair with a non-zero bypass volume. Coffee recipes only."
+        }
+      }
+    },
+    "cloud_import_recipe": {
+      "name": "Import recipe from XBloom cloud",
+      "description": "Fetch a recipe from an XBloom cloud share URL or id and save it as a local recipe. No XBloom account login is required.",
+      "fields": {
+        "share_url": {
+          "name": "Share URL",
+          "description": "A share-h5.xbloom.com link, e.g. from the official app's Share button. Provide this or recipe_id, not both."
+        },
+        "recipe_id": {
+          "name": "Recipe ID",
+          "description": "The bare share id (the base64 value after ?id= in a share URL). Provide this or share_url, not both."
         }
       }
     }

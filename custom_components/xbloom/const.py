@@ -10,6 +10,13 @@ CONF_RECIPES = "recipes"
 CONF_WATER_SOURCE = "water_source"   # persisted in entry.options
 CONF_MODE = "mode"                   # persisted in entry.options
 
+# XBloom cloud account — both optional. Absent entirely (not just empty
+# strings) when the user skips the account step; cloud-backed services/LLM
+# tools must check for their absence and fail gracefully, never assume they
+# exist. Stored in entry.data (identity/credentials), not entry.options.
+CONF_EMAIL = "email"
+CONF_PASSWORD = "password"
+
 # Defaults
 DEFAULT_TELEMETRY_INTERVAL = 5  # seconds
 DEFAULT_SESSION_TIMEOUT = 60    # seconds
@@ -27,6 +34,12 @@ ATTR_GRIND_SIZE = "grind_size"
 ATTR_RPM = "rpm"
 ATTR_BYPASS_VOLUME = "bypass_volume"
 ATTR_BYPASS_TEMPERATURE = "bypass_temperature"
+
+# Cloud recipe services (cloud_ prefix avoids colliding with the existing
+# local-recipe OptionsFlow steps of the same bare name — see tasks/plan.md D1).
+SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
+ATTR_SHARE_URL = "share_url"
+ATTR_RECIPE_ID = "recipe_id"
 
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
@@ -66,5 +79,9 @@ XBLOOM_LLM_PROMPT = (
     "Cold Brew 58–80, Cold Drip 59–80. When the user asks what grind to use "
     "or wants advice on tuning a recipe, pick a value inside the matching "
     "range (start mid-range and adjust finer for slower extraction or "
-    "coarser for faster). Tea recipes do not grind, so grind_size is ignored."
+    "coarser for faster). Tea recipes do not grind, so grind_size is ignored. "
+    "Use import_xbloom_cloud_recipe to import a recipe from an XBloom cloud "
+    "share URL or id (e.g. from the official app's Share button) — no "
+    "XBloom account is needed for this. It saves the recipe locally so it "
+    "then shows up in list_xbloom_recipes / execute_xbloom_recipe."
 )

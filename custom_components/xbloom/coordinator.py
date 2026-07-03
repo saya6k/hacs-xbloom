@@ -7,16 +7,20 @@ import struct
 from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
+import voluptuous as vol
+
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
+from .const import CONF_RECIPES, DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
+from ._cloud_client import XBloomCloudClient
 from . import brewing
-from .schema import compute_total_water_ml
+from .schema import RECIPE_SCHEMA, compute_total_water_ml
 from xbloom.models.types import (
     CupType,
     PourPattern,
@@ -184,6 +188,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         update_interval: int = 5,
         initial_water_source: int = DEFAULT_WATER_SOURCE,
         initial_mode: str = DEFAULT_MODE,
+        cloud_email: Optional[str] = None,
+        cloud_password: Optional[str] = None,
     ) -> None:
         super().__init__(
             hass,
@@ -196,6 +202,15 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.client: Optional[XBloomClient] = None
         self._connect_lock = asyncio.Lock()
         self._machine_info_task: Optional[asyncio.Task] = None
+
+        # Cloud account (recipe sync) — entirely optional. The client is
+        # always constructed (fetch_shared_recipe needs no login at all),
+        # but authenticated calls (search/create/edit/delete, added later)
+        # must check ``cloud_login_configured`` first and fail gracefully
+        # rather than assume credentials exist.
+        self._cloud_email = cloud_email
+        self._cloud_password = cloud_password
+        self.cloud_client = XBloomCloudClient(async_get_clientsession(hass))
 
         # Recipes loaded from YAML config (name → dict)
         self.recipes: Dict[str, dict] = {}
@@ -929,6 +944,89 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await brewing.async_write_easy_slot(self.client, slot_letter, recipe)
         except Exception as exc:
             _LOGGER.error("Easy slot write error (%s): %s", slot_letter, exc, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Cloud account (recipe sync) — all optional, never required for BLE use
+    # ------------------------------------------------------------------
+
+    @property
+    def cloud_login_configured(self) -> bool:
+        """Whether an XBloom cloud email/password were set up.
+
+        Only gates AUTHENTICATED cloud calls (search/create/edit/delete —
+        added in a later phase). Does NOT gate :meth:`async_import_cloud_recipe`
+        — fetching a shared recipe needs no login at all on the wire.
+        """
+        return bool(self._cloud_email and self._cloud_password)
+
+    async def async_ensure_cloud_login(self) -> bool:
+        """Log in if an account is configured and not already logged in.
+
+        Returns False (never raises) when no account is configured or the
+        login itself fails — callers should turn that into a structured
+        error rather than let an exception propagate.
+        """
+        if not self.cloud_login_configured:
+            return False
+        if self.cloud_client.logged_in:
+            return True
+        return await self.cloud_client.login(self._cloud_email, self._cloud_password)
+
+    async def async_import_cloud_recipe(self, share_url_or_id: str) -> dict:
+        """Fetch a recipe from an XBloom cloud share URL/id and save it locally.
+
+        No login required — ``RecipeDetail.html`` is a public,
+        unauthenticated endpoint, so this works even with no cloud account
+        configured. Returns a structured ``{"success": bool, ...}`` dict
+        rather than raising, so the service handler / LLM tool can surface
+        a clean error either way.
+        """
+        local_raw = await self.cloud_client.fetch_shared_recipe(share_url_or_id)
+        if local_raw is None:
+            return {
+                "success": False,
+                "error": "fetch_failed",
+                "message": (
+                    "Could not fetch that recipe — check the share URL/id, "
+                    "or the XBloom cloud API may be unreachable."
+                ),
+            }
+        try:
+            validated = RECIPE_SCHEMA(local_raw)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Fetched recipe failed validation: {exc}",
+            }
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return {
+                "success": False,
+                "error": "entry_not_found",
+                "message": "Config entry not found.",
+            }
+
+        name = validated["name"]
+        existing_options = dict(entry.options.get(CONF_RECIPES) or {})
+        if existing_options.get(name) is not None:
+            # Same "don't silently overwrite" rule as the OptionsFlow's
+            # Add a recipe step.
+            return {
+                "success": False,
+                "error": "recipe_exists",
+                "message": (
+                    f"A recipe named {name!r} already exists locally. "
+                    "Rename it in the cloud before importing, or delete/"
+                    "edit the local one first."
+                ),
+            }
+        existing_options[name] = validated
+        new_options = dict(entry.options)
+        new_options[CONF_RECIPES] = existing_options
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        return {"success": True, "recipe_name": name}
 
     # ------------------------------------------------------------------
     # Helpers

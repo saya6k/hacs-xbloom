@@ -21,7 +21,9 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_EMAIL,
     CONF_MAC_ADDRESS,
+    CONF_PASSWORD,
     CONF_RECIPES,
     CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
@@ -63,6 +65,7 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []
+        self._mac_step_data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
@@ -91,18 +94,16 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
 
                 if not errors:
-                    return self.async_create_entry(
-                        title=f"XBloom ({mac})",
-                        data={
-                            CONF_MAC_ADDRESS: mac,
-                            CONF_TELEMETRY_INTERVAL: user_input.get(
-                                CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL
-                            ),
-                            CONF_SESSION_TIMEOUT: user_input.get(
-                                CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
-                            ),
-                        },
-                    )
+                    self._mac_step_data = {
+                        CONF_MAC_ADDRESS: mac,
+                        CONF_TELEMETRY_INTERVAL: user_input.get(
+                            CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL
+                        ),
+                        CONF_SESSION_TIMEOUT: user_input.get(
+                            CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
+                        ),
+                    }
+                    return await self.async_step_account()
 
         # Show form — optionally pre-fill with discovered device
         discovered_mac = ""
@@ -135,6 +136,48 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Optional XBloom cloud account (recipe sync) — entirely skippable.
+
+        Leaving both fields blank skips cloud setup; the integration works
+        exactly as it does without an account (BLE-only). No connectivity
+        test is done here — a bad login is only discovered lazily, the
+        first time a cloud-backed service/tool is actually used, so this
+        step stays fast and doesn't fail setup if the cloud is briefly down.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            email = (user_input.get(CONF_EMAIL) or "").strip()
+            password = user_input.get(CONF_PASSWORD) or ""
+
+            if bool(email) != bool(password):
+                errors["base"] = "account_incomplete"
+            else:
+                data = dict(self._mac_step_data)
+                if email and password:
+                    data[CONF_EMAIL] = email
+                    data[CONF_PASSWORD] = password
+                return self.async_create_entry(
+                    title=f"XBloom ({self._mac_step_data[CONF_MAC_ADDRESS]})",
+                    data=data,
+                )
+
+        return self.async_show_form(
+            step_id="account",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_EMAIL): str,
+                    vol.Optional(CONF_PASSWORD): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
+        )
 
     @staticmethod
     @callback

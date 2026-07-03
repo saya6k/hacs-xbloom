@@ -26,9 +26,13 @@ from .const import (
     ATTR_BYPASS_TEMPERATURE,
     ATTR_BYPASS_VOLUME,
     ATTR_GRIND_SIZE,
+    ATTR_RECIPE_ID,
     ATTR_RECIPE_NAME,
     ATTR_RPM,
+    ATTR_SHARE_URL,
+    CONF_EMAIL,
     CONF_MAC_ADDRESS,
+    CONF_PASSWORD,
     CONF_RECIPES,
     CONF_SESSION_TIMEOUT,
     CONF_TELEMETRY_INTERVAL,
@@ -38,6 +42,7 @@ from .const import (
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_WATER_SOURCE,
     DOMAIN,
+    SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_EXECUTE_RECIPE,
 )
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
@@ -88,6 +93,17 @@ EXECUTE_RECIPE_SCHEMA = vol.Schema(
         ),
     },
     extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_IMPORT_RECIPE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_SHARE_URL): cv.string,
+            vol.Optional(ATTR_RECIPE_ID): cv.string,
+        },
+        extra=vol.ALLOW_EXTRA,
+    ),
+    cv.has_at_least_one_key(ATTR_SHARE_URL, ATTR_RECIPE_ID),
 )
 
 
@@ -160,6 +176,26 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_EXECUTE_RECIPE,
         _handle_execute_recipe,
         schema=EXECUTE_RECIPE_SCHEMA,
+    )
+
+    async def _handle_cloud_import_recipe(call: ServiceCall) -> None:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        identifier = call.data.get(ATTR_SHARE_URL) or call.data.get(ATTR_RECIPE_ID)
+        for coord in coordinators:
+            result = await coord.async_import_cloud_recipe(identifier)
+            if not result.get("success"):
+                _LOGGER.warning(
+                    "cloud_import_recipe failed for %s: %s",
+                    coord.mac_address, result.get("message", result.get("error")),
+                )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_IMPORT_RECIPE,
+        _handle_cloud_import_recipe,
+        schema=CLOUD_IMPORT_RECIPE_SCHEMA,
     )
 
 
@@ -304,6 +340,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=telemetry_interval,
         initial_water_source=initial_water_source,
         initial_mode=initial_mode,
+        cloud_email=entry.data.get(CONF_EMAIL),
+        cloud_password=entry.data.get(CONF_PASSWORD),
     )
 
     # Recipe merge order — lowest precedence first:
@@ -363,6 +401,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data for data in hass.data.get(DOMAIN, {}).values()
             if isinstance(data, dict) and DATA_COORDINATOR in data
         ]
-        if not remaining and hass.services.has_service(DOMAIN, SERVICE_EXECUTE_RECIPE):
-            hass.services.async_remove(DOMAIN, SERVICE_EXECUTE_RECIPE)
+        if not remaining:
+            for service in (SERVICE_EXECUTE_RECIPE, SERVICE_CLOUD_IMPORT_RECIPE):
+                if hass.services.has_service(DOMAIN, service):
+                    hass.services.async_remove(DOMAIN, service)
     return unload_ok
