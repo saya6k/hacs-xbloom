@@ -61,8 +61,9 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # Bumped 1 -> 2: recipe schema field rename (bean_weight/total_water ->
     # dose_g/ratio, pour volume/temperature/pausing -> volume_ml/
-    # temperature_c/pause_seconds). See __init__.async_migrate_entry.
-    VERSION = 2
+    # temperature_c/pause_seconds). Bumped 2 -> 3: stored recipes gained
+    # local-store metadata (uid/source). See __init__.async_migrate_entry.
+    VERSION = 3
 
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []

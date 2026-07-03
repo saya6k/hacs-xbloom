@@ -76,7 +76,12 @@ from .const import (
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
 from .default_recipes import DEFAULT_RECIPES
 from .llm_api import register_llm_api, unregister_llm_api
-from .schema import POUR_SCHEMA, RECIPE_SCHEMA  # re-exported below
+from .schema import (  # POUR_SCHEMA/RECIPE_SCHEMA re-exported below
+    POUR_SCHEMA,
+    RECIPE_SCHEMA,
+    new_recipe_uid,
+    yaml_recipe_uid,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -481,7 +486,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     if DOMAIN in config and CONF_RECIPES in config[DOMAIN]:
         recipes = config[DOMAIN][CONF_RECIPES]
-        hass.data[DOMAIN]["yaml_recipes"] = {r["name"]: r for r in recipes}
+        # YAML recipes are re-loaded every boot, so their uid must be
+        # deterministic (derived from the name) to stay stable.
+        hass.data[DOMAIN]["yaml_recipes"] = {
+            r["name"]: {**r, "uid": yaml_recipe_uid(r["name"]), "source": "yaml"}
+            for r in recipes
+        }
         _LOGGER.info(
             "Loaded %d default + %d YAML recipe(s)",
             len(validated_defaults), len(recipes),
@@ -530,6 +540,20 @@ def _migrate_recipe_v1_to_v2(recipe: dict) -> dict:
     return new_recipe
 
 
+def _migrate_recipe_v2_to_v3(recipe: dict) -> dict:
+    """Inject the v3 local-store metadata into one v2 recipe dict.
+
+    Every stored recipe gains a ``uid`` (the stable local identity) and a
+    ``source`` of ``manual`` — v2 predates seed provenance, and options
+    recipes were by definition user-managed. Existing metadata (e.g. a
+    dict that somehow already has a uid) is left untouched.
+    """
+    migrated = dict(recipe)
+    migrated.setdefault("uid", new_recipe_uid())
+    migrated.setdefault("source", "manual")
+    return migrated
+
+
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate a config entry to the current schema version.
 
@@ -538,6 +562,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ``_migrate_recipe_v1_to_v2``). Recipes defined in ``configuration.yaml``
     are NOT touched here — the integration doesn't own that file — so YAML
     users must update their field names by hand; this logs a pointer to do so.
+
+    v2 -> v3: every stored recipe gains local-store metadata (``uid`` /
+    ``source`` — see ``_migrate_recipe_v2_to_v3``); tombstones (None) are
+    preserved as-is.
     """
     if entry.version == 1:
         options_recipes = entry.options.get(CONF_RECIPES) or {}
@@ -567,6 +595,25 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "configuration.yaml, update their field names by hand — see "
             "the README for the new recipe format."
         )
+
+    if entry.version == 2:
+        options_recipes = entry.options.get(CONF_RECIPES) or {}
+        if isinstance(options_recipes, dict) and options_recipes:
+            migrated = {
+                name: (_migrate_recipe_v2_to_v3(recipe) if recipe is not None else None)
+                for name, recipe in options_recipes.items()
+            }
+            new_options = dict(entry.options)
+            new_options[CONF_RECIPES] = migrated
+            hass.config_entries.async_update_entry(
+                entry, options=new_options, version=3,
+            )
+            _LOGGER.info(
+                "Migrated %d UI-managed recipe(s) to v3 (local uid/source metadata)",
+                len([r for r in migrated.values() if r is not None]),
+            )
+        else:
+            hass.config_entries.async_update_entry(entry, version=3)
 
     return True
 
