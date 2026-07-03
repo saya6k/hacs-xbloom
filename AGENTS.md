@@ -36,6 +36,7 @@ ha_xbloom/
 3. **Translations live in two places.** `strings.json` is the English source of truth; `translations/<lang>.json` files are the localized copies. They must share the same key tree. Add a Korean entry to `translations/ko.json` whenever you add an English entry to `strings.json`.
 4. **Icons live in `icons.json`, not in entity classes.** Don't set `_attr_icon` unless the icon is dynamic (e.g. `XBloomErrorSensor` flips based on string content). Static icons go in `icons.json` keyed by `entity.<platform>.<translation_key>.default` (with optional `.state` map).
 5. **Coordinator is the single source of truth for state.** Entities read `self.coordinator.data[...]`; they do not call BLE methods directly. Side-effects (start brew, stop, etc.) go through `XBloomCoordinator.async_*` methods.
+6. **XBloom Original (Wi-Fi) is out of scope.** This integration only supports XBloom Studio, connected over Bluetooth LE — see `manifest.json`'s `bluetooth` matcher. Original uses an entirely different Wi-Fi-based protocol this codebase doesn't implement, and the maintainer has no Original hardware to test against. Don't add Original-specific BLE/protocol code on spec; if a change would only make sense for Original, flag it instead.
 
 ## XBloom firmware quirks
 
@@ -72,6 +73,15 @@ yes, this literal tea-sounding name lists *every* recipe type), `tuRecipeAdd.tuh
 recipe first and overlay), `tuRecipeDelete.tuhtml` (delete). Every authenticated call
 after login is whole-payload RSA-encrypted (`_rsa_encrypt`/`_post_encrypted`); only
 login and the public share fetch are plaintext.
+
+**`adaptedModel: 1` (Studio) is hardcoded** in both `list_recipes()`'s
+`tuMyTeaRecipeCreated.tuhtml` payload and `create_recipe()`'s
+`_CREATE_STATIC_FIELDS` — copied from the reference implementation, never
+parameterized. This integration only supports XBloom Studio at all (BLE-only;
+see the top-level "XBloom Original is not supported" limitation), so this
+hasn't been an issue in practice, but it means the private-account cloud
+sync/create path is unverified for whatever `adaptedModel` value Original
+uses — nobody with an Original + cloud account has tested it.
 
 **Four wire-API requirements that aren't obvious from the reference source and were
 only found by live-testing against a real account** — get any of these wrong and the

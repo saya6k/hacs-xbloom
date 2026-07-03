@@ -171,6 +171,7 @@ deleting, same as the brewing tool's beans/filter confirmation).
 
 ## Known limitations
 
+- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher). XBloom **Original** connects over Wi-Fi instead — an entirely different protocol this integration doesn't implement — and the maintainer doesn't own an Original unit to test against. The cloud API also hardcodes `adaptedModel: 1` (Studio) in `list_recipes()` / `create_recipe()` (`_cloud_client.py`), so cloud recipe sync/create is unverified for an Original-only account.
 - **MachineInfo on some firmwares**: certain XBloom firmware revisions do not push the `RD_MachineInfo` BLE notification, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection (RD_ErrorLackOfWater) on those firmwares.
 - **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g. The LLM `execute_xbloom_recipe` tool will ask for explicit confirmation when this happens.
 - **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed). Recipe execution does not — the firmware controls its own pour sequence internally.
