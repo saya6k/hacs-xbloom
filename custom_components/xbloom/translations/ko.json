@@ -304,6 +304,60 @@
         }
       }
     },
+    "cloud_search_collective_recipes": {
+      "name": "XBloom 커뮤니티 레시피 검색",
+      "description": "XBloom의 공개 커뮤니티 레시피 허브(collective.xbloom.com)를 검색합니다 — xBloom과 다른 사용자들이 공유한 레시피입니다. cloud_search_recipes(사용자 본인의 프라이빗 클라우드 계정)와는 별개이며, XBloom 계정이 필요하지 않습니다.",
+      "fields": {
+        "keyword": {
+          "name": "검색어",
+          "description": "레시피 이름을 대상으로 한 자유 텍스트 검색."
+        },
+        "category": {
+          "name": "카테고리",
+          "description": "coffee 또는 tea로 필터링."
+        },
+        "src": {
+          "name": "출처",
+          "description": "official(xBloom 공식 게시) 또는 user(커뮤니티 제출) 레시피."
+        },
+        "machine": {
+          "name": "머신 모델",
+          "description": "쉼표로 구분한 머신 모델(예: \"Studio, Original\")로 필터링."
+        },
+        "cup_type": {
+          "name": "컵 타입",
+          "description": "쉼표로 구분한 컵/브루어 타입(예: \"xPod, Omni, Other, Omni Brewer\")으로 필터링."
+        },
+        "origin": {
+          "name": "원산지",
+          "description": "쉼표로 구분한 원두 원산지(예: \"Ethiopia, Colombia\")."
+        },
+        "varietal": {
+          "name": "품종",
+          "description": "쉼표로 구분한 품종(예: \"Bourbon, Geisha\")."
+        },
+        "process": {
+          "name": "가공 방식",
+          "description": "쉼표로 구분한 가공 방식(예: \"Washed, Natural, Honey\")."
+        },
+        "roast": {
+          "name": "로스팅",
+          "description": "쉼표로 구분한 로스팅 단계(예: \"Light Roast, Dark Roast\")."
+        },
+        "flavor": {
+          "name": "풍미",
+          "description": "쉼표로 구분한 풍미 노트(예: \"Blueberry, Caramel\")."
+        },
+        "sort": {
+          "name": "정렬 기준",
+          "description": "date, likes, 또는 downloads. 기본값은 likes."
+        },
+        "sort_direction": {
+          "name": "정렬 방향",
+          "description": "asc 또는 desc. 기본값은 desc."
+        }
+      }
+    },
     "cloud_create_recipe": {
       "name": "XBloom 클라우드 레시피 만들기",
       "description": "설정된 XBloom 클라우드 계정에 새 레시피를 만듭니다. YAML 레시피 정의를 직접 입력하거나, 기존 로컬 레시피 이름으로 내보낼 수 있습니다. recipe_yaml 또는 recipe_name 중 하나만 입력하세요. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",

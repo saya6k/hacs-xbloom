@@ -40,9 +40,69 @@ SHARE_BASE = "https://share-h5.xbloom.com"
 # share-h5.xbloom.com link, then hand off to the already-verified
 # RecipeDetail.html path below — avoids a second translation function for a
 # response shape that differs subtly (e.g. cupType comes back as a string
-# there, not the int RecipeDetail.html/cloud_recipe_to_local expects).
+# there, not the int RecipeDetail.html/cloud_recipe_to_local expects). The
+# same collective-api.xbloom.com backend also powers the hub's search box
+# (POST communityRecipe/index/page) and its filter dropdowns (POST
+# communityRecipe/recipe/criteria, returning name<->id lookup tables) — see
+# :meth:`XBloomCloudClient.search_collective_recipes`.
 COLLECTIVE_API_BASE = "https://collective-api.xbloom.com"
 _COLLECTIVE_RECIPE_URL_RE = re.compile(r"collective\.xbloom\.com/recipe/(\d+)")
+
+# Search request field mappings, confirmed live (2026-07-03) by reading the
+# collective.xbloom.com React bundle's search-request builder.
+_COLLECTIVE_CATEGORY = {"coffee": 1, "tea": 2}
+_COLLECTIVE_SRC = {"official": 1, "user": 2}
+_COLLECTIVE_SORT_FIELD = {"date": 1, "likes": 2, "downloads": 3}
+_COLLECTIVE_SORT_DIRECTION = {"asc": 1, "desc": 2}
+
+
+def _resolve_criteria_values(
+    names: list[str] | None, facet_list: list[dict]
+) -> tuple[list[str], list[str]]:
+    """Case-insensitive match of user-provided ``names`` against one
+    criteria facet's ``[{"name": ..., "value": ...}]`` list. Returns
+    ``(resolved_values, unmatched_names)`` — unmatched names are reported
+    back rather than silently dropped, so the caller can tell the user."""
+    if not names:
+        return [], []
+    by_name = {str(item["name"]).strip().lower(): item["value"] for item in facet_list}
+    resolved: list[str] = []
+    unmatched: list[str] = []
+    for name in names:
+        value = by_name.get(str(name).strip().lower())
+        if value is not None:
+            resolved.append(value)
+        else:
+            unmatched.append(name)
+    return resolved, unmatched
+
+
+def _collective_result_to_summary(item: dict, roast_names: dict[str, str]) -> dict:
+    """Reshape one raw collective-hub search result row into a smaller,
+    stable summary for services/LLM tools. ``roast_names`` maps the
+    criteria roastList's ``value`` -> ``name`` (the result row's own
+    ``roast`` field is just the numeric id, unlike origin/varietal/
+    process/flavor which come back as readable name strings already)."""
+    roast_id = item.get("roast")
+    return {
+        "community_recipe_id": item.get("communityRecipeId"),
+        "name": item.get("recipeName"),
+        "official": bool(item.get("official")),
+        "user_name": item.get("userName"),
+        "machine": item.get("model"),
+        "cup_type": item.get("cupType"),
+        "dose_g": item.get("dose"),
+        "ratio": item.get("grandWater"),
+        "pour_count": item.get("pourCount"),
+        "total_water_ml": item.get("volume"),
+        "likes_count": item.get("likesCount"),
+        "origin": item.get("origin") or [],
+        "varietal": item.get("varietal") or [],
+        "process": item.get("process") or [],
+        "roast": roast_names.get(str(roast_id)) if roast_id is not None else None,
+        "flavor": item.get("flavor") or [],
+        "share_url": item.get("shareRecipeLink"),
+    }
 
 # Verified verbatim against the raw denull0/xbloom-agent source (hutool-style
 # RSA-1024, PKCS1v1.5 padding — see module docstring).
@@ -314,6 +374,11 @@ class XBloomCloudClient:
         self._session = session
         self.member_id: int | None = None
         self.token: str | None = None
+        # Cached for the lifetime of this client — the collective hub's
+        # filter lookup tables (origin/varietal/process/roast/flavor/
+        # machine/cupType name<->id maps) change rarely enough that
+        # re-fetching on every search call would be wasteful.
+        self._collective_criteria: dict | None = None
 
     @property
     def logged_in(self) -> bool:
@@ -327,6 +392,23 @@ class XBloomCloudClient:
                 return await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             _LOGGER.warning("XBloom cloud call to %s failed: %s", endpoint, exc)
+            return None
+
+    async def _post_collective(self, endpoint: str, body: object) -> dict | None:
+        """POST to collective-api.xbloom.com — a separate, unauthenticated
+        API from ``API_BASE`` above (see ``COLLECTIVE_API_BASE``'s
+        module-level comment). Returns ``None`` on any failure, never
+        raises."""
+        try:
+            async with self._session.post(
+                f"{COLLECTIVE_API_BASE}/{endpoint}",
+                json=body,
+                headers=_HEADERS,
+                timeout=_TIMEOUT,
+            ) as resp:
+                return await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            _LOGGER.warning("XBloom collective-api call to %s failed: %s", endpoint, exc)
             return None
 
     async def _post_plain(self, endpoint: str, payload: dict) -> dict | None:
@@ -372,20 +454,111 @@ class XBloomCloudClient:
         backend (see the module-level comment by ``COLLECTIVE_API_BASE``).
         Returns ``None`` on any failure — never raises.
         """
-        try:
-            async with self._session.post(
-                f"{COLLECTIVE_API_BASE}/communityRecipe/recipe/detail",
-                json={"id": int(community_recipe_id), "type": 1},
-                headers=_HEADERS,
-                timeout=_TIMEOUT,
-            ) as resp:
-                body = await resp.json(content_type=None)
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            _LOGGER.warning("XBloom collective-api call failed: %s", exc)
-            return None
+        body = await self._post_collective(
+            "communityRecipe/recipe/detail",
+            {"id": int(community_recipe_id), "type": 1},
+        )
         if not body or body.get("code") != 200:
             return None
         return (body.get("data") or {}).get("shareRecipeLink")
+
+    async def _fetch_collective_criteria(self) -> dict | None:
+        """Fetch (and cache) the collective hub's filter lookup tables —
+        ``{"originList": [{"name": ..., "value": ...}], "varietalList": [...],
+        "processingList": [...], "roastList": [...], "flavorList": [...],
+        "machineList": [...], "cupTypeList": [...]}`` — used by
+        :meth:`search_collective_recipes` to resolve free-text filter names
+        into the ids the wire API expects. No auth required. Returns
+        ``None`` on any failure — never raises.
+        """
+        if self._collective_criteria is not None:
+            return self._collective_criteria
+        body = await self._post_collective("communityRecipe/recipe/criteria", {})
+        if not body or body.get("code") != 200:
+            return None
+        self._collective_criteria = body.get("data") or {}
+        return self._collective_criteria
+
+    async def search_collective_recipes(
+        self,
+        keyword: str | None = None,
+        category: str | None = None,
+        src: str | None = None,
+        machine: list[str] | None = None,
+        cup_type: list[str] | None = None,
+        origin: list[str] | None = None,
+        varietal: list[str] | None = None,
+        process: list[str] | None = None,
+        roast: list[str] | None = None,
+        flavor: list[str] | None = None,
+        sort: str = "likes",
+        sort_direction: str = "desc",
+        page: int = 1,
+        page_size: int = 10,
+    ) -> dict | None:
+        """Search the public collective.xbloom.com community recipe hub.
+
+        No login required — a completely separate, unauthenticated API
+        from the rest of this class (which acts on the user's own private
+        cloud account). ``machine``/``cup_type``/``origin``/``varietal``/
+        ``process``/``roast``/``flavor`` accept free-text names (e.g.
+        ``["Ethiopia"]``, ``["Dark Roast"]``), resolved case-insensitively
+        against :meth:`_fetch_collective_criteria`'s live lookup tables
+        rather than hardcoded here (the hub has ~28 origins / ~49
+        varietals / ~93 flavors — not worth embedding as static enums).
+
+        Returns ``None`` on any network/parse failure. On success, a dict
+        with ``list`` (translated result rows, see
+        :func:`_collective_result_to_summary`), ``page_index``/
+        ``total_page``/``total``, and ``unmatched`` — a ``{facet: [names]}``
+        map of any filter names that didn't resolve, for the caller to
+        surface back to the user rather than silently dropping them.
+        """
+        criteria = await self._fetch_collective_criteria()
+        if criteria is None:
+            return None
+        unmatched: dict[str, list[str]] = {}
+
+        def resolve(names: list[str] | None, facet_key: str) -> list[str] | None:
+            values, bad = _resolve_criteria_values(names, criteria.get(facet_key) or [])
+            if bad:
+                unmatched[facet_key] = bad
+            return values or None
+
+        payload = {
+            "pageIndex": page,
+            "pageSize": page_size,
+            "keyword": keyword or None,
+            "recipeType": _COLLECTIVE_CATEGORY.get((category or "").lower()),
+            "recipeUserType": _COLLECTIVE_SRC.get((src or "").lower()),
+            "sort": _COLLECTIVE_SORT_FIELD.get((sort or "likes").lower(), 2),
+            "sortType": _COLLECTIVE_SORT_DIRECTION.get((sort_direction or "desc").lower(), 2),
+            "originIds": resolve(origin, "originList"),
+            "varietalIds": resolve(varietal, "varietalList"),
+            "processIds": resolve(process, "processingList"),
+            "roastList": resolve(roast, "roastList"),
+            "flavorIds": resolve(flavor, "flavorList"),
+            "machineList": resolve(machine, "machineList"),
+            "cupTypeList": resolve(cup_type, "cupTypeList"),
+        }
+        body = await self._post_collective("communityRecipe/index/page", payload)
+        if not body or body.get("code") != 200:
+            return None
+        data = body.get("data") or {}
+        roast_names = {
+            str(item["value"]): item["name"] for item in (criteria.get("roastList") or [])
+        }
+        results = [
+            _collective_result_to_summary(item, roast_names)
+            for item in (data.get("list") or [])
+        ]
+        return {
+            "list": results,
+            "page_index": data.get("pageIndex"),
+            "total_page": data.get("totalPage"),
+            "total": data.get("total"),
+            "unmatched": unmatched,
+        }
 
     async def fetch_shared_recipe(self, share_url_or_id: str) -> dict | None:
         """Fetch a recipe by share URL, collective.xbloom.com/recipe/{id}

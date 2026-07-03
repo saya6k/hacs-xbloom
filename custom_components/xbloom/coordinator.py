@@ -1091,6 +1091,28 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             recipes = [r for r in recipes if needle in (r["name"] or "").lower()]
         return {"success": True, "recipes": recipes}
 
+    async def async_search_collective_recipes(self, **filters) -> dict:
+        """Search the public collective.xbloom.com community recipe hub.
+
+        Unlike :meth:`async_list_cloud_recipes` (which lists the user's own
+        private account and requires login), this is a completely separate,
+        unauthenticated API — no XBloom account needed at all. ``filters``
+        are passed straight through to
+        :meth:`_cloud_client.XBloomCloudClient.search_collective_recipes`
+        (keyword/category/src/machine/cup_type/origin/varietal/process/
+        roast/flavor/sort/sort_direction). Returns a structured
+        ``{"success": bool, ...}`` dict rather than raising, matching the
+        error-shape convention of the rest of this class.
+        """
+        result = await self.cloud_client.search_collective_recipes(**filters)
+        if result is None:
+            return {
+                "success": False,
+                "error": "search_failed",
+                "message": "Could not search the XBloom collective recipe hub.",
+            }
+        return {"success": True, **result}
+
     async def async_create_cloud_recipe(self, recipe: dict) -> dict:
         """Create a new recipe on the configured XBloom cloud account.
 

@@ -188,6 +188,112 @@ class XBloomSearchCloudRecipesTool(XBloomBaseTool):
         }
 
 
+class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
+    """Search XBloom's public collective.xbloom.com community recipe hub."""
+
+    name = "search_xbloom_collective_recipes"
+    description = (
+        "Search XBloom's public community recipe hub (collective.xbloom.com) "
+        "— recipes shared by xBloom and other users, entirely separate from "
+        "the user's own private cloud account (use "
+        "search_xbloom_cloud_recipes for that instead). No XBloom account "
+        "is required. Results include a share_url that can be passed "
+        "straight to import_xbloom_cloud_recipe to save one locally. "
+        "The bean-profile filters (origin/varietal/process/roast/flavor) "
+        "accept free-text names (e.g. 'Ethiopia', 'Washed', 'Dark Roast') "
+        "matched case-insensitively against the hub's current filter "
+        "options — any name that doesn't match is reported back under "
+        "unmatched rather than silently ignored, so tell the user if that "
+        "happens."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional(
+                "keyword", description="Free-text search across recipe names."
+            ): str,
+            vol.Optional("category", description="coffee or tea."): vol.In(
+                ["coffee", "tea"]
+            ),
+            vol.Optional(
+                "src",
+                description=(
+                    "official (xBloom-published) or user (community-submitted)."
+                ),
+            ): vol.In(["official", "user"]),
+            vol.Optional(
+                "machine", description="Machine model(s), e.g. Studio, Original."
+            ): [str],
+            vol.Optional(
+                "cup_type",
+                description="Cup/brewer type(s), e.g. xPod, Omni, Other, Omni Brewer.",
+            ): [str],
+            vol.Optional(
+                "origin", description="Coffee origin(s), e.g. Ethiopia, Colombia."
+            ): [str],
+            vol.Optional(
+                "varietal", description="Varietal(s), e.g. Bourbon, Geisha."
+            ): [str],
+            vol.Optional(
+                "process", description="Process(es), e.g. Washed, Natural, Honey."
+            ): [str],
+            vol.Optional(
+                "roast", description="Roast level(s), e.g. Light Roast, Dark Roast."
+            ): [str],
+            vol.Optional(
+                "flavor", description="Flavor note(s), e.g. Blueberry, Caramel."
+            ): [str],
+            vol.Optional(
+                "sort", description="date, likes, or downloads. Defaults to likes."
+            ): vol.In(["date", "likes", "downloads"]),
+            vol.Optional(
+                "sort_direction", description="asc or desc. Defaults to desc."
+            ): vol.In(["asc", "desc"]),
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> dict:
+        args = tool_input.tool_args
+        result = await self.coordinator.async_search_collective_recipes(
+            keyword=args.get("keyword"),
+            category=args.get("category"),
+            src=args.get("src"),
+            machine=args.get("machine"),
+            cup_type=args.get("cup_type"),
+            origin=args.get("origin"),
+            varietal=args.get("varietal"),
+            process=args.get("process"),
+            roast=args.get("roast"),
+            flavor=args.get("flavor"),
+            sort=args.get("sort", "likes"),
+            sort_direction=args.get("sort_direction", "desc"),
+        )
+        if not result.get("success"):
+            return _cloud_failure(result, "collective search")
+        instruction = (
+            "Read out the recipe names, official/user source, and likes "
+            "count (and share_url if the user wants to import one via "
+            "import_xbloom_cloud_recipe). Mention other details only if "
+            "asked."
+        )
+        unmatched = result.get("unmatched")
+        if unmatched:
+            instruction += (
+                f" These filter terms didn't match a known option and were "
+                f"ignored — tell the user: {unmatched}."
+            )
+        return {
+            "success": True,
+            "recipes": result["list"],
+            "total": result.get("total"),
+            "instruction": instruction,
+        }
+
+
 class XBloomCreateCloudRecipeTool(XBloomBaseTool):
     """Create a brand-new recipe directly on the XBloom cloud account."""
 
