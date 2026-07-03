@@ -41,22 +41,28 @@ ATTR_RPM = "rpm"
 ATTR_BYPASS_VOLUME = "bypass_volume"
 ATTR_BYPASS_TEMPERATURE = "bypass_temperature"
 
-# Cloud recipe services (cloud_ prefix avoids colliding with the existing
-# local-recipe OptionsFlow steps of the same bare name — see tasks/plan.md D1).
+# Cross-identifier field shared by every recipe-addressing service: accepts
+# a local uid, a cloud table id, a share URL/id, or the exact recipe name
+# (resolution order in schema.find_recipe).
+ATTR_RECIPE = "recipe"
+
+# Local recipe store services — the local store (entry.options[CONF_RECIPES])
+# is the source of truth; these never touch the cloud.
+SERVICE_LIST_RECIPES = "list_recipes"
+ATTR_QUERY = "query"
+
+SERVICE_CREATE_RECIPE = "create_recipe"
+ATTR_RECIPE_YAML = "recipe_yaml"
+
+SERVICE_EDIT_RECIPE = "edit_recipe"
+ATTR_CHANGES = "changes"
+
+SERVICE_DELETE_RECIPE = "delete_recipe"
+
+# Cloud boundary services (cloud_ prefix = the network is involved).
 SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
 ATTR_SHARE_URL = "share_url"
 ATTR_RECIPE_ID = "recipe_id"
-
-SERVICE_CLOUD_SEARCH_RECIPES = "cloud_search_recipes"
-ATTR_QUERY = "query"
-
-SERVICE_CLOUD_CREATE_RECIPE = "cloud_create_recipe"
-ATTR_RECIPE_YAML = "recipe_yaml"
-
-SERVICE_CLOUD_EDIT_RECIPE = "cloud_edit_recipe"
-ATTR_TABLE_ID = "table_id"
-
-SERVICE_CLOUD_DELETE_RECIPE = "cloud_delete_recipe"
 
 # Public collective.xbloom.com community recipe hub search — a separate,
 # unauthenticated API from the rest of the cloud_* services above (which all

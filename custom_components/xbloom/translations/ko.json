@@ -294,13 +294,47 @@
         }
       }
     },
-    "cloud_search_recipes": {
-      "name": "XBloom 클라우드 레시피 검색",
-      "description": "설정된 XBloom 클라우드 계정에 저장된 모든 레시피를 나열합니다. 이름으로 필터링할 수 있습니다.",
+    "list_recipes": {
+      "name": "레시피 목록",
+      "description": "모든 로컬 레시피(‘레시피’ 드롭다운에 표시되는 항목)를 나열합니다. 이름으로 필터링할 수 있으며, 각 레시피의 로컬 고유 식별자(uid)와 클라우드 ID·공유 URL(있는 경우)이 포함됩니다.",
       "fields": {
         "query": {
           "name": "검색어",
           "description": "이름에 이 텍스트가 포함된 레시피만 표시합니다(대소문자 구분 없음). 생략하면 모든 레시피를 나열합니다."
+        }
+      }
+    },
+    "create_recipe": {
+      "name": "레시피 생성",
+      "description": "인라인 YAML 정의로 새 로컬 레시피를 만듭니다. ‘레시피’ 드롭다운에 즉시 나타나며, 클라우드에 올리려면 cloud_export_recipe를 사용하세요.",
+      "fields": {
+        "recipe_yaml": {
+          "name": "레시피 (YAML)",
+          "description": "‘레시피 추가’ 옵션 플로우 단계와 같은 YAML 형식의 레시피 정의입니다."
+        }
+      }
+    },
+    "edit_recipe": {
+      "name": "레시피 수정",
+      "description": "로컬 레시피의 필드를 하나 이상 변경합니다. YAML에 있는 필드만 변경됩니다. 아직 로컬에 없는 공유 URL을 지정하면 먼저 로컬로 가져온 뒤 수정합니다(클라우드 레시피는 직접 수정되지 않습니다).",
+      "fields": {
+        "recipe": {
+          "name": "레시피",
+          "description": "수정할 레시피 — 로컬 uid, 클라우드 테이블 ID, 공유 URL/ID, 또는 정확한 레시피 이름."
+        },
+        "changes": {
+          "name": "변경할 필드 (YAML)",
+          "description": "변경할 필드만 담은 YAML 매핑입니다 (예: 이름만 바꾸려면 `name: New Name`). 생략된 필드는 그대로 유지됩니다."
+        }
+      }
+    },
+    "delete_recipe": {
+      "name": "레시피 삭제",
+      "description": "로컬 레시피를 삭제합니다. ‘레시피’ 드롭다운에서 즉시 사라지며, XBloom 클라우드 계정의 사본(있는 경우)은 건드리지 않습니다.",
+      "fields": {
+        "recipe": {
+          "name": "레시피",
+          "description": "삭제할 레시피 — 로컬 uid, 클라우드 테이블 ID, 공유 URL/ID, 또는 정확한 레시피 이름."
         }
       }
     },
@@ -355,44 +389,6 @@
         "sort_direction": {
           "name": "정렬 방향",
           "description": "asc 또는 desc. 기본값은 desc."
-        }
-      }
-    },
-    "cloud_create_recipe": {
-      "name": "XBloom 클라우드 레시피 만들기",
-      "description": "설정된 XBloom 클라우드 계정에 새 레시피를 만듭니다. YAML 레시피 정의를 직접 입력하거나, 기존 로컬 레시피 이름으로 내보낼 수 있습니다. recipe_yaml 또는 recipe_name 중 하나만 입력하세요. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
-      "fields": {
-        "recipe_yaml": {
-          "name": "레시피 (YAML)",
-          "description": "로컬 '레시피 추가' 옵션 플로우 단계와 동일한 YAML 형식의 레시피 정의입니다. recipe_name 대신 이것을 입력하세요."
-        },
-        "recipe_name": {
-          "name": "레시피 이름 (기존 로컬 레시피 내보내기)",
-          "description": "직접 정의하는 대신 클라우드로 내보낼 기존 로컬 레시피의 이름입니다. recipe_yaml 대신 이것을 입력하세요."
-        }
-      }
-    },
-    "cloud_edit_recipe": {
-      "name": "XBloom 클라우드 레시피 수정",
-      "description": "설정된 XBloom 클라우드 계정의 기존 레시피에서 하나 이상의 필드를 변경합니다. YAML에 있는 필드만 변경되며, 생략된 필드는 현재 값을 유지합니다.",
-      "fields": {
-        "table_id": {
-          "name": "레시피 테이블 ID",
-          "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
-        },
-        "recipe_yaml": {
-          "name": "변경할 필드 (YAML)",
-          "description": "변경할 필드만 담은 YAML 매핑입니다 (예: 이름만 바꾸려면 `name: New Name`). 생략된 필드는 그대로 유지됩니다."
-        }
-      }
-    },
-    "cloud_delete_recipe": {
-      "name": "XBloom 클라우드 레시피 삭제",
-      "description": "설정된 XBloom 클라우드 계정에서 레시피를 영구적으로 삭제합니다. 되돌릴 수 없습니다.",
-      "fields": {
-        "table_id": {
-          "name": "레시피 테이블 ID",
-          "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
         }
       }
     }

@@ -115,19 +115,19 @@ cloud_import_recipe:
       selector:
         text:
 
-cloud_search_recipes:
-  name: Search XBloom cloud recipes
+list_recipes:
+  name: List recipes
   description: >-
-    List every recipe saved on the configured XBloom cloud account,
-    optionally filtered by name. Requires an XBloom account to be
-    configured for the machine (Settings → Devices & Services → XBloom →
-    Configure).
+    List every local recipe (the ones shown in the Recipe dropdown),
+    optionally filtered by name. Each result includes the recipe's local
+    uid and, if it has been imported from / exported to the XBloom cloud,
+    its cloud id and share URL.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to search.
-        Defaults to the first configured machine.
+        The XBloom machine whose recipes to list. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
@@ -255,21 +255,19 @@ cloud_search_collective_recipes:
             - asc
             - desc
 
-cloud_create_recipe:
-  name: Create XBloom cloud recipe
+create_recipe:
+  name: Create recipe
   description: >-
-    Create a new recipe on the configured XBloom cloud account (visible in
-    the official app), either from an inline YAML recipe definition or by
-    pushing an existing local recipe by name. Provide recipe_yaml or
-    recipe_name, not both. Returns the new recipe's table ID and share
-    URL. Requires an XBloom account to be configured for the machine
-    (Settings → Devices & Services → XBloom → Configure).
+    Create a new local recipe from an inline YAML definition. It appears
+    in the Recipe dropdown immediately and gets a local uid (returned in
+    the response). To publish it to the XBloom cloud afterwards, call
+    cloud_export_recipe.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to create the
-        recipe on. Defaults to the first configured machine.
+        The XBloom machine to create the recipe on. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
@@ -281,93 +279,77 @@ cloud_create_recipe:
       description: >-
         The recipe definition in the same YAML format used by the local
         "Add a recipe" options-flow step (name, grind_size, rpm, dose_g,
-        ratio, cup_type, bypass_volume, bypass_temperature, pours). Provide
-        this or recipe_name, not both.
-      required: false
+        ratio, cup_type, bypass_volume, bypass_temperature, pours).
+      required: true
       selector:
         text:
           multiline: true
-    recipe_name:
-      name: Recipe name (push an existing local recipe)
-      description: >-
-        Name of an existing local (default, YAML, or UI-managed) recipe to
-        push to the cloud instead of defining one inline. Provide this or
-        recipe_yaml, not both.
-      required: false
-      example: Morning V60
-      selector:
-        text:
 
-cloud_edit_recipe:
-  name: Edit XBloom cloud recipe
+edit_recipe:
+  name: Edit recipe
   description: >-
-    Change one or more fields of an existing recipe on the configured
-    XBloom cloud account. Only the fields present in the YAML are changed
-    — every omitted field keeps its current value on the account (fetches
-    the current recipe first, then patches). Requires an XBloom account to
-    be configured for the machine (Settings → Devices & Services → XBloom
-    → Configure).
+    Change one or more fields of a local recipe. Only the fields present
+    in the YAML are changed — every omitted field keeps its current value.
+    Cloud recipes cannot be edited directly: pointing this at a share URL
+    that isn't local yet first imports a local copy (with its own uid) and
+    edits that, leaving only the edited local version.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to edit the
-        recipe on. Defaults to the first configured machine.
+        The XBloom machine whose recipe to edit. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
           filter:
             - integration: xbloom
           multiple: true
-    table_id:
-      name: Recipe table ID
+    recipe:
+      name: Recipe
       description: >-
-        The cloud recipe's table ID, from cloud_search_recipes or
-        cloud_create_recipe's response.
+        Which recipe to edit — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
       required: true
-      example: 12345
+      example: Morning V60
       selector:
-        number:
-          min: 1
-          mode: box
-    recipe_yaml:
+        text:
+    changes:
       name: Fields to change (YAML)
       description: >-
         A YAML mapping of only the fields to change, using the same field
         names as "Add a recipe" (e.g. just `name: New Name` to rename).
         Omitted fields are left unchanged.
       required: true
-      example: "name: New Name"
+      example: "grind_size: 55"
       selector:
         text:
           multiline: true
 
-cloud_delete_recipe:
-  name: Delete XBloom cloud recipe
+delete_recipe:
+  name: Delete recipe
   description: >-
-    Permanently delete a recipe from the configured XBloom cloud account.
-    This cannot be undone. Requires an XBloom account to be configured for
-    the machine (Settings → Devices & Services → XBloom → Configure).
+    Delete a local recipe. It disappears from the Recipe dropdown
+    immediately. A copy on the XBloom cloud account (if any) is NOT
+    touched — manage cloud copies from the official app.
   fields:
     device_id:
       name: Machine
       description: >-
-        The XBloom machine whose configured cloud account to delete the
-        recipe from. Defaults to the first configured machine.
+        The XBloom machine whose recipe to delete. Defaults to the first
+        configured machine.
       required: false
       selector:
         device:
           filter:
             - integration: xbloom
           multiple: true
-    table_id:
-      name: Recipe table ID
+    recipe:
+      name: Recipe
       description: >-
-        The cloud recipe's table ID, from cloud_search_recipes or
-        cloud_create_recipe's response.
+        Which recipe to delete — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
       required: true
-      example: 12345
+      example: Morning V60
       selector:
-        number:
-          min: 1
-          mode: box
+        text:

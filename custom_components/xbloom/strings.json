@@ -294,13 +294,47 @@
         }
       }
     },
-    "cloud_search_recipes": {
-      "name": "Search XBloom cloud recipes",
-      "description": "List every recipe saved on the configured XBloom cloud account, optionally filtered by name.",
+    "list_recipes": {
+      "name": "List recipes",
+      "description": "List every local recipe (the ones shown in the Recipe dropdown), optionally filtered by name. Results include each recipe's local uid and any cloud id / share URL.",
       "fields": {
         "query": {
           "name": "Query",
           "description": "Filter results to recipes whose name contains this text (case-insensitive). Omit to list every recipe."
+        }
+      }
+    },
+    "create_recipe": {
+      "name": "Create recipe",
+      "description": "Create a new local recipe from an inline YAML definition. It appears in the Recipe dropdown immediately; use cloud_export_recipe to publish it to the XBloom cloud.",
+      "fields": {
+        "recipe_yaml": {
+          "name": "Recipe (YAML)",
+          "description": "The recipe definition in the same YAML format as the \"Add a recipe\" options-flow step."
+        }
+      }
+    },
+    "edit_recipe": {
+      "name": "Edit recipe",
+      "description": "Change one or more fields of a local recipe. Only the fields present in the YAML are changed. A share URL that isn't local yet is imported first (cloud recipes are never edited directly).",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which recipe to edit — a local uid, a cloud table id, a share URL/id, or the exact recipe name."
+        },
+        "changes": {
+          "name": "Fields to change (YAML)",
+          "description": "A YAML mapping of only the fields to change (e.g. just `name: New Name` to rename). Omitted fields are left unchanged."
+        }
+      }
+    },
+    "delete_recipe": {
+      "name": "Delete recipe",
+      "description": "Delete a local recipe. It disappears from the Recipe dropdown immediately; a copy on the XBloom cloud account (if any) is not touched.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which recipe to delete — a local uid, a cloud table id, a share URL/id, or the exact recipe name."
         }
       }
     },
@@ -355,44 +389,6 @@
         "sort_direction": {
           "name": "Sort direction",
           "description": "asc or desc. Defaults to desc."
-        }
-      }
-    },
-    "cloud_create_recipe": {
-      "name": "Create XBloom cloud recipe",
-      "description": "Create a new recipe on the configured XBloom cloud account, either from an inline YAML recipe definition or by pushing an existing local recipe by name. Provide recipe_yaml or recipe_name, not both. Returns the new recipe's table ID and share URL.",
-      "fields": {
-        "recipe_yaml": {
-          "name": "Recipe (YAML)",
-          "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step. Provide this or recipe_name, not both."
-        },
-        "recipe_name": {
-          "name": "Recipe name (push an existing local recipe)",
-          "description": "Name of an existing local recipe to push to the cloud instead of defining one inline. Provide this or recipe_yaml, not both."
-        }
-      }
-    },
-    "cloud_edit_recipe": {
-      "name": "Edit XBloom cloud recipe",
-      "description": "Change one or more fields of an existing recipe on the configured XBloom cloud account. Only the fields present in the YAML are changed — every omitted field keeps its current value.",
-      "fields": {
-        "table_id": {
-          "name": "Recipe table ID",
-          "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
-        },
-        "recipe_yaml": {
-          "name": "Fields to change (YAML)",
-          "description": "A YAML mapping of only the fields to change (e.g. just `name: New Name` to rename). Omitted fields are left unchanged."
-        }
-      }
-    },
-    "cloud_delete_recipe": {
-      "name": "Delete XBloom cloud recipe",
-      "description": "Permanently delete a recipe from the configured XBloom cloud account. This cannot be undone.",
-      "fields": {
-        "table_id": {
-          "name": "Recipe table ID",
-          "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
         }
       }
     }
