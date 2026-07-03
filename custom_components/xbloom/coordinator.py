@@ -32,7 +32,13 @@ from ._cloud_client import (
     validate_pour_volume_consistency,
 )
 from . import brewing
-from .schema import RECIPE_SCHEMA, compute_total_water_ml, new_recipe_uid
+from .schema import (
+    RECIPE_SCHEMA,
+    compute_total_water_ml,
+    dedupe_name,
+    find_recipe,
+    new_recipe_uid,
+)
 from xbloom.models.types import (
     CupType,
     PourPattern,
@@ -1128,6 +1134,177 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 else:
                     merged[name] = recipe
         self.recipes = merged
+
+    # ------------------------------------------------------------------
+    # Local recipe store CRUD — the source of truth behind the recipe
+    # select entity and the list/create/edit/delete services & LLM tools.
+    # ------------------------------------------------------------------
+
+    def _write_options_recipes(self, options_recipes: Dict[str, Any]) -> None:
+        """Persist the store and refresh the merged view + entities."""
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        new_options = dict(entry.options)
+        new_options[CONF_RECIPES] = options_recipes
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        self._rebuild_recipes()
+        self.async_update_listeners()
+
+    def _options_recipes(self) -> Dict[str, Any]:
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        raw = (entry.options.get(CONF_RECIPES) if entry else None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    @staticmethod
+    def _looks_like_share_ref(identifier: str) -> bool:
+        """Heuristic: could this unresolved identifier be a share URL/id?
+
+        Used by edit/write-slot to decide between auto-importing and a
+        plain recipe_not_found error, so a typo'd recipe name doesn't
+        trigger a pointless network fetch. Share ids are base64
+        (possibly percent-encoded) — recipe names practically never
+        contain these characters.
+        """
+        s = identifier.strip()
+        return "://" in s or any(c in s for c in "%=+/")
+
+    @staticmethod
+    def _summarize_local_recipe(name: str, recipe: dict) -> dict:
+        summary = {
+            "uid": recipe.get("uid"),
+            "name": name,
+            "source": recipe.get("source"),
+            "dose_g": recipe.get("dose_g"),
+            "ratio": recipe.get("ratio"),
+            "grind_size": recipe.get("grind_size"),
+            "rpm": recipe.get("rpm"),
+            "cup_type": recipe.get("cup_type"),
+            "pour_count": len(recipe.get("pours") or []),
+        }
+        if recipe.get("cloud_table_id") is not None:
+            summary["cloud_table_id"] = recipe["cloud_table_id"]
+        if recipe.get("share_url"):
+            summary["share_url"] = recipe["share_url"]
+        return summary
+
+    def list_local_recipes(self, query: Optional[str] = None) -> dict:
+        """List every local recipe (merged YAML + store view), optionally
+        filtered by a case-insensitive name substring."""
+        rows = [
+            self._summarize_local_recipe(name, recipe)
+            for name, recipe in (self.recipes or {}).items()
+        ]
+        if query:
+            needle = query.strip().lower()
+            rows = [r for r in rows if needle in (r["name"] or "").lower()]
+        return {"success": True, "recipes": rows}
+
+    def create_local_recipe(self, recipe: dict) -> dict:
+        """Validate and save a new local recipe (uid assigned here).
+
+        A name collision gets the `` (2)`` suffix rather than a rejection
+        — same rule as import, so callers never silently overwrite.
+        """
+        try:
+            validated = RECIPE_SCHEMA(recipe)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Recipe failed validation: {exc}",
+            }
+        options_recipes = self._options_recipes()
+        # Dedupe against the *visible* names — a tombstoned name is free
+        # to reuse (writing it just replaces the tombstone).
+        name = dedupe_name(validated["name"], self.recipes or {})
+        validated["name"] = name
+        validated["uid"] = new_recipe_uid()
+        validated.setdefault("source", "manual")
+        options_recipes[name] = validated
+        self._write_options_recipes(options_recipes)
+        return {"success": True, "uid": validated["uid"], "name": name}
+
+    async def async_edit_local_recipe(self, identifier: str, changes: dict) -> dict:
+        """Patch a local recipe in place (uid and cloud metadata kept).
+
+        If ``identifier`` is a share URL/id not present locally, the
+        recipe is auto-imported first (clone + uid) and the edit lands on
+        the local copy — cloud recipes are never edited directly.
+        """
+        resolved = find_recipe(self.recipes or {}, identifier)
+        if resolved is None and self._looks_like_share_ref(str(identifier)):
+            imported = await self.async_import_cloud_recipe(str(identifier))
+            if not imported.get("success"):
+                return imported
+            resolved = find_recipe(self.recipes or {}, imported["uid"])
+        if resolved is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No local recipe matches {identifier!r}.",
+            }
+        old_name, current = resolved
+
+        merged = {**current, **(changes or {})}
+        # Identity is never patchable — it's what the edit is anchored to.
+        for key in ("uid", "cloud_table_id", "share_url", "source"):
+            if current.get(key) is not None:
+                merged[key] = current[key]
+        try:
+            validated = RECIPE_SCHEMA(merged)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Edited recipe failed validation: {exc}",
+            }
+
+        options_recipes = self._options_recipes()
+        new_name = validated["name"]
+        if new_name != old_name and new_name in (self.recipes or {}):
+            return {
+                "success": False,
+                "error": "name_taken",
+                "message": f"A recipe named {new_name!r} already exists.",
+            }
+        yaml_names = set(self.hass.data.get(DOMAIN, {}).get("yaml_recipes") or {})
+        if new_name != old_name:
+            options_recipes.pop(old_name, None)
+            if old_name in yaml_names:
+                # Renaming a YAML-layer recipe must not resurface the
+                # YAML original under the old name.
+                options_recipes[old_name] = None
+        options_recipes[new_name] = validated
+        if self.selected_recipe == old_name:
+            self.selected_recipe = new_name
+        self._write_options_recipes(options_recipes)
+        return {
+            "success": True,
+            "uid": validated.get("uid"),
+            "name": new_name,
+            "recipe": validated,
+        }
+
+    def delete_local_recipe(self, identifier: str) -> dict:
+        """Delete a local recipe (the cloud copy, if any, is untouched)."""
+        resolved = find_recipe(self.recipes or {}, identifier)
+        if resolved is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No local recipe matches {identifier!r}.",
+            }
+        name, recipe = resolved
+        options_recipes = self._options_recipes()
+        options_recipes.pop(name, None)
+        if name in (self.hass.data.get(DOMAIN, {}).get("yaml_recipes") or {}):
+            # Tombstone so the YAML layer's copy stays hidden.
+            options_recipes[name] = None
+        if self.selected_recipe == name:
+            self.selected_recipe = None
+        self._write_options_recipes(options_recipes)
+        return {"success": True, "uid": recipe.get("uid"), "name": name}
 
     def seed_bundled_recipes(self) -> None:
         """Fresh-install fallback: write the bundled defaults as local recipes.
