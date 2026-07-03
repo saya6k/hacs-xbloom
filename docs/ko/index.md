@@ -138,9 +138,11 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Assist(LLM)에서는 현재 `cloud_import_recipe`만 도구(`import_xbloom_cloud_recipe`)로
-노출되어 있습니다. 나머지 4개 클라우드 서비스는 현재 HA 서비스로만 제공되며 — Assist
-도구는 추후 예정입니다.
+Assist(LLM)에서는 6개 작업 모두 도구로 노출되어 있습니다: `import_xbloom_cloud_recipe`,
+`search_xbloom_cloud_recipes`, `create_xbloom_cloud_recipe`,
+`export_xbloom_recipe_to_cloud`, `edit_xbloom_cloud_recipe`,
+`delete_xbloom_cloud_recipe`(마지막 도구는 브루잉 도구의 원두/필터 확인과 동일하게
+삭제 전 명시적 확인이 필요합니다).
 
 ## 그라인드 사이즈 참고 (XBloom Studio 스케일, 0–80)
 

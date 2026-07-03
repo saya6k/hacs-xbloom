@@ -137,9 +137,12 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-Through Assist (LLM), only `cloud_import_recipe` is currently exposed as a tool
-(`import_xbloom_cloud_recipe`); the other four cloud services are HA services only
-for now — Assist tools for them are planned.
+Through Assist (LLM), all six operations are exposed as tools:
+`import_xbloom_cloud_recipe`, `search_xbloom_cloud_recipes`,
+`create_xbloom_cloud_recipe`, `export_xbloom_recipe_to_cloud`,
+`edit_xbloom_cloud_recipe`, and `delete_xbloom_cloud_recipe` (the last requires
+explicit confirmation before deleting, same as the brewing tool's beans/filter
+confirmation).
 
 ## Grind size reference (XBloom Studio scale, 0–80)
 
