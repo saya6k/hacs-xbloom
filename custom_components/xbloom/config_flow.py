@@ -27,6 +27,7 @@ from .const import (
     CONF_RECIPES,
     CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
+    DATA_COORDINATOR,
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_SESSION_TIMEOUT,
     DOMAIN,
@@ -216,14 +217,29 @@ def _options_recipes(entry: config_entries.ConfigEntry) -> dict[str, dict]:
     return {k: v for k, v in raw.items() if v is not None}
 
 
+def _synced_recipes(entry: config_entries.ConfigEntry, hass) -> dict[str, dict]:
+    """The current cloud-synced recipe layer — the account's own cloud
+    recipes, XBloom's official public recipes, or the bundled fallback,
+    whichever ``coordinator.async_sync_cloud_recipes()`` last populated
+    (see coordinator.py). Falls back to the static bundled
+    ``default_recipes.py`` list directly if the coordinator isn't set up
+    yet — shouldn't normally happen for an already-configured entry's
+    OptionsFlow, but defensive.
+    """
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(DATA_COORDINATOR)
+    if coordinator is not None:
+        return dict(coordinator.cloud_synced_recipes or {})
+    return dict(hass.data.get(DOMAIN, {}).get("default_recipes", {}))
+
+
 def _all_visible_recipes(entry: config_entries.ConfigEntry, hass) -> dict[str, dict]:
-    """Merge defaults + YAML + options recipes, respecting tombstones.
+    """Merge cloud-synced + YAML + options recipes, respecting tombstones.
 
     A ``None`` value in options is a tombstone that hides a same-named
-    recipe from a lower layer (defaults or YAML).
+    recipe from a lower layer (cloud-synced or YAML).
     """
     merged: dict[str, dict] = {}
-    merged.update(hass.data.get(DOMAIN, {}).get("default_recipes", {}))
+    merged.update(_synced_recipes(entry, hass))
     merged.update(hass.data.get(DOMAIN, {}).get("yaml_recipes", {}))
     options_raw = entry.options.get(CONF_RECIPES) or {}
     if isinstance(options_raw, dict):

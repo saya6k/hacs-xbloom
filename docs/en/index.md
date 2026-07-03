@@ -15,13 +15,13 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 - **Manual control** — pour with custom temperature/volume, grind with custom size/RPM, **tare** the scale, vibrate the tray.
 - **Recipes — three layers**:
-  1. **10 bundled defaults** ship with the integration (`default_recipes.py`) — light / medium-light / dark roast hot+iced, plus hibiscus / black / green / iced-hibiscus tea. Visible immediately on install.
-  2. **`configuration.yaml`** recipes (the legacy path) override defaults by name.
-  3. **OptionsFlow CRUD** lets you add / edit / delete recipes from the UI without restarting HA. Overrides defaults and YAML by name. Settings → Devices & Services → XBloom → ⋯ → **Configure**.
+  1. **Cloud-synced recipes**, refreshed automatically on install and every hour: the account's own cloud recipes if one is linked, otherwise XBloom's official public recipes from the community hub. If the sync can't reach the network at all (e.g. no internet at first boot), a small bundled fallback set (`default_recipes.py`) is used until the next successful sync. Read-only at runtime — see below to override one.
+  2. **`configuration.yaml`** recipes (the legacy path) override synced recipes by name.
+  3. **OptionsFlow CRUD** lets you add / edit / delete recipes from the UI without restarting HA. Overrides synced and YAML recipes by name. Settings → Devices & Services → XBloom → ⋯ → **Configure**.
 - **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = idle seconds between steeps; the firmware drives pour → soak → siphon-drain internally.
 - **Selected-recipe inspection** — the recipe select entity exposes the full recipe (pours, bypass, temperatures, etc.) under its `recipe` attribute. View at Developer Tools → States → `select.xbloom_recipe`, or in templates via `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.
 - **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
-- **Optional cloud recipe sync** — link an XBloom account to search, import, create, edit, and delete recipes on your XBloom cloud account, alongside the local layers above. Entirely optional; every other feature works fully without one. See [Cloud recipe sync](#cloud-recipe-sync-optional) below.
+- **Optional cloud account** — link an XBloom account to also search, create, edit, delete, and import individual recipes on your cloud account or XBloom's public community hub, beyond the automatic sync above. Entirely optional; every other feature works fully without one. See [Cloud recipe sync](#cloud-recipe-sync-optional) below.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
 - **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
@@ -49,11 +49,11 @@ Three layers, in increasing precedence:
 
 | Layer | Where | Mutable from | Notes |
 | --- | --- | --- | --- |
-| Defaults | `custom_components/xbloom/default_recipes.py` | code only | 10 bundled recipes. Read-only at runtime. |
-| YAML | `configuration.yaml` `xbloom: recipes:` | edit + restart HA | Same shape as below. Overrides defaults by name. |
+| Cloud-synced | `coordinator.cloud_synced_recipes` (in-memory) | not directly — see below | Account recipes (if linked) or XBloom's official public recipes (if not), refreshed on install and hourly. Falls back to a small bundled set (`default_recipes.py`) only if both fetches fail. Read-only at runtime. |
+| YAML | `configuration.yaml` `xbloom: recipes:` | edit + restart HA | Same shape as below. Overrides synced recipes by name. |
 | OptionsFlow | `entry.options[CONF_RECIPES]` | HA UI | Add / edit / delete. Overrides everything by name. |
 
-To override a bundled default, just add a same-named recipe in YAML or via the OptionsFlow.
+To override a synced recipe, just add a same-named recipe in YAML or via the OptionsFlow — the synced original stays intact underneath and reappears if you delete the override.
 
 ### YAML recipe shape
 

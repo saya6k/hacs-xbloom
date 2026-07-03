@@ -27,6 +27,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     ATTR_BYPASS_TEMPERATURE,
@@ -71,7 +72,7 @@ from .const import (
     SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
 )
-from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
+from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK, CLOUD_RECIPE_SYNC_INTERVAL
 from .default_recipes import DEFAULT_RECIPES
 from .llm_api import register_llm_api, unregister_llm_api
 from .schema import POUR_SCHEMA, RECIPE_SCHEMA  # re-exported below
@@ -452,9 +453,17 @@ def _register_services(hass: HomeAssistant) -> None:
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Load bundled defaults + YAML-defined recipes into hass.data.
 
-    Layers (lowest precedence first), all merged into ``coordinator.recipes``
-    in ``async_setup_entry``:
-      1. ``default_recipes.DEFAULT_RECIPES`` — bundled with the integration.
+    ``hass.data[DOMAIN]["default_recipes"]`` (``default_recipes.DEFAULT_RECIPES``)
+    is no longer an always-active recipe layer — it's now only a fallback,
+    used by ``coordinator.async_sync_cloud_recipes()`` if fetching real
+    cloud-synced recipes fails entirely (e.g. no network at startup), and
+    as the synchronous placeholder ``async_setup_entry`` seeds
+    ``cloud_synced_recipes`` with before that first sync completes. Recipe
+    merge order (lowest precedence first), all rebuilt by
+    ``coordinator._rebuild_recipes()``:
+      1. ``coordinator.cloud_synced_recipes`` — the account's own cloud
+         recipes, or XBloom's official public recipes if no account is
+         configured, or the bundled fallback above if both fetches fail.
       2. ``configuration.yaml`` ``xbloom: recipes:`` block.
       3. OptionsFlow-managed recipes in ``entry.options[CONF_RECIPES]``.
     """
@@ -595,22 +604,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Recipe merge order — lowest precedence first:
-    #   1. Bundled defaults (default_recipes.DEFAULT_RECIPES)
+    #   1. Cloud-synced (coordinator.cloud_synced_recipes — see below)
     #   2. YAML (configuration.yaml xbloom: recipes:)
     #   3. OptionsFlow (entry.options[CONF_RECIPES])
     # Later layers override earlier ones by name so the user can always
-    # shadow a default by adding a same-named YAML or UI recipe.
-    merged_recipes: dict[str, dict] = {}
-    merged_recipes.update(hass.data[DOMAIN].get("default_recipes", {}))
-    merged_recipes.update(hass.data[DOMAIN].get("yaml_recipes", {}))
-    options_recipes = entry.options.get(CONF_RECIPES) or {}
-    if isinstance(options_recipes, dict):
-        for name, recipe in options_recipes.items():
-            if recipe is None:
-                merged_recipes.pop(name, None)  # tombstone: hide from lower layers
-            else:
-                merged_recipes[name] = recipe
-    coordinator.recipes = merged_recipes
+    # shadow a synced/YAML recipe by adding a same-named YAML or UI recipe.
+    # Seed layer 1 synchronously with the bundled default_recipes.py list
+    # (no network) so recipes are never empty before the first real cloud
+    # sync — kicked off below as a background task — completes.
+    coordinator.cloud_synced_recipes = dict(hass.data[DOMAIN].get("default_recipes", {}))
+    coordinator._rebuild_recipes()
 
     # Initial data fetch (non-blocking; device may not be connected yet)
     await coordinator.async_refresh()
@@ -627,6 +630,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # React to options changes
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    # Replace the bundled-defaults placeholder above with real cloud-synced
+    # recipes (the account's own recipes if a cloud account is configured,
+    # else XBloom's official public recipes) — run in the background so a
+    # slow/unreachable cloud API can't delay integration setup, then keep
+    # re-running periodically so recipes added later eventually show up
+    # without requiring a manual reload.
+    hass.async_create_task(coordinator.async_sync_cloud_recipes())
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass,
+            lambda now: hass.async_create_task(coordinator.async_sync_cloud_recipes()),
+            CLOUD_RECIPE_SYNC_INTERVAL,
+        )
+    )
 
     return True
 
