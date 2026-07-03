@@ -16,6 +16,11 @@ CONF_MODE = "mode"                   # persisted in entry.options
 CONF_RECIPES_SEEDED = "recipes_seeded"
 CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
 
+# entry.options: what HA last wrote to each Easy Mode slot —
+# {"A": {"uid": ..., "name": ...}, ...}. The machine never reports slot
+# contents, so this record is the only source for the slot text entities.
+CONF_EASY_SLOTS = "easy_slots"
+
 # XBloom cloud account — both optional. Absent entirely (not just empty
 # strings) when the user skips the account step; cloud-backed services/LLM
 # tools must check for their absence and fail gracefully, never assume they
@@ -59,6 +64,9 @@ SERVICE_EDIT_RECIPE = "edit_recipe"
 ATTR_CHANGES = "changes"
 
 SERVICE_DELETE_RECIPE = "delete_recipe"
+
+SERVICE_WRITE_RECIPE_TO_EASY_SLOT = "write_recipe_to_easy_slot"
+ATTR_SLOT = "slot"
 
 # Cloud boundary services (cloud_ prefix = the network is involved).
 SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"

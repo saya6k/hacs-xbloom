@@ -292,6 +292,20 @@
         }
       }
     },
+    "write_recipe_to_easy_slot": {
+      "name": "이지 모드 슬롯에 레시피 저장",
+      "description": "기기의 온보드 이지 모드 슬롯(A/B/C)에 레시피를 저장해 기기 물리 버튼으로 실행할 수 있게 합니다. 추출은 하지 않으며, 기존 슬롯 내용은 덮어써집니다.",
+      "fields": {
+        "slot": {
+          "name": "슬롯",
+          "description": "대상 이지 모드 슬롯 (A, B, C)."
+        },
+        "recipe": {
+          "name": "레시피",
+          "description": "저장할 레시피 — 로컬 uid, 클라우드 테이블 ID, 공유 URL/ID, 또는 정확한 레시피 이름. 생략하면 현재 선택된 레시피를 저장합니다."
+        }
+      }
+    },
     "cloud_import_recipe": {
       "name": "XBloom 클라우드에서 레시피 가져오기",
       "description": "XBloom 클라우드 공유 URL 또는 id로 레시피를 가져와 로컬 레시피로 저장합니다. XBloom 계정 로그인이 필요하지 않습니다.",

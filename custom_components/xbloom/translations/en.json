@@ -292,6 +292,20 @@
         }
       }
     },
+    "write_recipe_to_easy_slot": {
+      "name": "Write recipe to Easy Mode slot",
+      "description": "Store a recipe in one of the machine's three onboard Easy Mode slots (A/B/C) so it can be run from the machine's physical buttons. Does not brew; existing slot contents are overwritten.",
+      "fields": {
+        "slot": {
+          "name": "Slot",
+          "description": "Target Easy Mode slot (A, B, or C)."
+        },
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which recipe to store — a local uid, a cloud table id, a share URL/id, or the exact recipe name. Defaults to the currently selected recipe."
+        }
+      }
+    },
     "cloud_import_recipe": {
       "name": "Import recipe from XBloom cloud",
       "description": "Fetch a recipe from an XBloom cloud share URL or id and save it as a local recipe. No XBloom account login is required.",

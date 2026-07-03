@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_ACCOUNT_RECIPES_SEEDED,
+    CONF_EASY_SLOTS,
     CONF_RECIPES,
     CONF_RECIPES_SEEDED,
     DOMAIN,
@@ -983,26 +984,85 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
 
-    async def async_write_easy_slot(self, slot_letter: str) -> None:
-        """Write the currently-selected recipe to Easy Mode slot A/B/C.
+    async def async_write_easy_slot(
+        self, slot_letter: str, identifier: Optional[str] = None
+    ) -> dict:
+        """Write a recipe to Easy Mode slot A/B/C (11510, type-2 packet).
 
-        The user picks the recipe via the Recipe ``select`` entity; each
-        slot button passes its own letter through.
+        ``identifier`` (uid / cloud table id / share URL/id / name)
+        selects the recipe; omitted, the currently-selected recipe (the
+        Recipe ``select`` entity) is written — that's what the slot
+        button entities do. A share URL/id not present locally is
+        auto-imported first (clone + uid), so "write this shared recipe
+        to slot B" is one call. On success the slot → recipe mapping is
+        persisted in ``entry.options["easy_slots"]`` so the slot text
+        entities can show (and restore) what HA last wrote; the machine
+        itself never reports slot contents.
         """
+        if identifier:
+            resolved = find_recipe(self.recipes or {}, identifier)
+            if resolved is None and self._looks_like_share_ref(str(identifier)):
+                imported = await self.async_import_cloud_recipe(str(identifier))
+                if not imported.get("success"):
+                    return imported
+                resolved = find_recipe(self.recipes or {}, imported["uid"])
+            if resolved is None:
+                return {
+                    "success": False,
+                    "error": "recipe_not_found",
+                    "message": f"No local recipe matches {identifier!r}.",
+                }
+            name, raw = resolved
+        else:
+            name = self.selected_recipe
+            if not name or name not in (self.recipes or {}):
+                _LOGGER.warning(
+                    "Easy slot write ignored — no recipe selected (%s)", name
+                )
+                return {
+                    "success": False,
+                    "error": "no_recipe_selected",
+                    "message": "No recipe is selected.",
+                }
+            raw = self.recipes[name]
+
         if not self._check_connected():
-            return
-        if not self.selected_recipe or self.selected_recipe not in self.recipes:
-            _LOGGER.warning(
-                "Easy slot write ignored — no recipe selected (%s)",
-                self.selected_recipe,
-            )
-            return
+            return {
+                "success": False,
+                "error": "not_connected",
+                "message": "The XBloom is not connected over Bluetooth.",
+            }
         try:
-            raw = self.recipes[self.selected_recipe]
             recipe = _build_recipe_from_yaml(raw)
             await brewing.async_write_easy_slot(self.client, slot_letter, recipe)
         except Exception as exc:
-            _LOGGER.error("Easy slot write error (%s): %s", slot_letter, exc, exc_info=True)
+            _LOGGER.error(
+                "Easy slot write error (%s): %s", slot_letter, exc, exc_info=True
+            )
+            return {
+                "success": False,
+                "error": "write_failed",
+                "message": f"Slot write failed: {exc}",
+            }
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is not None:
+            slots = dict(entry.options.get(CONF_EASY_SLOTS) or {})
+            slots[slot_letter.upper()] = {"uid": raw.get("uid"), "name": name}
+            new_options = dict(entry.options)
+            new_options[CONF_EASY_SLOTS] = slots
+            self.hass.config_entries.async_update_entry(entry, options=new_options)
+        self.async_update_listeners()
+        return {"success": True, "slot": slot_letter.upper(), "name": name,
+                "uid": raw.get("uid")}
+
+    def easy_slot_contents(self, slot_letter: str) -> Optional[dict]:
+        """What HA last wrote to a slot — ``{"uid", "name"}`` or None."""
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return None
+        slots = entry.options.get(CONF_EASY_SLOTS) or {}
+        return slots.get(slot_letter.upper())
 
     # ------------------------------------------------------------------
     # Cloud account (recipe sync) — all optional, never required for BLE use

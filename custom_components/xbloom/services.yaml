@@ -118,6 +118,47 @@ execute_recipe:
           unit_of_measurement: "°C"
           mode: slider
 
+write_recipe_to_easy_slot:
+  name: Write recipe to Easy Mode slot
+  description: >-
+    Store a recipe in one of the machine's three onboard Easy Mode slots
+    (A/B/C) so it can be run from the machine's physical buttons. This
+    does not brew anything; existing slot contents are overwritten. A
+    share URL that isn't local yet is imported first. The slot's text
+    entity updates to show the recipe name.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine to write the slot on. Defaults to the first
+        configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    slot:
+      name: Slot
+      description: Target Easy Mode slot.
+      required: true
+      selector:
+        select:
+          options:
+            - A
+            - B
+            - C
+    recipe:
+      name: Recipe
+      description: >-
+        Which recipe to store — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name. Defaults to the currently
+        selected recipe if omitted.
+      required: false
+      example: Morning V60
+      selector:
+        text:
+
 cloud_import_recipe:
   name: Import recipe from XBloom cloud
   description: >-

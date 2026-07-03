@@ -53,7 +53,9 @@ from .const import (
     ATTR_SORT_DIRECTION,
     ATTR_SRC,
     ATTR_VARIETAL,
+    ATTR_SLOT,
     CONF_ACCOUNT_RECIPES_SEEDED,
+    CONF_EASY_SLOTS,
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
     CONF_PASSWORD,
@@ -75,6 +77,7 @@ from .const import (
     SERVICE_EDIT_RECIPE,
     SERVICE_EXECUTE_RECIPE,
     SERVICE_LIST_RECIPES,
+    SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
 )
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
 from .default_recipes import DEFAULT_RECIPES
@@ -184,6 +187,14 @@ DELETE_RECIPE_SCHEMA = vol.Schema(
 CLOUD_EXPORT_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_RECIPE): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+WRITE_RECIPE_TO_EASY_SLOT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_SLOT): vol.All(cv.string, vol.Upper, vol.In(["A", "B", "C"])),
+        vol.Optional(ATTR_RECIPE): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -335,6 +346,27 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_IMPORT_RECIPE,
         _handle_cloud_import_recipe,
         schema=CLOUD_IMPORT_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _handle_write_recipe_to_easy_slot(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        result = await coordinators[0].async_write_easy_slot(
+            call.data[ATTR_SLOT], identifier=call.data.get(ATTR_RECIPE)
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "write_recipe_to_easy_slot failed")
+            )
+        return {"slot": result["slot"], "uid": result["uid"], "name": result["name"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
+        _handle_write_recipe_to_easy_slot,
+        schema=WRITE_RECIPE_TO_EASY_SLOT_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
 
@@ -726,6 +758,7 @@ _RECIPE_ONLY_OPTION_KEYS = {
     CONF_RECIPES,
     CONF_RECIPES_SEEDED,
     CONF_ACCOUNT_RECIPES_SEEDED,
+    CONF_EASY_SLOTS,
 }
 
 
@@ -776,6 +809,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_CLOUD_IMPORT_RECIPE,
                 SERVICE_CLOUD_EXPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
+                SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
