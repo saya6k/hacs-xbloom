@@ -1079,6 +1079,41 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             recipes = [r for r in recipes if needle in (r["name"] or "").lower()]
         return {"success": True, "recipes": recipes}
 
+    async def async_create_cloud_recipe(self, recipe: dict) -> dict:
+        """Create a new recipe on the configured XBloom cloud account.
+
+        ``recipe`` must already be a ``RECIPE_SCHEMA``-validated dict (same
+        shape as a saved local recipe) — the caller (service handler / LLM
+        tool) is responsible for parsing + validating it first. Returns a
+        structured ``{"success": bool, ...}`` dict rather than raising; on
+        success includes ``table_id`` and ``share_url`` (the latter
+        resolves back to an equivalent recipe via
+        :meth:`async_import_cloud_recipe`).
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        result = await self.cloud_client.create_recipe(recipe)
+        if result is None:
+            return {
+                "success": False,
+                "error": "create_failed",
+                "message": "Could not create the recipe on the XBloom cloud account.",
+            }
+        return {"success": True, **result}
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

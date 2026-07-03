@@ -303,6 +303,16 @@
           "description": "Filter results to recipes whose name contains this text (case-insensitive). Omit to list every recipe."
         }
       }
+    },
+    "cloud_create_recipe": {
+      "name": "Create XBloom cloud recipe",
+      "description": "Create a new recipe directly on the configured XBloom cloud account from a YAML recipe definition. Returns the new recipe's table ID and share URL.",
+      "fields": {
+        "recipe_yaml": {
+          "name": "Recipe (YAML)",
+          "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step."
+        }
+      }
     }
   }
 }

@@ -303,6 +303,16 @@
           "description": "이름에 이 텍스트가 포함된 레시피만 표시합니다(대소문자 구분 없음). 생략하면 모든 레시피를 나열합니다."
         }
       }
+    },
+    "cloud_create_recipe": {
+      "name": "XBloom 클라우드 레시피 만들기",
+      "description": "YAML 레시피 정의로 설정된 XBloom 클라우드 계정에 새 레시피를 직접 만듭니다. 새 레시피의 테이블 ID와 공유 URL을 반환합니다.",
+      "fields": {
+        "recipe_yaml": {
+          "name": "레시피 (YAML)",
+          "description": "로컬 '레시피 추가' 옵션 플로우 단계와 동일한 YAML 형식의 레시피 정의입니다."
+        }
+      }
     }
   }
 }

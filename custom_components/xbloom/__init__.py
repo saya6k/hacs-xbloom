@@ -14,6 +14,7 @@ if _VENDOR_PATH not in sys.path:
     sys.path.insert(0, _VENDOR_PATH)
 
 import voluptuous as vol
+import yaml
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -34,6 +35,7 @@ from .const import (
     ATTR_QUERY,
     ATTR_RECIPE_ID,
     ATTR_RECIPE_NAME,
+    ATTR_RECIPE_YAML,
     ATTR_RPM,
     ATTR_SHARE_URL,
     CONF_EMAIL,
@@ -48,6 +50,7 @@ from .const import (
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_WATER_SOURCE,
     DOMAIN,
+    SERVICE_CLOUD_CREATE_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
@@ -116,6 +119,13 @@ CLOUD_IMPORT_RECIPE_SCHEMA = vol.All(
 CLOUD_SEARCH_RECIPES_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_QUERY): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_CREATE_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE_YAML): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -235,6 +245,38 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_SEARCH_RECIPES,
         _handle_cloud_search_recipes,
         schema=CLOUD_SEARCH_RECIPES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_create_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        try:
+            parsed = yaml.safe_load(call.data[ATTR_RECIPE_YAML])
+        except yaml.YAMLError as exc:
+            raise HomeAssistantError(f"Invalid recipe YAML: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise HomeAssistantError("Recipe YAML must be a mapping.")
+        try:
+            recipe = RECIPE_SCHEMA(parsed)
+        except vol.Invalid as exc:
+            raise HomeAssistantError(f"Recipe does not match the schema: {exc}") from exc
+        # A cloud account is per-machine credentials — create against the
+        # first targeted machine's account, same resolution as
+        # cloud_search_recipes.
+        result = await coordinators[0].async_create_cloud_recipe(recipe)
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_create_recipe failed")
+            )
+        return {"table_id": result["table_id"], "share_url": result["share_url"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_CREATE_RECIPE,
+        _handle_cloud_create_recipe,
+        schema=CLOUD_CREATE_RECIPE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -446,6 +488,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_EXECUTE_RECIPE,
                 SERVICE_CLOUD_IMPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_RECIPES,
+                SERVICE_CLOUD_CREATE_RECIPE,
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)

@@ -17,7 +17,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from urllib.parse import parse_qs, urlparse
+import time
+from urllib.parse import parse_qs, quote, urlparse
 
 import aiohttp
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -155,6 +156,79 @@ def cloud_recipe_to_local(cloud: dict) -> dict:
     }
 
 
+# Local pattern int -> cloud pattern int. Inverse of _CLOUD_PATTERN_TO_LOCAL,
+# built directly against the local int numbering pinned by the vendored
+# PourPattern enum (center=0, circular=1, spiral=2 — see coordinator.py's
+# POUR_PATTERN_OPTIONS / schema.py's _PATTERN_NAME_TO_INT): center(0)->
+# centered(1), circular(1)->circular(3), spiral(2)->spiral(2).
+_LOCAL_PATTERN_TO_CLOUD = {0: 1, 1: 3, 2: 2}
+
+# Inverse of _CLOUD_CUP_TYPE_TO_LOCAL.
+_LOCAL_CUP_TYPE_TO_CLOUD = {v: k for k, v in _CLOUD_CUP_TYPE_TO_LOCAL.items()}
+
+# Static fields the reference implementation always sends on create,
+# independent of the recipe's own data. Verified verbatim against the raw
+# denull0/xbloom-agent source (tuRecipeAdd.tuhtml payload shape) — see
+# tasks/plan.md "Verified facts".
+_CREATE_STATIC_FIELDS = {
+    "adaptedModel": 1,
+    "theSubsetId": 0,
+    "subSetType": 2,
+    "appPlace": [4],
+    "isShortcuts": 2,
+}
+
+
+def _local_vibration_to_cloud(vibration: object) -> tuple[int, int]:
+    """Local single ``vibration`` enum (none/before/after/both) -> cloud's
+    two isEnableVibrationBefore/After ints (1=on, 2=off)."""
+    v = str(vibration or "none")
+    before = v in ("before", "both")
+    after = v in ("after", "both")
+    return (1 if before else 2, 1 if after else 2)
+
+
+def _local_pour_to_cloud(p: dict) -> dict:
+    before, after = _local_vibration_to_cloud(p.get("vibration"))
+    return {
+        "volume": p.get("volume_ml", 30),
+        "temperature": p.get("temperature_c", 93),
+        "flowRate": p.get("flow_rate", 3.0),
+        "pausing": p.get("pause_seconds", 0),
+        "pattern": _LOCAL_PATTERN_TO_CLOUD.get(int(p.get("pattern", 2)), 2),
+        "isEnableVibrationBefore": before,
+        "isEnableVibrationAfter": after,
+    }
+
+
+def local_recipe_to_cloud(local: dict) -> dict:
+    """Translate a ``RECIPE_SCHEMA``-validated local recipe dict into the
+    recipe-specific fields of the ``tuRecipeAdd.tuhtml`` create payload.
+
+    Inverse of :func:`cloud_recipe_to_local`. Caller
+    (:meth:`XBloomCloudClient.create_recipe`) adds ``authBase`` plus the
+    create call's static fields (see ``_CREATE_STATIC_FIELDS``) — this only
+    reshapes the recipe's own data.
+    """
+    bypass_volume = float(local.get("bypass_volume", 0) or 0)
+    bypass_temperature = float(local.get("bypass_temperature", 0) or 0)
+    grind_size = int(local.get("grind_size", 0) or 0)
+    pour_list = [_local_pour_to_cloud(p) for p in local.get("pours", [])]
+    return {
+        "theName": local["name"],
+        "dose": local.get("dose_g", 0) or 0,
+        "grandWater": local.get("ratio"),
+        "grinderSize": grind_size,
+        "rpm": local.get("rpm", 80),
+        "cupType": _LOCAL_CUP_TYPE_TO_CLOUD.get(str(local.get("cup_type", "omni_dripper")), 2),
+        "bypassTemp": bypass_temperature,
+        "bypassVolume": bypass_volume,
+        "isSetGrinderSize": 1 if grind_size > 0 else 2,
+        "isEnableBypassWater": 1 if (bypass_volume > 0 or bypass_temperature > 0) else 2,
+        "pourDataJSONStr": json.dumps(pour_list),
+    }
+
+
 def _parse_share_id(share_url_or_id: str) -> str:
     """Accept either a bare share id or a full share-h5.xbloom.com URL."""
     value = share_url_or_id.strip()
@@ -269,3 +343,33 @@ class XBloomCloudClient:
         if not resp or resp.get("result") != "success":
             return None
         return resp.get("list") or []
+
+    async def create_recipe(self, local_recipe: dict) -> dict | None:
+        """Create a new recipe on the logged-in account.
+
+        ``local_recipe`` is a ``RECIPE_SCHEMA``-validated dict (same shape
+        as a saved local recipe). Requires a prior successful :meth:`login`;
+        returns ``None`` if not logged in or the call fails — never raises.
+        On success returns ``{"table_id": int, "share_url": str}`` — the
+        share id/URL are derived client-side the same way the reference
+        implementation does (``btoa(String(tableId))``), not returned by
+        the API itself.
+        """
+        if not self.logged_in:
+            return None
+        payload = {
+            **_auth_base(self.member_id, self.token),
+            **local_recipe_to_cloud(local_recipe),
+            **_CREATE_STATIC_FIELDS,
+            "theColor": "",
+            "createTimeStamp": int(time.time() * 1000),
+        }
+        resp = await self._post_encrypted("tuRecipeAdd.tuhtml", payload)
+        if not resp or resp.get("result") != "success":
+            return None
+        table_id = resp.get("tableId")
+        if table_id is None:
+            return None
+        share_id = base64.b64encode(str(table_id).encode("ascii")).decode("ascii")
+        share_url = f"{SHARE_BASE}/?id={quote(share_id, safe='')}"
+        return {"table_id": table_id, "share_url": share_url}

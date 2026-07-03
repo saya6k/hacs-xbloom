@@ -142,3 +142,34 @@ cloud_search_recipes:
       example: Morning
       selector:
         text:
+
+cloud_create_recipe:
+  name: Create XBloom cloud recipe
+  description: >-
+    Create a new recipe directly on the configured XBloom cloud account
+    (visible in the official app) from a YAML recipe definition. Returns
+    the new recipe's table ID and share URL. Requires an XBloom account to
+    be configured for the machine (Settings → Devices & Services → XBloom
+    → Configure).
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose configured cloud account to create the
+        recipe on. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    recipe_yaml:
+      name: Recipe (YAML)
+      description: >-
+        The recipe definition in the same YAML format used by the local
+        "Add a recipe" options-flow step (name, grind_size, rpm, dose_g,
+        ratio, cup_type, bypass_volume, bypass_temperature, pours).
+      required: true
+      selector:
+        text:
+          multiline: true
