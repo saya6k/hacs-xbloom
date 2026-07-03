@@ -9,6 +9,8 @@ CONF_SESSION_TIMEOUT = "session_timeout"
 CONF_RECIPES = "recipes"
 CONF_WATER_SOURCE = "water_source"   # persisted in entry.options
 CONF_MODE = "mode"                   # persisted in entry.options
+CONF_WEIGHT_UNIT = "weight_unit"     # persisted in entry.options
+CONF_TEMP_UNIT = "temp_unit"         # persisted in entry.options
 
 # One-time recipe seed flags (entry.options). The local recipe store is the
 # source of truth; the cloud is only consulted once per install (and once
@@ -18,7 +20,7 @@ CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
 
 # entry.options: what HA last wrote to each Easy Mode slot —
 # {"A": {"uid": ..., "name": ...}, ...}. The machine never reports slot
-# contents, so this record is the only source for the slot text entities.
+# contents, so this record is the only source for the slot sensor entities.
 CONF_EASY_SLOTS = "easy_slots"
 
 # XBloom cloud account — both optional. Absent entirely (not just empty
@@ -33,6 +35,8 @@ DEFAULT_TELEMETRY_INTERVAL = 5  # seconds
 DEFAULT_SESSION_TIMEOUT = 60    # seconds
 DEFAULT_WATER_SOURCE = 0        # 0 = tank
 DEFAULT_MODE = "easy"
+DEFAULT_WEIGHT_UNIT = "g"
+DEFAULT_TEMP_UNIT = "c"
 
 # Data keys
 DATA_COORDINATOR = "coordinator"

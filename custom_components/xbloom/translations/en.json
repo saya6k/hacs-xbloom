@@ -35,7 +35,7 @@
       "init": {
         "title": "XBloom Options",
         "menu_options": {
-          "settings": "Settings (telemetry, session timeout)",
+          "settings": "Settings (telemetry, session timeout, display units)",
           "account": "Cloud account (add, update, or remove)",
           "add_recipe": "Add a recipe",
           "edit_recipe": "Edit a recipe",
@@ -46,7 +46,9 @@
         "title": "Settings",
         "data": {
           "telemetry_interval": "Telemetry update interval (seconds)",
-          "session_timeout": "Idle disconnect timeout (seconds)"
+          "session_timeout": "Idle disconnect timeout (seconds)",
+          "weight_unit": "Machine's own weight display unit",
+          "temp_unit": "Machine's own temperature display unit"
         }
       },
       "account": {
@@ -186,6 +188,15 @@
       },
       "serial_number": {
         "name": "Serial Number"
+      },
+      "easy_slot_a": {
+        "name": "Easy Slot A"
+      },
+      "easy_slot_b": {
+        "name": "Easy Slot B"
+      },
+      "easy_slot_c": {
+        "name": "Easy Slot C"
       }
     },
     "select": {
@@ -218,17 +229,6 @@
     "switch": {
       "connection": {
         "name": "Connection"
-      }
-    },
-    "text": {
-      "easy_slot_a": {
-        "name": "Easy Slot A"
-      },
-      "easy_slot_b": {
-        "name": "Easy Slot B"
-      },
-      "easy_slot_c": {
-        "name": "Easy Slot C"
       }
     },
     "event": {
@@ -441,6 +441,19 @@
     }
   },
   "selector": {
+    "weight_unit": {
+      "options": {
+        "g": "Grams",
+        "oz": "Ounces",
+        "ml": "Milliliters"
+      }
+    },
+    "temp_unit": {
+      "options": {
+        "c": "Celsius",
+        "f": "Fahrenheit"
+      }
+    },
     "collective_machine": {
       "options": {
         "j15": "Studio",

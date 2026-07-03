@@ -28,6 +28,7 @@ async def async_setup_entry(
             XBloomErrorSensor(coordinator, entry),
             XBloomFirmwareVersionSensor(coordinator, entry),
             XBloomSerialNumberSensor(coordinator, entry),
+            *(XBloomEasySlotSensor(coordinator, entry, slot) for slot in ("A", "B", "C")),
         ]
     )
 
@@ -108,3 +109,32 @@ class XBloomSerialNumberSensor(_XBloomSensor):
     @property
     def native_value(self) -> str:
         return self.coordinator.data.get("serial_number") or "unknown"
+
+
+class XBloomEasySlotSensor(_XBloomSensor):
+    """Read-only view of what HA last wrote to Easy Mode slot A/B/C.
+
+    Writing a slot is a deliberate action (button / write_recipe_to_easy_slot
+    service) rather than something to type into a text box — see the slot
+    write tools/services for that. "none" if nothing has been written yet;
+    the machine itself never reports slot contents, so
+    ``entry.options["easy_slots"]`` is the only record.
+    """
+
+    def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry, slot: str) -> None:
+        super().__init__(coordinator, entry)
+        self._slot = slot
+        self._attr_translation_key = f"easy_slot_{slot.lower()}"
+        self._attr_unique_id = f"xbloom_easy_slot_{slot.lower()}"
+
+    @property
+    def native_value(self) -> str:
+        contents = self.coordinator.easy_slot_contents(self._slot)
+        return (contents or {}).get("name") or "none"
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        contents = self.coordinator.easy_slot_contents(self._slot)
+        if not contents:
+            return None
+        return {"uid": contents.get("uid")}

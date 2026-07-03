@@ -35,7 +35,7 @@
       "init": {
         "title": "XBloom 설정",
         "menu_options": {
-          "settings": "설정 (텔레메트리, 세션 타임아웃)",
+          "settings": "설정 (텔레메트리, 세션 타임아웃, 표시 단위)",
           "account": "클라우드 계정 (추가/변경/삭제)",
           "add_recipe": "레시피 추가",
           "edit_recipe": "레시피 수정",
@@ -46,7 +46,9 @@
         "title": "설정",
         "data": {
           "telemetry_interval": "텔레메트리 업데이트 간격 (초)",
-          "session_timeout": "유휴 연결 해제 시간 (초)"
+          "session_timeout": "유휴 연결 해제 시간 (초)",
+          "weight_unit": "기계 자체 무게 표시 단위",
+          "temp_unit": "기계 자체 온도 표시 단위"
         }
       },
       "account": {
@@ -186,6 +188,15 @@
       },
       "serial_number": {
         "name": "시리얼 번호"
+      },
+      "easy_slot_a": {
+        "name": "이지 슬롯 A"
+      },
+      "easy_slot_b": {
+        "name": "이지 슬롯 B"
+      },
+      "easy_slot_c": {
+        "name": "이지 슬롯 C"
       }
     },
     "select": {
@@ -218,17 +229,6 @@
     "switch": {
       "connection": {
         "name": "연결"
-      }
-    },
-    "text": {
-      "easy_slot_a": {
-        "name": "이지 슬롯 A"
-      },
-      "easy_slot_b": {
-        "name": "이지 슬롯 B"
-      },
-      "easy_slot_c": {
-        "name": "이지 슬롯 C"
       }
     },
     "event": {
@@ -441,6 +441,19 @@
     }
   },
   "selector": {
+    "weight_unit": {
+      "options": {
+        "g": "그램",
+        "oz": "온스",
+        "ml": "밀리리터"
+      }
+    },
+    "temp_unit": {
+      "options": {
+        "c": "섭씨",
+        "f": "화씨"
+      }
+    },
     "collective_machine": {
       "options": {
         "j15": "스튜디오",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import struct
 from datetime import timedelta
@@ -12,6 +13,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import service as service_helper
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -21,9 +23,12 @@ from .const import (
     CONF_EASY_SLOTS,
     CONF_RECIPES,
     CONF_RECIPES_SEEDED,
+    DATA_COORDINATOR,
     DOMAIN,
     DEFAULT_MODE,
+    DEFAULT_TEMP_UNIT,
     DEFAULT_WATER_SOURCE,
+    DEFAULT_WEIGHT_UNIT,
 )
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
 from ._cloud_client import (
@@ -168,6 +173,16 @@ WATER_SOURCE_OPTIONS = {
     "direct": WATER_SOURCE_DIRECT,
 }
 
+# Machine display-unit values for commands 8005 (weight) / 8010 (temp).
+# Config-only (config_flow's Settings step) — unlike mode/water_source
+# there's no dashboard toggle, since neither has a live BLE readback to
+# reflect back (confirmed live 2026-07-04: both ACKs are bare status
+# bytes with no echoed value, unlike the 11511 mode-switch ACK). Applied
+# once per connection in async_connect(), not on every recipe/telemetry
+# refresh — see _apply_unit_preferences.
+WEIGHT_UNIT_OPTIONS = {"g": 0, "oz": 1, "ml": 2}
+TEMP_UNIT_OPTIONS = {"c": 0, "f": 1}
+
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and
 # PourPattern (0=center, 1=circular, 2=spiral).
@@ -221,6 +236,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         update_interval: int = 5,
         initial_water_source: int = DEFAULT_WATER_SOURCE,
         initial_mode: str = DEFAULT_MODE,
+        initial_weight_unit: str = DEFAULT_WEIGHT_UNIT,
+        initial_temp_unit: str = DEFAULT_TEMP_UNIT,
         cloud_email: Optional[str] = None,
         cloud_password: Optional[str] = None,
     ) -> None:
@@ -271,8 +288,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         # Machine operating mode ("pro" / "easy").  Persisted in entry.options
         # so the user's preference survives restarts and reconnects.
-        # The coordinator applies this mode when it connects to the machine.
         self._mode: str = initial_mode
+
+        # Machine display units (config_flow's Settings step only — see
+        # WEIGHT_UNIT_OPTIONS/TEMP_UNIT_OPTIONS). Pushed to the machine
+        # once per connection by _apply_unit_preferences.
+        self._weight_unit: str = initial_weight_unit
+        self._temp_unit: str = initial_temp_unit
 
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.
@@ -398,6 +420,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 if connected:
                     _LOGGER.info("XBloom connected ✓")
                     await self._log_gatt_inventory()
+                    await self._apply_unit_preferences()
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
                     return True
@@ -870,6 +893,29 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # for an HA operation that is now cancelled.
         await self._restore_persisted_mode("cancel")
 
+    async def _apply_unit_preferences(self) -> None:
+        """Push the configured display units to the machine (8005 weight,
+        8010 temp) once per connection.
+
+        Config-only (config_flow's Settings step) — there is no live ACK
+        to read the applied unit back from (confirmed live 2026-07-04:
+        both ACKs are bare status bytes, unlike 11511's mode-switch ACK
+        which echoes the value), so unlike mode there is no dashboard
+        select entity for this — just re-assert the stored preference on
+        every fresh connection. Never raises; a failure here shouldn't
+        block the rest of async_connect().
+        """
+        try:
+            weight_code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
+            await self.client._send_command_raw(8005, bytes([weight_code]), type_code=1)
+            temp_code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
+            await self.client._send_command_raw(8010, bytes([temp_code]), type_code=1)
+            _LOGGER.info(
+                "Applied display units: weight=%s temp=%s", self._weight_unit, self._temp_unit
+            )
+        except Exception as exc:
+            _LOGGER.warning("Failed to apply display unit preferences: %s", exc)
+
     async def async_set_mode(self, mode: str) -> None:
         """Switch the machine's operating mode.
 
@@ -1178,6 +1224,62 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 else:
                     merged[name] = recipe
         self.recipes = merged
+        self._refresh_recipe_service_schemas()
+
+    # Services whose `recipe` field is a select selector (services.yaml
+    # ships it with empty static options + custom_value: true) that we
+    # keep populated with the live recipe list — see
+    # _refresh_recipe_service_schemas.
+    _RECIPE_SELECTOR_SERVICES = (
+        "execute_recipe",
+        "edit_recipe",
+        "delete_recipe",
+        "write_recipe_to_easy_slot",
+        "cloud_export_recipe",
+    )
+
+    def _refresh_recipe_service_schemas(self) -> None:
+        """Populate the `recipe` dropdown on recipe-taking services.
+
+        A plain text field for "which recipe" is exactly what let a typo
+        (e.g. calling delete_recipe with a garbled name) fail with no
+        autocomplete to catch it. services.yaml selectors can't be
+        dynamic, so instead we patch the registered service schema at
+        runtime via async_set_service_schema — HA re-reads it on every
+        Developer Tools render. custom_value stays on, so a share URL /
+        cloud id that isn't in this list yet can still be typed directly.
+
+        Recipes are per-config-entry, but services are per-domain, so
+        this merges the recipe list across every configured XBloom
+        machine (deduped by uid) rather than just this coordinator's own.
+        Called after every recipe-list change (see _rebuild_recipes);
+        never touches the network.
+        """
+        merged: Dict[str, dict] = {}
+        for data in self.hass.data.get(DOMAIN, {}).values():
+            if not isinstance(data, dict) or DATA_COORDINATOR not in data:
+                continue
+            other: XBloomCoordinator = data[DATA_COORDINATOR]
+            for name, recipe in (other.recipes or {}).items():
+                uid = recipe.get("uid") or name
+                merged.setdefault(uid, (name, recipe))
+        options = [
+            {"value": uid, "label": name}
+            for uid, (name, _recipe) in sorted(merged.items(), key=lambda kv: kv[1][0].lower())
+        ]
+
+        descriptions = service_helper.async_get_all_descriptions(self.hass).get(DOMAIN, {})
+        for svc_name in self._RECIPE_SELECTOR_SERVICES:
+            current = descriptions.get(svc_name)
+            if not current or "recipe" not in current.get("fields", {}):
+                continue
+            updated = copy.deepcopy(current)
+            recipe_field = updated["fields"]["recipe"]
+            selector = recipe_field.get("selector") or {}
+            if "select" not in selector:
+                continue  # not our dynamic selector (unexpected shape) — leave alone
+            selector["select"]["options"] = options
+            service_helper.async_set_service_schema(self.hass, DOMAIN, svc_name, updated)
 
     # ------------------------------------------------------------------
     # Local recipe store CRUD — the source of truth behind the recipe

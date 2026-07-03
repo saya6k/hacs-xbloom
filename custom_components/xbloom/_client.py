@@ -145,12 +145,22 @@ class XBloomClientWithEvents(XBloomClient):
                 _LOGGER.error("Event callback error: %s", exc)
 
     def _machine_mode(self) -> str:
-        """Return ``easy`` or ``pro`` from the cached MachineInfo payload.
+        """Return ``easy`` or ``pro`` — the mode-switch ACK if we've seen
+        one, else the connect-time MachineInfo payload.
 
-        Reads the raw mode bytes stored during ``_handle_response`` /
-        ``_scan_for_machine_info``.  Falls back to ``pro`` when not yet
-        available (the coordinator treats ``pro`` as the safe default).
+        Live-hardware testing (2026-07-04) confirmed the firmware pushes
+        ``RD_MachineInfo`` (40521) exactly once, at connect, and never
+        again after a mode switch — so reading only that snapshot means
+        this would stay stuck at whatever mode was active when HA first
+        connected, no matter how many times the mode is switched
+        afterward. The cmd 11511 (``RD_EASYMODE_TYPE``) ACK the firmware
+        sends for every switch echoes the newly-applied mode code, so it
+        is the freshest source once we've seen at least one — cached by
+        ``_handle_response`` into ``_mode_ack_hex``.
         """
+        ack_hex = getattr(self._status, "_mode_ack_hex", None)
+        if ack_hex is not None:
+            return "easy" if ack_hex == _MACHINE_INFO_MODE_EASY_HEX else "pro"
         raw = getattr(self._status, "_mode_bytes", None)
         if not raw or len(raw) < _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN:
             return "pro"
@@ -243,6 +253,16 @@ class XBloomClientWithEvents(XBloomClient):
                 self._status.water_level_ok,
                 self._machine_mode(),
             )
+        if response == XBloomResponse.RD_EASYMODE_TYPE:
+            # ACK for a mode-switch command (cmd 11511) — the machine
+            # echoes the newly-applied mode code back as its payload
+            # (captured live: easy ends ...c2 91 32 78 56, pro ends
+            # ...c2 00 00 00 00). This is the only live confirmation a
+            # switch took effect, since RD_MachineInfo never repeats it.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                self._status._mode_ack_hex = payload[:4].hex()
+                _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
         if response in _NOTIFICATION_MAP:
             self._fire_event("notification", _NOTIFICATION_MAP[response])
         elif response in _ERROR_MAP:
