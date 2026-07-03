@@ -7,6 +7,7 @@ root (which would create a circular import during config-flow setup).
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 import voluptuous as vol
@@ -88,6 +89,74 @@ def yaml_recipe_uid(name: str) -> str:
     uid would change each boot; deriving it from the name keeps it stable.
     """
     return "yaml-" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+
+
+def share_id_of(url_or_id: str) -> str | None:
+    """Normalize a share URL or bare share id to the decoded id string.
+
+    ``https://share-h5.xbloom.com/?id=Km%2FJcq%3D%3D`` and the bare
+    (possibly percent-encoded) id both normalize to the same decoded
+    string, so stored ``share_url`` values and user input compare equal.
+    Returns None for URLs without an ``id`` query parameter (e.g.
+    collective.xbloom.com links — those identify recipes by a different,
+    unstored id space).
+    """
+    s = url_or_id.strip()
+    if "://" in s:
+        vals = parse_qs(urlparse(s).query).get("id")
+        return vals[0] if vals else None
+    return unquote(s) or None
+
+
+def find_recipe(recipes: dict, identifier: str) -> tuple[str, dict] | None:
+    """Resolve a cross-identifier to a ``(name, recipe)`` pair.
+
+    Accepts, in priority order: local ``uid``, cloud ``cloud_table_id``
+    (integer), share URL / share id (matched against stored
+    ``share_url``), and finally the exact recipe name. Returns None when
+    nothing matches — callers decide whether that means auto-import or
+    an error.
+    """
+    identifier = str(identifier).strip()
+    if not identifier or not recipes:
+        return None
+
+    for name, recipe in recipes.items():
+        if isinstance(recipe, dict) and recipe.get("uid") == identifier:
+            return name, recipe
+
+    try:
+        table_id = int(identifier)
+    except ValueError:
+        table_id = None
+    if table_id is not None:
+        for name, recipe in recipes.items():
+            if isinstance(recipe, dict) and recipe.get("cloud_table_id") == table_id:
+                return name, recipe
+
+    share_id = share_id_of(identifier)
+    if share_id:
+        for name, recipe in recipes.items():
+            if not isinstance(recipe, dict):
+                continue
+            stored = recipe.get("share_url")
+            if stored and share_id_of(stored) == share_id:
+                return name, recipe
+
+    recipe = recipes.get(identifier)
+    if isinstance(recipe, dict):
+        return identifier, recipe
+    return None
+
+
+def dedupe_name(name: str, existing) -> str:
+    """Return ``name``, or ``name (2)`` / ``name (3)`` … if already taken."""
+    if name not in existing:
+        return name
+    n = 2
+    while f"{name} ({n})" in existing:
+        n += 1
+    return f"{name} ({n})"
 
 
 def compute_total_water_ml(recipe: dict) -> float:
