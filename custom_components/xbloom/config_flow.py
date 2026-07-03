@@ -56,7 +56,10 @@ STEP_SCHEMA = vol.Schema(
 class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for XBloom."""
 
-    VERSION = 1
+    # Bumped 1 -> 2: recipe schema field rename (bean_weight/total_water ->
+    # dose_g/ratio, pour volume/temperature/pausing -> volume_ml/
+    # temperature_c/pause_seconds). See __init__.async_migrate_entry.
+    VERSION = 2
 
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []
@@ -143,21 +146,21 @@ _RECIPE_YAML_PLACEHOLDER = """\
 name: My Recipe
 grind_size: 60
 rpm: 80
-bean_weight: 16.0
-total_water: 250
+dose_g: 16.0
+ratio: 15.625
 cup_type: omni_dripper
 pours:
-  - volume: 50
-    temperature: 92
-    pausing: 45
+  - volume_ml: 50
+    temperature_c: 92
+    pause_seconds: 45
     pattern: spiral
     vibration: after
-  - volume: 100
-    temperature: 92
-    pausing: 30
+  - volume_ml: 100
+    temperature_c: 92
+    pause_seconds: 30
     pattern: spiral
-  - volume: 100
-    temperature: 92
+  - volume_ml: 100
+    temperature_c: 92
     pattern: spiral
 """
 

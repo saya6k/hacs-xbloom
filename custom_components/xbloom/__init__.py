@@ -206,6 +206,81 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+def _migrate_recipe_v1_to_v2(recipe: dict) -> dict:
+    """Translate one v1-schema recipe dict to the v2 (cloud-shaped) schema.
+
+    v1: bean_weight/total_water, pours[].volume/temperature/pausing.
+    v2: dose_g/ratio, pours[].volume_ml/temperature_c/pause_seconds.
+    ``pattern``/``vibration`` are unchanged — only the renamed fields move.
+    """
+    dose_g = float(recipe.get("bean_weight", 15.0))
+    total_water = float(recipe.get("total_water", 250))
+    # ratio is meaningless for a zero dose (tea) — omit it and let
+    # schema.compute_total_water_ml's pour-volume-sum fallback take over,
+    # exactly as it did pre-migration when total_water was stored directly.
+    ratio = (total_water / dose_g) if dose_g > 0 else None
+
+    new_pours = []
+    for p in recipe.get("pours", []):
+        new_pour = dict(p)
+        if "volume" in new_pour:
+            new_pour["volume_ml"] = new_pour.pop("volume")
+        if "temperature" in new_pour:
+            new_pour["temperature_c"] = new_pour.pop("temperature")
+        if "pausing" in new_pour:
+            new_pour["pause_seconds"] = new_pour.pop("pausing")
+        new_pours.append(new_pour)
+
+    new_recipe = dict(recipe)
+    new_recipe.pop("bean_weight", None)
+    new_recipe.pop("total_water", None)
+    new_recipe["dose_g"] = dose_g
+    new_recipe["ratio"] = ratio
+    new_recipe["pours"] = new_pours
+    return new_recipe
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry to the current schema version.
+
+    v1 -> v2: recipes stored in ``entry.options[CONF_RECIPES]`` are
+    rewritten from the old field names to the cloud-shaped ones (see
+    ``_migrate_recipe_v1_to_v2``). Recipes defined in ``configuration.yaml``
+    are NOT touched here — the integration doesn't own that file — so YAML
+    users must update their field names by hand; this logs a pointer to do so.
+    """
+    if entry.version == 1:
+        options_recipes = entry.options.get(CONF_RECIPES) or {}
+        if isinstance(options_recipes, dict) and options_recipes:
+            migrated = {
+                name: (_migrate_recipe_v1_to_v2(recipe) if recipe is not None else None)
+                for name, recipe in options_recipes.items()
+            }
+            new_options = dict(entry.options)
+            new_options[CONF_RECIPES] = migrated
+            hass.config_entries.async_update_entry(
+                entry, options=new_options, version=2,
+            )
+            _LOGGER.info(
+                "Migrated %d UI-managed recipe(s) to the new schema "
+                "(dose_g/ratio, pours[].volume_ml/temperature_c/pause_seconds)",
+                len([r for r in migrated.values() if r is not None]),
+            )
+        else:
+            hass.config_entries.async_update_entry(entry, version=2)
+
+        _LOGGER.warning(
+            "XBloom recipe schema changed (bean_weight/total_water -> "
+            "dose_g/ratio; pours[].volume/temperature/pausing -> "
+            "volume_ml/temperature_c/pause_seconds). UI-managed recipes "
+            "were migrated automatically. If you define recipes in "
+            "configuration.yaml, update their field names by hand — see "
+            "the README for the new recipe format."
+        )
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up XBloom from a config entry."""
     hass.data.setdefault(DOMAIN, {})

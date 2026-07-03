@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
 from . import brewing
+from .schema import compute_total_water_ml
 from xbloom.models.types import (
     CupType,
     PourPattern,
@@ -47,6 +48,13 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     and treats `grind_size: 0` / `bean_weight: 0` as missing via `or`,
     silently substituting defaults — which routes tea recipes (no grind,
     no beans) into the coffee brew path.
+
+    Reads the local schema's cloud-shaped field names (``dose_g``,
+    ``ratio``, ``pours[].volume_ml/temperature_c/pause_seconds``) but
+    still constructs the vendored ``XBloomRecipe``/``PourStep`` with
+    THEIR field names (``bean_weight``, ``total_water``, ``volume``,
+    ``temperature``, ``pausing``) — that vendored class is untouched, so
+    the translation happens only here.
     """
     cup_raw = raw.get("cup_type", 0)
     if isinstance(cup_raw, str):
@@ -64,22 +72,25 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
         )
         pours.append(
             PourStep(
-                volume=int(p["volume"]),
-                temperature=int(p["temperature"]),
+                volume=int(p["volume_ml"]),
+                temperature=int(p["temperature_c"]),
                 flow_rate=float(p.get("flow_rate", 3.0)),
-                pausing=int(p.get("pausing", 0)),
+                pausing=int(p.get("pause_seconds", 0)),
                 pattern=PourPattern(int(p.get("pattern", 2))),
                 vibration=vib,
             )
         )
 
-    total_water = int(raw.get("total_water", 0))
-    # If the YAML omits total_water, derive it from the pour volumes so the
-    # recipe footer carries a meaningful value.  A zero footer byte 2 causes
-    # the machine to skip grinding (hot water only) on Easy Mode slots and
-    # may also confuse live brew.
-    if total_water == 0:
-        total_water = sum(int(p.get("volume", 0)) for p in raw.get("pours", []))
+    # total_water = dose_g * ratio (matches the XBloom cloud API's own
+    # dose/grandWater relationship), rounded to the nearest ml to absorb
+    # float drift from a repeating-decimal ratio. Falls back to summing
+    # pour volumes when ratio/dose_g can't produce a total (tea recipes
+    # have no weighed dose) — see schema.compute_total_water_ml, shared
+    # so this and the LLM-facing recipe summary can't disagree on the
+    # actual brewed total. A zero footer byte 2 causes the machine to
+    # skip grinding (hot water only) on Easy Mode slots and may also
+    # confuse live brew, so the fallback still matters here.
+    total_water = int(round(compute_total_water_ml(raw)))
 
     return XBloomRecipe(
         grind_size=int(raw.get("grind_size", 0)),
@@ -87,7 +98,7 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
         rpm=int(raw.get("rpm", 80)),
         cup_type=cup_val,
         name=str(raw.get("name", "Unknown")),
-        bean_weight=float(raw.get("bean_weight", 0.0)),
+        bean_weight=float(raw.get("dose_g", 0.0)),
         pours=pours,
     )
 

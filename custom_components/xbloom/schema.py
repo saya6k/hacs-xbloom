@@ -33,10 +33,10 @@ def _coerce_pour_pattern(value):
 
 POUR_SCHEMA = vol.Schema(
     {
-        vol.Required("volume"): cv.positive_int,
-        vol.Required("temperature"): cv.positive_int,
+        vol.Required("volume_ml"): cv.positive_int,
+        vol.Required("temperature_c"): cv.positive_int,
         vol.Optional("flow_rate", default=3.0): vol.Coerce(float),
-        vol.Optional("pausing", default=0): vol.Coerce(int),
+        vol.Optional("pause_seconds", default=0): vol.Coerce(int),
         vol.Optional("pattern", default=2): _coerce_pour_pattern,
         vol.Optional("vibration", default="none"): vol.In(
             ["none", "before", "after", "both"]
@@ -49,11 +49,33 @@ RECIPE_SCHEMA = vol.Schema(
         vol.Required("name"): cv.string,
         vol.Optional("grind_size", default=50): vol.Coerce(int),
         vol.Optional("rpm", default=80): vol.Coerce(int),
-        vol.Optional("bean_weight", default=15.0): vol.Coerce(float),
-        vol.Optional("total_water", default=250): vol.Coerce(int),
+        vol.Optional("dose_g", default=15.0): vol.Coerce(float),
+        # Water ratio (total water = dose_g * ratio), matching the XBloom
+        # cloud API's dose/grandWater pair. Optional/None for zero-dose
+        # (tea) recipes, where ratio is meaningless — total water is then
+        # derived from the sum of pour volumes (see compute_total_water_ml).
+        vol.Optional("ratio", default=None): vol.Any(None, vol.Coerce(float)),
         vol.Optional("cup_type", default="omni_dripper"): cv.string,
         vol.Optional("bypass_volume", default=0): vol.Coerce(float),
         vol.Optional("bypass_temperature", default=0): vol.Coerce(float),
         vol.Required("pours"): [POUR_SCHEMA],
     }
 )
+
+
+def compute_total_water_ml(recipe: dict) -> float:
+    """Total brew water in ml: ``dose_g * ratio`` when both are set.
+
+    Falls back to summing pour volumes when ``ratio`` is omitted or
+    ``dose_g`` is 0 (tea recipes have no weighed dose, so ratio is
+    undefined) — this mirrors the pre-``ratio`` behaviour where a missing
+    ``total_water`` was derived from the pours. Shared by
+    ``coordinator._build_recipe_from_yaml`` (what the machine actually
+    brews) and ``llm_tools/recipe.py`` (what we tell the user/LLM it will
+    brew) so the two can't drift apart.
+    """
+    dose_g = float(recipe.get("dose_g", 0) or 0)
+    ratio = recipe.get("ratio")
+    if dose_g > 0 and ratio:
+        return dose_g * float(ratio)
+    return sum(float(p.get("volume_ml", 0)) for p in recipe.get("pours", []))
