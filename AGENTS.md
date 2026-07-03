@@ -110,7 +110,7 @@ cloud's two independent booleans `isEnableVibrationBefore`/`After` via
 **A second, unrelated public frontend/API exists: `collective.xbloom.com` /
 `collective-api.xbloom.com`** (a "Coffee Recipe Hub" community site, discovered
 2026-07-03 by reading its React bundle — not documented anywhere, no relation to
-`denull0/xbloom-agent`). A `collective.xbloom.com/recipe/<id>` link is a *different*
+`denull0/xbloom-agent`). A `collective.xbloom.com/recipe/{id}` link is a *different*
 identifier space than the `share-h5.xbloom.com` share id (`<id>` here is the plain
 numeric `communityRecipeId`, not the opaque base64 share id — `client-api.xbloom.com`'s
 `RecipeDetail.html` rejects it directly). Live-verified: `POST
@@ -118,7 +118,7 @@ https://collective-api.xbloom.com/communityRecipe/recipe/detail {"id": <int>, "t
 1}` (no auth) returns `{"code": 200, "data": {..., "shareRecipeLink":
 "https://share-h5.xbloom.com/?id=..."}}` — same recipe, cross-confirmed by fetching
 both URLs for community recipe 317445 and diffing the translated result (identical).
-`_cloud_client.fetch_shared_recipe()` detects a `collective.xbloom.com/recipe/<id>`
+`_cloud_client.fetch_shared_recipe()` detects a `collective.xbloom.com/recipe/{id}`
 URL, resolves it to its `shareRecipeLink` via this second API, then hands off to the
 normal `RecipeDetail.html` path rather than writing a second translation function —
 the collective-api response shape differs subtly (`cupType` comes back as a string

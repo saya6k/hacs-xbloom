@@ -126,7 +126,7 @@ Six services become available (Developer Tools → Actions, or `xbloom.cloud_*`)
 | Service | Does |
 | --- | --- |
 | `cloud_search_recipes` | List every recipe on the account, optionally filtered by name. |
-| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/<id>` community-hub link, or a share id, and save it as a local recipe. No account needed — works even without a cloud account configured. |
+| `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/{id}` community-hub link, or a share id, and save it as a local recipe. No account needed — works even without a cloud account configured. |
 | `cloud_create_recipe` | Create a new cloud recipe, either from inline `recipe_yaml` (same shape as "Add a recipe" above) or by pushing an existing local recipe by `recipe_name`. Returns the new `table_id` and `share_url`. |
 | `cloud_edit_recipe` | Change one or more fields of an existing cloud recipe by `table_id`; fields you omit are left unchanged (fetches the current recipe first, then patches). |
 | `cloud_delete_recipe` | Permanently delete a cloud recipe by `table_id`. Cannot be undone. |

@@ -286,7 +286,7 @@
       "fields": {
         "share_url": {
           "name": "공유 URL",
-          "description": "share-h5.xbloom.com 링크(예: 공식 앱의 공유 버튼으로 생성된 링크) 또는 collective.xbloom.com/recipe/<id> 커뮤니티 허브 링크. share_url 또는 recipe_id 중 하나만 입력하세요."
+          "description": "share-h5.xbloom.com 링크(예: 공식 앱의 공유 버튼으로 생성된 링크) 또는 collective.xbloom.com/recipe/{id} 커뮤니티 허브 링크. share_url 또는 recipe_id 중 하나만 입력하세요."
         },
         "recipe_id": {
           "name": "레시피 ID",

@@ -36,7 +36,7 @@ SHARE_BASE = "https://share-h5.xbloom.com"
 # React bundle (2026-07-03; live-verified: POST communityRecipe/recipe/detail
 # {"id": <int>, "type": 1} -> {"code": 200, "data": {..., "shareRecipeLink":
 # "https://share-h5.xbloom.com/?id=..."}}, no auth required). We only use it
-# to resolve a collective.xbloom.com/recipe/<id> link to its equivalent
+# to resolve a collective.xbloom.com/recipe/{id} link to its equivalent
 # share-h5.xbloom.com link, then hand off to the already-verified
 # RecipeDetail.html path below — avoids a second translation function for a
 # response shape that differs subtly (e.g. cupType comes back as a string
@@ -367,7 +367,7 @@ class XBloomCloudClient:
         return True
 
     async def _resolve_collective_link(self, community_recipe_id: str) -> str | None:
-        """Resolve a collective.xbloom.com/recipe/<id> link to its
+        """Resolve a collective.xbloom.com/recipe/{id} link to its
         share-h5.xbloom.com share link, via the separate collective-api.xbloom.com
         backend (see the module-level comment by ``COLLECTIVE_API_BASE``).
         Returns ``None`` on any failure — never raises.
@@ -388,7 +388,7 @@ class XBloomCloudClient:
         return (body.get("data") or {}).get("shareRecipeLink")
 
     async def fetch_shared_recipe(self, share_url_or_id: str) -> dict | None:
-        """Fetch a recipe by share URL, collective.xbloom.com/recipe/<id>
+        """Fetch a recipe by share URL, collective.xbloom.com/recipe/{id}
         URL, or bare share id. No login required.
 
         Returns a dict shaped for ``schema.RECIPE_SCHEMA``, or ``None`` if
