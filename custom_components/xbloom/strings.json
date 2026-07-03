@@ -294,6 +294,16 @@
         }
       }
     },
+    "cloud_export_recipe": {
+      "name": "Export recipe to XBloom cloud",
+      "description": "Export a local recipe to the configured XBloom cloud account. With an account, the recipe is created (or updated in place if exported before) and the response includes its cloud id and share link; without one, only the recipe definition is returned.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which recipe to export — a local uid, a cloud table id, a share URL/id, or the exact recipe name."
+        }
+      }
+    },
     "list_recipes": {
       "name": "List recipes",
       "description": "List every local recipe (the ones shown in the Recipe dropdown), optionally filtered by name. Results include each recipe's local uid and any cloud id / share URL.",

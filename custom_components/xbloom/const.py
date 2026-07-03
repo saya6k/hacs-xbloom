@@ -64,6 +64,8 @@ SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
 ATTR_SHARE_URL = "share_url"
 ATTR_RECIPE_ID = "recipe_id"
 
+SERVICE_CLOUD_EXPORT_RECIPE = "cloud_export_recipe"
+
 # Public collective.xbloom.com community recipe hub search — a separate,
 # unauthenticated API from the rest of the cloud_* services above (which all
 # act on the user's own private cloud account). See _cloud_client.py's

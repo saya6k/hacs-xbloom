@@ -66,6 +66,7 @@ from .const import (
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_WATER_SOURCE,
     DOMAIN,
+    SERVICE_CLOUD_EXPORT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
     SERVICE_CREATE_RECIPE,
@@ -163,6 +164,13 @@ EDIT_RECIPE_SCHEMA = vol.Schema(
 )
 
 DELETE_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_EXPORT_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_RECIPE): cv.string,
     },
@@ -306,6 +314,31 @@ def _register_services(hass: HomeAssistant) -> None:
         _handle_cloud_import_recipe,
         schema=CLOUD_IMPORT_RECIPE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _handle_cloud_export_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        # Cloud accounts are per-machine credentials — export from the
+        # first targeted machine's store/account.
+        result = await coordinators[0].async_export_recipe(call.data[ATTR_RECIPE])
+        if not result.get("success"):
+            raise HomeAssistantError(result.get("message", "cloud_export_recipe failed"))
+        response: ServiceResponse = {"recipe": result["recipe"]}
+        if "id" in result:
+            response["id"] = result["id"]
+            response["link"] = result.get("link")
+        if result.get("warning"):
+            response["warning"] = result["warning"]
+        return response
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_EXPORT_RECIPE,
+        _handle_cloud_export_recipe,
+        schema=CLOUD_EXPORT_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # The local recipe store is per machine (per config entry) — like the
@@ -719,6 +752,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_EDIT_RECIPE,
                 SERVICE_DELETE_RECIPE,
                 SERVICE_CLOUD_IMPORT_RECIPE,
+                SERVICE_CLOUD_EXPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
             ):
                 if hass.services.has_service(DOMAIN, service):

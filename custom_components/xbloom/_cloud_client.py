@@ -704,7 +704,7 @@ class XBloomCloudClient:
 
         ``cloud_fields`` must already be a complete cloud-shape payload —
         the wire API is full-replace, not a merge patch, so the caller
-        (:meth:`XBloomCoordinator.async_edit_cloud_recipe`) is responsible
+        (:meth:`XBloomCoordinator.async_export_recipe`) is responsible
         for filling in every unchanged field from the recipe's current
         state first (via :meth:`get_recipe`). Requires a prior successful
         login. Returns ``False`` on any failure — never raises.

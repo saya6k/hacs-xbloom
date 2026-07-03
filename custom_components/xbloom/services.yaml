@@ -115,6 +115,37 @@ cloud_import_recipe:
       selector:
         text:
 
+cloud_export_recipe:
+  name: Export recipe to XBloom cloud
+  description: >-
+    Export a local recipe to the configured XBloom cloud account. With an
+    account configured, the recipe is created on the account (or, if it
+    was exported before, the same cloud recipe is updated in place) and
+    the response includes its cloud id and share link. Without an
+    account, nothing is uploaded — the response contains only the recipe
+    definition.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose recipe (and configured cloud account) to
+        export from. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    recipe:
+      name: Recipe
+      description: >-
+        Which recipe to export — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name.
+      required: true
+      example: Morning V60
+      selector:
+        text:
+
 list_recipes:
   name: List recipes
   description: >-

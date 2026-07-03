@@ -1,11 +1,13 @@
-"""Tools for XBloom cloud recipe sync (search/import/export/create/edit/delete).
+"""Tools for the XBloom cloud boundary (import / export / collective search).
 
-Every tool here delegates to the matching ``coordinator.async_*_cloud_recipe``
-method, which already returns a structured ``{"success": bool, "error": ...,
-"message": ...}`` dict (never raises) and already checks
-``cloud_login_configured`` where the wire call needs authentication — so the
-"not configured" / "login failed" cases fall out of the shared
-``_cloud_failure`` helper below without each tool re-checking the flag itself.
+The local recipe store is the source of truth — these tools only cross the
+network edge: import clones a shared recipe into the store, export pushes a
+local recipe to the user's cloud account, and the collective search browses
+the public hub. Each delegates to the matching coordinator method, which
+returns a structured ``{"success": bool, "error": ..., "message": ...}`` dict
+(never raises) and already checks ``cloud_login_configured`` where the wire
+call needs authentication — so the "not configured" / "login failed" cases
+fall out of the shared ``_cloud_failure`` helper below.
 """
 from __future__ import annotations
 
@@ -134,56 +136,12 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
             return _cloud_failure(result, "import")
         return {
             "success": True,
-            "recipe_name": result["recipe_name"],
+            "uid": result["uid"],
+            "recipe_name": result["name"],
             "instruction": (
-                f"Tell the user the recipe {result['recipe_name']!r} was "
+                f"Tell the user the recipe {result['name']!r} was "
                 "imported and is now available to run via "
                 "execute_xbloom_recipe."
-            ),
-        }
-
-
-class XBloomSearchCloudRecipesTool(XBloomBaseTool):
-    """List (optionally name-filtered) recipes on the configured XBloom cloud account."""
-
-    name = "search_xbloom_cloud_recipes"
-    description = (
-        "List every recipe saved on the user's XBloom cloud account "
-        "(visible in the official app), optionally filtered by a "
-        "case-insensitive name substring. Requires an XBloom account to "
-        "be configured for the machine — if not configured, this returns "
-        "a cloud_not_configured error and you should tell the user to add "
-        "one under Settings > Devices & Services > XBloom > Configure."
-    )
-    parameters = vol.Schema(
-        {
-            vol.Optional(
-                "query",
-                description=(
-                    "Filter results to recipes whose name contains this "
-                    "text (case-insensitive). Omit to list every recipe."
-                ),
-            ): str,
-        }
-    )
-
-    async def async_call(
-        self,
-        hass: HomeAssistant,
-        tool_input: llm.ToolInput,
-        llm_context: llm.LLMContext,
-    ) -> dict:
-        query = tool_input.tool_args.get("query")
-        result = await self.coordinator.async_list_cloud_recipes(query=query)
-        if not result.get("success"):
-            return _cloud_failure(result, "search")
-        return {
-            "success": True,
-            "recipes": result["recipes"],
-            "instruction": (
-                "Read out the recipe names (and table_id if the user needs "
-                "to edit/delete/export one). Mention other details only if "
-                "asked."
             ),
         }
 
@@ -195,9 +153,8 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     description = (
         "Search XBloom's public community recipe hub (collective.xbloom.com) "
         "— recipes shared by xBloom and other users, entirely separate from "
-        "the user's own private cloud account (use "
-        "search_xbloom_cloud_recipes for that instead). No XBloom account "
-        "is required. Results include a share_url that can be passed "
+        "the user's local recipes (use list_xbloom_recipes for those). No "
+        "XBloom account is required. Results include a share_url that can be passed "
         "straight to import_xbloom_cloud_recipe to save one locally. "
         "The bean-profile filters (origin/varietal/process/roast/flavor) "
         "accept free-text names (e.g. 'Ethiopia', 'Washed', 'Dark Roast') "
@@ -294,124 +251,26 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
         }
 
 
-class XBloomCreateCloudRecipeTool(XBloomBaseTool):
-    """Create a brand-new recipe directly on the XBloom cloud account."""
-
-    name = "create_xbloom_cloud_recipe"
-    description = (
-        "Create a new recipe on the user's XBloom cloud account (visible "
-        "in the official app) from scratch. Use export_xbloom_recipe_to_cloud "
-        "instead if the user wants to push an existing local recipe "
-        "as-is. Requires an XBloom account to be configured for the "
-        "machine — if not configured, this returns a cloud_not_configured "
-        "error and you should tell the user to add one under Settings > "
-        "Devices & Services > XBloom > Configure."
-    )
-    parameters = vol.Schema(
-        {
-            vol.Required(
-                "name", description="Name for the new cloud recipe."
-            ): str,
-            vol.Optional(
-                "cup_type",
-                description=(
-                    "omni_dripper for coffee, tea for tea recipes. "
-                    "Defaults to omni_dripper."
-                ),
-            ): vol.In(["omni_dripper", "tea"]),
-            vol.Optional(
-                "grind_size",
-                description=(
-                    "Grind size 1-80 (coffee only, ignored for tea). "
-                    "Defaults to 50."
-                ),
-            ): vol.All(int, vol.Range(min=1, max=80)),
-            vol.Optional(
-                "rpm",
-                description=(
-                    "Grinder RPM, steps of 10 from 60-120 (coffee only). "
-                    "Defaults to 80."
-                ),
-            ): vol.All(int, vol.Range(min=60, max=120)),
-            vol.Optional(
-                "dose_g",
-                description=(
-                    "Coffee dose in grams. Use 0 for tea recipes."
-                ),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
-            vol.Optional(
-                "ratio",
-                description=(
-                    "Water ratio — total water = dose_g * ratio. Omit for "
-                    "tea recipes (water is derived from the pour volumes "
-                    "instead)."
-                ),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
-            vol.Optional(
-                "bypass_volume",
-                description=(
-                    "Bypass water volume in ml, 0-200 (coffee only). "
-                    "Defaults to 0."
-                ),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
-            vol.Optional(
-                "bypass_temperature",
-                description=(
-                    "Bypass water temperature in °C, 0-100. Required "
-                    "(non-zero) for bypass to dispense — pair with "
-                    "bypass_volume."
-                ),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-            vol.Required(
-                "pours",
-                description="One or more pour steps, in order.",
-            ): [_POUR_ARG_SCHEMA],
-        }
-    )
-
-    async def async_call(
-        self,
-        hass: HomeAssistant,
-        tool_input: llm.ToolInput,
-        llm_context: llm.LLMContext,
-    ) -> dict:
-        recipe = _recipe_args_to_dict(tool_input.tool_args)
-        result = await self.coordinator.async_create_cloud_recipe(recipe)
-        if not result.get("success"):
-            return _cloud_failure(result, "create")
-        return {
-            "success": True,
-            "table_id": result["table_id"],
-            "share_url": result["share_url"],
-            "instruction": (
-                f"Tell the user the recipe {recipe['name']!r} was created "
-                "on their XBloom cloud account and is now visible in the "
-                "official app. Mention the share URL only if they ask to "
-                "share it."
-            ),
-        }
-
-
 class XBloomExportRecipeTool(XBloomBaseTool):
-    """Push an existing local recipe to the XBloom cloud account as a new recipe."""
+    """Export a local recipe to the XBloom cloud account (share link)."""
 
-    name = "export_xbloom_recipe_to_cloud"
+    name = "export_xbloom_recipe"
     description = (
-        "Push an existing local XBloom recipe (from list_xbloom_recipes) "
-        "to the user's XBloom cloud account, so it shows up in the "
-        "official app and can be shared. Always creates a new cloud "
-        "recipe (even if exported before). Requires an XBloom account to "
-        "be configured for the machine — if not configured, this returns "
-        "a cloud_not_configured error and you should tell the user to add "
-        "one under Settings > Devices & Services > XBloom > Configure."
+        "Export a local XBloom recipe to the user's XBloom cloud account "
+        "so it shows up in the official app and gets a share link. If the "
+        "recipe was exported before, the same cloud recipe is updated in "
+        "place (its id and share link stay stable). Without a configured "
+        "XBloom account nothing is uploaded — the tool returns just the "
+        "recipe definition, with no cloud id or share link."
     )
     parameters = vol.Schema(
         {
             vol.Required(
-                "recipe_name",
+                "recipe",
                 description=(
-                    "Exact name of an existing local recipe to push to "
-                    "the cloud. Use list_xbloom_recipes to discover names."
+                    "Which recipe to export — its local uid, cloud table "
+                    "id, share URL/id, or exact name (from "
+                    "list_xbloom_recipes)."
                 ),
             ): str,
         }
@@ -423,162 +282,27 @@ class XBloomExportRecipeTool(XBloomBaseTool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> dict:
-        recipe_name = tool_input.tool_args["recipe_name"]
-        result = await self.coordinator.async_export_local_recipe(recipe_name)
+        identifier = tool_input.tool_args["recipe"]
+        result = await self.coordinator.async_export_recipe(identifier)
         if not result.get("success"):
             return _cloud_failure(result, "export")
-        return {
-            "success": True,
-            "table_id": result["table_id"],
-            "share_url": result["share_url"],
-            "instruction": (
-                f"Tell the user the local recipe {recipe_name!r} was "
-                "pushed to their XBloom cloud account and is now visible "
-                "in the official app."
-            ),
-        }
-
-
-class XBloomEditCloudRecipeTool(XBloomBaseTool):
-    """Change one or more fields of an existing cloud recipe (fetch-then-patch)."""
-
-    name = "edit_xbloom_cloud_recipe"
-    description = (
-        "Change one or more fields of an existing recipe on the user's "
-        "XBloom cloud account, identified by table_id (from "
-        "search_xbloom_cloud_recipes or create_xbloom_cloud_recipe). Only "
-        "pass the fields the user wants changed — every field you omit "
-        "keeps its current value on the account. To replace a recipe's "
-        "pours, pass the FULL new pour list (pours themselves are not "
-        "merged field-by-field). Requires an XBloom account to be "
-        "configured for the machine."
-    )
-    parameters = vol.Schema(
-        {
-            vol.Required(
-                "table_id",
-                description=(
-                    "The cloud recipe's table ID, from "
-                    "search_xbloom_cloud_recipes or create_xbloom_cloud_recipe."
-                ),
-            ): vol.All(int, vol.Range(min=1)),
-            vol.Optional("name", description="New name for the recipe."): str,
-            vol.Optional(
-                "cup_type", description="omni_dripper or tea."
-            ): vol.In(["omni_dripper", "tea"]),
-            vol.Optional(
-                "grind_size", description="New grind size, 1-80 (coffee only)."
-            ): vol.All(int, vol.Range(min=1, max=80)),
-            vol.Optional(
-                "rpm", description="New grinder RPM, 60-120 (coffee only)."
-            ): vol.All(int, vol.Range(min=60, max=120)),
-            vol.Optional(
-                "dose_g", description="New coffee dose in grams."
-            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
-            vol.Optional(
-                "ratio", description="New water ratio (total water = dose_g * ratio)."
-            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
-            vol.Optional(
-                "bypass_volume", description="New bypass water volume in ml, 0-200."
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
-            vol.Optional(
-                "bypass_temperature",
-                description="New bypass water temperature in °C, 0-100.",
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-            vol.Optional(
-                "pours",
-                description="Full replacement list of pour steps, in order.",
-            ): [_POUR_ARG_SCHEMA],
-        }
-    )
-
-    async def async_call(
-        self,
-        hass: HomeAssistant,
-        tool_input: llm.ToolInput,
-        llm_context: llm.LLMContext,
-    ) -> dict:
-        table_id = int(tool_input.tool_args["table_id"])
-        partial = _recipe_args_to_dict(tool_input.tool_args)
-        if not partial:
-            return {
-                "success": False,
-                "error": "no_fields",
-                "instruction": (
-                    "Ask the user which field(s) of the recipe they want "
-                    "to change before calling edit_xbloom_cloud_recipe again."
-                ),
-            }
-        result = await self.coordinator.async_edit_cloud_recipe(table_id, **partial)
-        if not result.get("success"):
-            return _cloud_failure(result, "edit")
-        return {
-            "success": True,
-            "table_id": result["table_id"],
-            "instruction": "Confirm to the user that the recipe was updated.",
-        }
-
-
-class XBloomDeleteCloudRecipeTool(XBloomBaseTool):
-    """Permanently delete a recipe from the XBloom cloud account."""
-
-    name = "delete_xbloom_cloud_recipe"
-    description = (
-        "Permanently delete a recipe from the user's XBloom cloud account, "
-        "identified by table_id (from search_xbloom_cloud_recipes). This "
-        "cannot be undone. SAFETY: before calling this tool with "
-        "confirmed=true you MUST ask the user to confirm they want to "
-        "permanently delete that specific recipe — call it once first "
-        "with confirmed=false to look up the recipe's name if you don't "
-        "already know it from search_xbloom_cloud_recipes."
-    )
-    parameters = vol.Schema(
-        {
-            vol.Required(
-                "table_id",
-                description=(
-                    "The cloud recipe's table ID, from "
-                    "search_xbloom_cloud_recipes."
-                ),
-            ): vol.All(int, vol.Range(min=1)),
-            vol.Required(
-                "confirmed",
-                description=(
-                    "Set to true ONLY after the user has explicitly "
-                    "confirmed they want to permanently delete this cloud "
-                    "recipe. If you have not yet asked the user, set this "
-                    "to false."
-                ),
-            ): bool,
-        }
-    )
-
-    async def async_call(
-        self,
-        hass: HomeAssistant,
-        tool_input: llm.ToolInput,
-        llm_context: llm.LLMContext,
-    ) -> dict:
-        table_id = int(tool_input.tool_args["table_id"])
-        confirmed = bool(tool_input.tool_args["confirmed"])
-
-        if not confirmed:
-            return {
-                "success": False,
-                "confirmation_required": True,
-                "instruction": (
-                    f"Do NOT delete yet. Ask the user to confirm they want "
-                    f"to permanently delete cloud recipe table_id {table_id}. "
-                    "Once they confirm, call delete_xbloom_cloud_recipe "
-                    "again with confirmed=true."
-                ),
-            }
-
-        result = await self.coordinator.async_delete_cloud_recipe(table_id)
-        if not result.get("success"):
-            return _cloud_failure(result, "delete")
-        return {
-            "success": True,
-            "table_id": result["table_id"],
-            "instruction": "Confirm to the user that the recipe was deleted.",
-        }
+        out: dict = {"success": True, "recipe": result["recipe"]}
+        if "id" in result:
+            out["id"] = result["id"]
+            out["link"] = result.get("link")
+            out["instruction"] = (
+                "Tell the user the recipe is now on their XBloom cloud "
+                "account (visible in the official app), and read out the "
+                "share link if they asked to share it."
+            )
+        else:
+            out["instruction"] = (
+                "No XBloom cloud account is configured, so nothing was "
+                "uploaded — the recipe stays local only. Tell the user "
+                "they can add an account under Settings > Devices & "
+                "Services > XBloom > Configure to get a share link."
+            )
+        if result.get("warning"):
+            out["warning"] = result["warning"]
+            out["instruction"] += " Also mention this warning: " + result["warning"]
+        return out
