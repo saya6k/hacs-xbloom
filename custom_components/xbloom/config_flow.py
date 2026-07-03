@@ -260,7 +260,66 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "add_recipe", "edit_recipe", "delete_recipe"],
+            menu_options=["settings", "account", "add_recipe", "edit_recipe", "delete_recipe"],
+        )
+
+    # ── Cloud account (add / update / clear) ─────────────────────────
+
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add, update, or clear the XBloom cloud account after initial setup.
+
+        Mirrors the optional account step from the initial ConfigFlow, but
+        lives here so users who skipped it there can add credentials later
+        (or change/clear them) without deleting and re-adding the
+        integration. Persists to ``entry.data`` directly (not
+        ``entry.options``, which this flow's own async_create_entry always
+        writes to) — the existing options-update-listener reload picks up
+        the change on the next coordinator setup either way.
+        """
+        errors: dict[str, str] = {}
+        stored_email = self._entry.data.get(CONF_EMAIL, "")
+        has_existing = bool(stored_email and self._entry.data.get(CONF_PASSWORD))
+
+        if user_input is not None:
+            email = (user_input.get(CONF_EMAIL) or "").strip()
+            password = user_input.get(CONF_PASSWORD) or ""
+
+            new_data: dict[str, Any] | None = None
+            if not email and not password:
+                if has_existing:
+                    new_data = {
+                        k: v
+                        for k, v in self._entry.data.items()
+                        if k not in (CONF_EMAIL, CONF_PASSWORD)
+                    }
+                # else: nothing stored, nothing entered — no-op.
+            elif email and password:
+                new_data = {**self._entry.data, CONF_EMAIL: email, CONF_PASSWORD: password}
+            elif email and not password:
+                if not (email == stored_email and has_existing):
+                    errors["base"] = "account_password_required"
+                # else: unchanged resubmit — no-op.
+            else:  # password and not email
+                errors["base"] = "account_email_required"
+
+            if not errors:
+                if new_data is not None:
+                    self.hass.config_entries.async_update_entry(self._entry, data=new_data)
+                return self.async_create_entry(title="", data=dict(self._entry.options))
+
+        return self.async_show_form(
+            step_id="account",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_EMAIL, default=stored_email): str,
+                    vol.Optional(CONF_PASSWORD): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
         )
 
     # ── Settings (telemetry + session timeout) ───────────────────────

@@ -36,6 +36,7 @@
         "title": "XBloom Options",
         "menu_options": {
           "settings": "Settings (telemetry, session timeout)",
+          "account": "Cloud account (add, update, or remove)",
           "add_recipe": "Add a recipe",
           "edit_recipe": "Edit a recipe",
           "delete_recipe": "Delete a recipe"
@@ -46,6 +47,14 @@
         "data": {
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)"
+        }
+      },
+      "account": {
+        "title": "XBloom Cloud Account",
+        "description": "Add, update, or remove the optional XBloom cloud account used for cloud recipe sync (search, import, export). Leave both fields blank to remove a saved account, or leave the email unchanged with the password blank to make no changes. Setting a new or different email requires a password.",
+        "data": {
+          "email": "Email (optional)",
+          "password": "Password (optional)"
         }
       },
       "add_recipe": {
@@ -78,7 +87,9 @@
     "error": {
       "invalid_yaml": "Invalid YAML — {error}",
       "invalid_recipe": "Recipe does not match the schema — {error}",
-      "recipe_exists": "A recipe named {error} already exists. Use 'Edit a recipe' instead or pick another name."
+      "recipe_exists": "A recipe named {error} already exists. Use 'Edit a recipe' instead or pick another name.",
+      "account_password_required": "Enter the password to set or change the cloud account.",
+      "account_email_required": "Enter the email to set the cloud account."
     },
     "abort": {
       "no_recipes": "No recipes available. Use 'Add a recipe' to create one."
