@@ -1043,25 +1043,36 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "message": "Config entry not found.",
             }
 
-        name = validated["name"]
-        existing_options = dict(entry.options.get(CONF_RECIPES) or {})
-        if existing_options.get(name) is not None:
-            # Same "don't silently overwrite" rule as the OptionsFlow's
-            # Add a recipe step.
-            return {
-                "success": False,
-                "error": "recipe_exists",
-                "message": (
-                    f"A recipe named {name!r} already exists locally. "
-                    "Rename it in the cloud before importing, or delete/"
-                    "edit the local one first."
-                ),
-            }
-        existing_options[name] = validated
+        # Name collisions get the " (2)" suffix instead of a rejection —
+        # same rule as create_local_recipe, so a re-import never silently
+        # overwrites local edits.
+        name = dedupe_name(validated["name"], self.recipes or {})
+        validated["name"] = name
+        validated["uid"] = new_recipe_uid()
+        validated["source"] = "import"
+        # Remember where it came from so find_recipe can resolve the same
+        # share URL/id back to this local copy later.
+        if "://" not in share_url_or_id:
+            validated.setdefault(
+                "share_url",
+                f"https://share-h5.xbloom.com/?id={share_url_or_id.strip()}",
+            )
+        else:
+            validated.setdefault("share_url", share_url_or_id.strip())
+
+        options_recipes = dict(entry.options.get(CONF_RECIPES) or {})
+        options_recipes[name] = validated
         new_options = dict(entry.options)
-        new_options[CONF_RECIPES] = existing_options
+        new_options[CONF_RECIPES] = options_recipes
         self.hass.config_entries.async_update_entry(entry, options=new_options)
-        return {"success": True, "recipe_name": name}
+        self._rebuild_recipes()
+        self.async_update_listeners()
+        return {
+            "success": True,
+            "uid": validated["uid"],
+            "name": name,
+            "recipe": validated,
+        }
 
     async def async_list_cloud_recipes(self, query: Optional[str] = None) -> dict:
         """List every recipe on the configured XBloom cloud account.

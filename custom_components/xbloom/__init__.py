@@ -274,11 +274,14 @@ def _register_services(hass: HomeAssistant) -> None:
         schema=EXECUTE_RECIPE_SCHEMA,
     )
 
-    async def _handle_cloud_import_recipe(call: ServiceCall) -> None:
+    async def _handle_cloud_import_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
             raise HomeAssistantError("No XBloom machine matched the service call.")
         identifier = call.data.get(ATTR_SHARE_URL) or call.data.get(ATTR_RECIPE_ID)
+        # Imports into every targeted machine's local store; the response
+        # reflects the first machine (there is usually exactly one).
+        first: ServiceResponse = None
         for coord in coordinators:
             result = await coord.async_import_cloud_recipe(identifier)
             if not result.get("success"):
@@ -286,12 +289,23 @@ def _register_services(hass: HomeAssistant) -> None:
                     "cloud_import_recipe failed for %s: %s",
                     coord.mac_address, result.get("message", result.get("error")),
                 )
+                continue
+            if first is None:
+                first = {
+                    "uid": result["uid"],
+                    "name": result["name"],
+                    "recipe": result["recipe"],
+                }
+        if first is None:
+            raise HomeAssistantError("cloud_import_recipe failed on every machine.")
+        return first
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_CLOUD_IMPORT_RECIPE,
         _handle_cloud_import_recipe,
         schema=CLOUD_IMPORT_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
     # The local recipe store is per machine (per config entry) — like the
