@@ -159,6 +159,32 @@ def dedupe_name(name: str, existing) -> str:
     return f"{name} ({n})"
 
 
+def scale_pours_to_total(pours: list, target_total_ml: float) -> list:
+    """Proportionally rescale pour volumes to sum to ``target_total_ml``.
+
+    Used when an execute-time ``dose_g``/``ratio`` override changes the
+    total brew water: the cloud API's invariant (and the machine's
+    expectation) is ``sum(pours) + bypass == dose_g * ratio``, so the
+    recipe's pours are rescaled for that one brew. Each volume is rounded
+    to a whole ml; the rounding residue is absorbed by the last pour so
+    the sum is exact. Returns new dicts (inputs are not mutated). Pours
+    with a zero/degenerate current total are returned unchanged.
+    """
+    if not pours:
+        return []
+    current_total = sum(float(p.get("volume_ml", 0)) for p in pours)
+    if current_total <= 0 or target_total_ml <= 0:
+        return [dict(p) for p in pours]
+    factor = float(target_total_ml) / current_total
+    scaled = [dict(p) for p in pours]
+    running = 0
+    for p in scaled[:-1]:
+        p["volume_ml"] = max(1, round(float(p.get("volume_ml", 0)) * factor))
+        running += p["volume_ml"]
+    scaled[-1]["volume_ml"] = max(1, round(target_total_ml) - running)
+    return scaled
+
+
 def compute_total_water_ml(recipe: dict) -> float:
     """Total brew water in ml: ``dose_g * ratio`` when both are set.
 
