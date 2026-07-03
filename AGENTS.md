@@ -147,6 +147,43 @@ origin/varietal/process/flavor, which are already human-readable strings) —
 `_collective_result_to_summary()` reverse-maps it through the same
 `roastList` fetched for the request.
 
+## Recipe sync architecture
+
+`default_recipes.py`'s bundled `DEFAULT_RECIPES` is **not** an always-active
+recipe layer anymore — it's now only a network-failure fallback. The lowest
+recipe-precedence layer is `coordinator.cloud_synced_recipes`, populated by
+`coordinator.async_sync_cloud_recipes()`: the account's own private cloud
+recipes (`cloud_client.list_recipes()`, already includes full `pourList`) if
+a cloud account is configured and login succeeds, otherwise XBloom's official
+public recipes from the collective hub (`cloud_client.fetch_official_recipes()`
+— capped at `_OFFICIAL_RECIPE_SYNC_LIMIT` since each one needs its own
+`fetch_shared_recipe()` round-trip, unlike the account list). Only if *both*
+of those fail (e.g. no network at all) does it fall back to the bundled
+`default_recipes.py` list.
+
+`__init__.py`'s `async_setup_entry` seeds `cloud_synced_recipes` synchronously
+with the bundled list (no network call) so `coordinator.recipes` is never
+empty, then kicks off the real sync via `hass.async_create_task(...)` —
+**not** awaited inline — so a slow/unreachable cloud API can't stall
+integration setup (fetching `_OFFICIAL_RECIPE_SYNC_LIMIT` official recipes is
+one detail-fetch per recipe; awaiting that inline could push entry setup past
+HA's own timeout). It also registers `async_track_time_interval(...,
+CLOUD_RECIPE_SYNC_INTERVAL)` (hourly) so recipes added to the account (or new
+official recipes) eventually show up without a manual reload.
+`coordinator._rebuild_recipes()` recomputes `self.recipes` from
+`cloud_synced_recipes` < YAML < `entry.options[CONF_RECIPES]` (unchanged
+tombstone-by-`None` override semantics) and is called both at setup and at
+the end of every sync; `async_sync_cloud_recipes()` also calls
+`self.async_update_listeners()` so the recipe select entity and any other
+`CoordinatorEntity` pick up the change immediately.
+
+**`config_flow.py`'s `_all_visible_recipes()` duplicates this merge** (needed
+because the OptionsFlow doesn't have direct access to `coordinator.recipes`
+at the time it needs to know what's "visible" for Add/Edit/Delete) — it reads
+`coordinator.cloud_synced_recipes` via `_synced_recipes()`, not the static
+`hass.data[DOMAIN]["default_recipes"]` directly. If the merge logic changes
+in one place, check the other.
+
 ## Entity translation flow
 
 `_attr_has_entity_name = True` + `_attr_translation_key = "<key>"` →

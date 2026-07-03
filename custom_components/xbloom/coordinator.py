@@ -165,6 +165,19 @@ _CLOUD_EDIT_PRESERVE_KEYS = (
     "theColor", "theSubsetId", "isShortcuts", "appPlace", "adaptedModel", "subSetType",
 )
 
+# Cap on how many of XBloom's official public recipes async_sync_cloud_recipes
+# pulls in when no cloud account is configured. Each one needs its own
+# fetch_shared_recipe() round-trip (the collective hub's list endpoint only
+# returns summaries, no pourList) — unbounded would mean dozens of extra
+# HTTP calls on every periodic sync.
+_OFFICIAL_RECIPE_SYNC_LIMIT = 20
+
+# How often async_sync_cloud_recipes re-runs in the background (see
+# __init__.py's async_setup_entry) so new recipes added to the cloud
+# account — or new official recipes — eventually show up locally without
+# requiring a manual reload.
+CLOUD_RECIPE_SYNC_INTERVAL = timedelta(hours=1)
+
 
 def _apply_pour_overrides(recipe: XBloomRecipe, overrides: List[dict]) -> None:
     """Override individual pours' volume / flow_rate / pattern by index.
@@ -223,6 +236,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self._cloud_email = cloud_email
         self._cloud_password = cloud_password
         self.cloud_client = XBloomCloudClient(async_get_clientsession(hass))
+
+        # Cloud-synced recipes — the lowest-precedence recipe layer (see
+        # _rebuild_recipes), replacing the old always-static bundled
+        # defaults. Populated by async_sync_cloud_recipes(): the account's
+        # own recipes if a cloud account is configured, else XBloom's
+        # official public recipes, else (fetch failure) the bundled
+        # default_recipes.py list. __init__.py seeds this synchronously
+        # with the bundled list at setup so recipes are never empty before
+        # the first (background) sync completes.
+        self.cloud_synced_recipes: Dict[str, dict] = {}
 
         # Recipes loaded from YAML config (name → dict)
         self.recipes: Dict[str, dict] = {}
@@ -1090,6 +1113,92 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             needle = query.strip().lower()
             recipes = [r for r in recipes if needle in (r["name"] or "").lower()]
         return {"success": True, "recipes": recipes}
+
+    def _rebuild_recipes(self) -> None:
+        """Recompute ``self.recipes`` from all layers, lowest precedence
+        first: ``cloud_synced_recipes`` (see :meth:`async_sync_cloud_recipes`)
+        < YAML (``hass.data[DOMAIN]["yaml_recipes"]``) < OptionsFlow
+        (``entry.options[CONF_RECIPES]``). A ``None`` value in the
+        OptionsFlow layer is a tombstone — it hides that name from the
+        lower layers rather than being a recipe itself (used when deleting
+        a synced/YAML recipe via the UI). Safe to call at any time; does
+        not touch the network.
+        """
+        merged: Dict[str, dict] = {}
+        merged.update(self.cloud_synced_recipes or {})
+        merged.update(self.hass.data.get(DOMAIN, {}).get("yaml_recipes", {}))
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        options_recipes = (entry.options.get(CONF_RECIPES) if entry else None) or {}
+        if isinstance(options_recipes, dict):
+            for name, recipe in options_recipes.items():
+                if recipe is None:
+                    merged.pop(name, None)
+                else:
+                    merged[name] = recipe
+        self.recipes = merged
+
+    async def async_sync_cloud_recipes(self) -> dict:
+        """Refresh the cloud-synced recipe layer and rebuild ``self.recipes``.
+
+        Cloud account configured and login succeeds -> sync the account's
+        own private recipes (``list_recipes()`` already includes each
+        recipe's full ``pourList``, so no extra per-recipe fetch is
+        needed). No account configured (or login fails) -> sync XBloom's
+        official public recipes from the collective hub instead (see
+        :meth:`_cloud_client.XBloomCloudClient.fetch_official_recipes`).
+        Either way, falls back to the bundled ``default_recipes.py`` list
+        (``hass.data[DOMAIN]["default_recipes"]``) if the fetch fails
+        entirely (e.g. no network), so the integration is never left with
+        zero recipes. Runs unattended on a periodic timer as well as at
+        startup, so this never raises — every failure just falls through
+        to the next source. Notifies listeners on completion so entities
+        (e.g. the recipe select) pick up new/changed recipes immediately.
+        """
+        synced: Optional[Dict[str, dict]] = None
+        source = "fallback"
+        if self.cloud_login_configured and await self.async_ensure_cloud_login():
+            cloud_list = await self.cloud_client.list_recipes()
+            if cloud_list is not None:
+                synced = {}
+                for raw in cloud_list:
+                    local = cloud_recipe_to_local(raw)
+                    try:
+                        validated = RECIPE_SCHEMA(local)
+                    except vol.Invalid as exc:
+                        _LOGGER.warning(
+                            "Skipping cloud account recipe %r during sync: %s",
+                            raw.get("theName"), exc,
+                        )
+                        continue
+                    synced[validated["name"]] = validated
+                source = "account"
+        if synced is None:
+            official = await self.cloud_client.fetch_official_recipes(
+                limit=_OFFICIAL_RECIPE_SYNC_LIMIT
+            )
+            if official is not None:
+                synced = {}
+                for local in official:
+                    try:
+                        validated = RECIPE_SCHEMA(local)
+                    except vol.Invalid as exc:
+                        _LOGGER.warning(
+                            "Skipping official recipe %r during sync: %s",
+                            local.get("name"), exc,
+                        )
+                        continue
+                    synced[validated["name"]] = validated
+                source = "official"
+        if not synced:
+            synced = dict(self.hass.data.get(DOMAIN, {}).get("default_recipes", {}))
+            source = "fallback"
+        self.cloud_synced_recipes = synced
+        self._rebuild_recipes()
+        self.async_update_listeners()
+        _LOGGER.info(
+            "Cloud recipe sync complete: source=%s count=%d", source, len(synced)
+        )
+        return {"success": True, "source": source, "count": len(synced)}
 
     async def async_search_collective_recipes(self, **filters) -> dict:
         """Search the public collective.xbloom.com community recipe hub.

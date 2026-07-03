@@ -20,12 +20,12 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Features
 
-- **Saved recipes** — edit, add, or delete recipes directly from the HA UI (Settings → Devices & Services → XBloom → Configure). Built-in default recipes (Korean coffee and tea) are editable and deletable too — deleted defaults can be re-added anytime. Recipes can also be defined in `configuration.yaml`. Single-button execution from the dashboard.
+- **Recipes sync in automatically** — no manual setup needed. With a cloud account linked, your own XBloom cloud recipes appear locally on install and re-sync hourly. Without one, XBloom's official public recipes sync in instead. Either way, edit/add/delete directly from the HA UI (Settings → Devices & Services → XBloom → Configure) — edits are saved as a per-machine override, the synced original stays intact. Recipes can also be defined in `configuration.yaml`. Single-button execution from the dashboard.
 - **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
 - **Per-brew overrides** — selecting a recipe syncs the Grind Size / RPM sliders to it; tweak them (or call the `xbloom.execute_recipe` service / ask Assist) to brew the saved recipe with adjusted grind, RPM, or bypass without editing the recipe. Bypass is recipe-scoped (no slider) — override it per brew via the service or Assist. Tea / no-grind recipes are left untouched.
 - **Tea recipes** (`cup_type: tea`) — every steep encoded as a pour with `pausing` = soak seconds; the firmware drives pour → soak → siphon-drain internally.
 - **Easy Mode slot writing** — push the currently-selected recipe to the machine's onboard slot A / B / C (Auto/Easy Mode buttons on the device).
-- **Optional cloud recipe sync** — link an XBloom account to search, import, create, edit, and delete recipes on your XBloom cloud account, alongside the fully local BLE-only recipe management above. Entirely optional; skip the account step and every other feature works exactly as it does without one.
+- **Optional cloud account** — link an XBloom account to also search, create, edit, delete, and import individual recipes on your cloud account or XBloom's public community hub, beyond the automatic sync above. Entirely optional; skip the account step and every other feature works exactly as it does without one.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — error events (water shortage, no beans, abnormal dose, abnormal gear) and notifications (grinding started/complete, brewing started, pour complete, bloom, paused, recipe complete, tea soaking).
 - **LLM API** — exposes pour, recipe execution, recipe listing, and status to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale).
@@ -49,9 +49,16 @@ Copy `custom_components/xbloom/` into your HA config's `custom_components/` fold
 
 The config flow handles MAC + telemetry interval + idle disconnect timeout.
 
-Recipes can be managed from the HA UI: Settings → Devices & Services → XBloom → **Configure**. Use **Add a recipe** / **Edit a recipe** / **Delete a recipe** to manage all recipes, including the built-in defaults (Korean coffee and tea). Edits to a default recipe are saved as a per-machine override — the original stays intact in the integration. Deleting a default hides it; add a same-named recipe to restore it.
+Recipes sync in automatically — no manual setup step. On install, and again
+every hour, the integration pulls recipes from your XBloom cloud account (if
+linked in the config flow's account step) or, if no account is linked,
+XBloom's official public recipes from the community hub. If that sync can't
+reach the network at all (e.g. no internet at first boot), a small built-in
+recipe set is used until the next successful sync.
 
-Recipes can also be defined in `configuration.yaml` (lowest priority — UI recipes win by name):
+Recipes can be managed from the HA UI: Settings → Devices & Services → XBloom → **Configure**. Use **Add a recipe** / **Edit a recipe** / **Delete a recipe** to manage all recipes, including the synced ones. Edits to a synced recipe are saved as a per-machine override — the synced original stays intact and reappears if you delete the override. Deleting a synced recipe hides it; add a same-named recipe to restore it.
+
+Recipes can also be defined in `configuration.yaml` (lower priority than UI recipes, higher priority than synced ones — UI wins by name):
 
 ```yaml
 xbloom:

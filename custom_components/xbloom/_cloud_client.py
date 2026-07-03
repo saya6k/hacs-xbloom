@@ -560,6 +560,37 @@ class XBloomCloudClient:
             "unmatched": unmatched,
         }
 
+    async def fetch_official_recipes(self, limit: int = 20) -> list[dict] | None:
+        """Fetch the top ``limit`` official recipes (by likes) from the
+        public collective hub, each translated to a full
+        ``RECIPE_SCHEMA``-shaped dict.
+
+        :meth:`search_collective_recipes` only returns per-recipe
+        *summaries* (no ``pours``) — the hub's list/search endpoint doesn't
+        include them — so each result needs its own
+        :meth:`fetch_shared_recipe` round-trip for the full recipe.
+        ``limit`` bounds how many of those extra round-trips this makes,
+        since callers may run this unattended on a timer (see
+        ``coordinator.async_sync_cloud_recipes``). Returns ``None`` only
+        if the initial search itself fails (e.g. no network) — an
+        individual recipe's detail fetch failing is skipped, not fatal.
+        """
+        search = await self.search_collective_recipes(
+            src="official", sort="likes", sort_direction="desc",
+            page_size=max(1, limit),
+        )
+        if search is None:
+            return None
+        recipes: list[dict] = []
+        for item in search["list"][:limit]:
+            share_url = item.get("share_url")
+            if not share_url:
+                continue
+            detail = await self.fetch_shared_recipe(share_url)
+            if detail is not None:
+                recipes.append(detail)
+        return recipes
+
     async def fetch_shared_recipe(self, share_url_or_id: str) -> dict | None:
         """Fetch a recipe by share URL, collective.xbloom.com/recipe/{id}
         URL, or bare share id. No login required.
