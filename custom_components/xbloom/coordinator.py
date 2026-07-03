@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import CONF_RECIPES, DOMAIN, DEFAULT_MODE, DEFAULT_WATER_SOURCE
 from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
-from ._cloud_client import XBloomCloudClient
+from ._cloud_client import XBloomCloudClient, cloud_recipe_to_local, local_recipe_to_cloud
 from . import brewing
 from .schema import RECIPE_SCHEMA, compute_total_water_ml
 from xbloom.models.types import (
@@ -152,6 +152,13 @@ WATER_SOURCE_OPTIONS = {
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and
 # PourPattern (0=center, 1=circular, 2=spiral).
 POUR_PATTERN_OPTIONS = {"center": 0, "circular": 1, "spiral": 2}
+
+# Cloud-only fields the local RECIPE_SCHEMA doesn't model (color swatch,
+# app placement, etc.) — an edit must preserve these verbatim from the
+# fetched current recipe rather than resetting them to create's defaults.
+_CLOUD_EDIT_PRESERVE_KEYS = (
+    "theColor", "theSubsetId", "isShortcuts", "appPlace", "adaptedModel", "subSetType",
+)
 
 
 def _apply_pour_overrides(recipe: XBloomRecipe, overrides: List[dict]) -> None:
@@ -1113,6 +1120,61 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "message": "Could not create the recipe on the XBloom cloud account.",
             }
         return {"success": True, **result}
+
+    async def async_edit_cloud_recipe(self, table_id: int, **partial_fields) -> dict:
+        """Edit a recipe on the configured XBloom cloud account (fetch-then-patch).
+
+        Only the fields passed in ``partial_fields`` (local ``RECIPE_SCHEMA``
+        names, e.g. ``name``/``dose_g``/``ratio``/``grind_size``/``rpm``/
+        ``cup_type``/``bypass_volume``/``bypass_temperature``/``pours``) are
+        changed — every other field keeps its current cloud value, mirroring
+        the reference implementation (the wire API itself is full-replace,
+        not a merge patch). Returns a structured ``{"success": bool, ...}``
+        dict rather than raising.
+        """
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_not_configured",
+                "message": "No XBloom cloud account is configured for this machine.",
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        current_raw = await self.cloud_client.get_recipe(table_id)
+        if current_raw is None:
+            return {
+                "success": False,
+                "error": "recipe_not_found",
+                "message": f"No recipe with table_id {table_id} found on the account.",
+            }
+        current_local = cloud_recipe_to_local(current_raw)
+        merged_local = {**current_local, **partial_fields}
+        try:
+            validated = RECIPE_SCHEMA(merged_local)
+        except vol.Invalid as exc:
+            return {
+                "success": False,
+                "error": "invalid_recipe",
+                "message": f"Merged recipe failed validation: {exc}",
+            }
+        cloud_fields = local_recipe_to_cloud(validated)
+        for key in _CLOUD_EDIT_PRESERVE_KEYS:
+            if key in current_raw:
+                cloud_fields[key] = current_raw[key]
+        if not await self.cloud_client.update_recipe(table_id, cloud_fields):
+            return {
+                "success": False,
+                "error": "edit_failed",
+                "message": "Could not update the recipe on the XBloom cloud account.",
+            }
+        return {"success": True, "table_id": table_id}
 
     # ------------------------------------------------------------------
     # Helpers

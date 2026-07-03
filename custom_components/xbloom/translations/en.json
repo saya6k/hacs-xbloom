@@ -313,6 +313,20 @@
           "description": "The recipe definition in the same YAML format used by the local \"Add a recipe\" options-flow step."
         }
       }
+    },
+    "cloud_edit_recipe": {
+      "name": "Edit XBloom cloud recipe",
+      "description": "Change one or more fields of an existing recipe on the configured XBloom cloud account. Only the fields present in the YAML are changed — every omitted field keeps its current value.",
+      "fields": {
+        "table_id": {
+          "name": "Recipe table ID",
+          "description": "The cloud recipe's table ID, from cloud_search_recipes or cloud_create_recipe's response."
+        },
+        "recipe_yaml": {
+          "name": "Fields to change (YAML)",
+          "description": "A YAML mapping of only the fields to change (e.g. just `name: New Name` to rename). Omitted fields are left unchanged."
+        }
+      }
     }
   }
 }

@@ -47,6 +47,9 @@ ATTR_QUERY = "query"
 SERVICE_CLOUD_CREATE_RECIPE = "cloud_create_recipe"
 ATTR_RECIPE_YAML = "recipe_yaml"
 
+SERVICE_CLOUD_EDIT_RECIPE = "cloud_edit_recipe"
+ATTR_TABLE_ID = "table_id"
+
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
 XBLOOM_LLM_API_NAME = "XBloom Coffee Machine"

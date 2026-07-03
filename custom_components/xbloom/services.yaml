@@ -173,3 +173,47 @@ cloud_create_recipe:
       selector:
         text:
           multiline: true
+
+cloud_edit_recipe:
+  name: Edit XBloom cloud recipe
+  description: >-
+    Change one or more fields of an existing recipe on the configured
+    XBloom cloud account. Only the fields present in the YAML are changed
+    — every omitted field keeps its current value on the account (fetches
+    the current recipe first, then patches). Requires an XBloom account to
+    be configured for the machine (Settings → Devices & Services → XBloom
+    → Configure).
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine whose configured cloud account to edit the
+        recipe on. Defaults to the first configured machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    table_id:
+      name: Recipe table ID
+      description: >-
+        The cloud recipe's table ID, from cloud_search_recipes or
+        cloud_create_recipe's response.
+      required: true
+      example: 12345
+      selector:
+        number:
+          min: 1
+          mode: box
+    recipe_yaml:
+      name: Fields to change (YAML)
+      description: >-
+        A YAML mapping of only the fields to change, using the same field
+        names as "Add a recipe" (e.g. just `name: New Name` to rename).
+        Omitted fields are left unchanged.
+      required: true
+      example: "name: New Name"
+      selector:
+        text:
+          multiline: true

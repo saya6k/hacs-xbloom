@@ -313,6 +313,20 @@
           "description": "로컬 '레시피 추가' 옵션 플로우 단계와 동일한 YAML 형식의 레시피 정의입니다."
         }
       }
+    },
+    "cloud_edit_recipe": {
+      "name": "XBloom 클라우드 레시피 수정",
+      "description": "설정된 XBloom 클라우드 계정의 기존 레시피에서 하나 이상의 필드를 변경합니다. YAML에 있는 필드만 변경되며, 생략된 필드는 현재 값을 유지합니다.",
+      "fields": {
+        "table_id": {
+          "name": "레시피 테이블 ID",
+          "description": "cloud_search_recipes 또는 cloud_create_recipe 응답에서 얻은 클라우드 레시피의 테이블 ID입니다."
+        },
+        "recipe_yaml": {
+          "name": "변경할 필드 (YAML)",
+          "description": "변경할 필드만 담은 YAML 매핑입니다 (예: 이름만 바꾸려면 `name: New Name`). 생략된 필드는 그대로 유지됩니다."
+        }
+      }
     }
   }
 }

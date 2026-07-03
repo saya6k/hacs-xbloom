@@ -38,6 +38,7 @@ from .const import (
     ATTR_RECIPE_YAML,
     ATTR_RPM,
     ATTR_SHARE_URL,
+    ATTR_TABLE_ID,
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
     CONF_PASSWORD,
@@ -51,6 +52,7 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DOMAIN,
     SERVICE_CLOUD_CREATE_RECIPE,
+    SERVICE_CLOUD_EDIT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_RECIPES,
     SERVICE_EXECUTE_RECIPE,
@@ -125,6 +127,14 @@ CLOUD_SEARCH_RECIPES_SCHEMA = vol.Schema(
 
 CLOUD_CREATE_RECIPE_SCHEMA = vol.Schema(
     {
+        vol.Required(ATTR_RECIPE_YAML): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+CLOUD_EDIT_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
         vol.Required(ATTR_RECIPE_YAML): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
@@ -277,6 +287,35 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_CLOUD_CREATE_RECIPE,
         _handle_cloud_create_recipe,
         schema=CLOUD_CREATE_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _handle_cloud_edit_recipe(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        try:
+            parsed = yaml.safe_load(call.data[ATTR_RECIPE_YAML])
+        except yaml.YAMLError as exc:
+            raise HomeAssistantError(f"Invalid recipe YAML: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise HomeAssistantError("Recipe YAML must be a mapping.")
+        # Partial by design — only the fields present are changed; every
+        # other field keeps its current cloud value (fetch-then-patch).
+        result = await coordinators[0].async_edit_cloud_recipe(
+            call.data[ATTR_TABLE_ID], **parsed
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(
+                result.get("message", "cloud_edit_recipe failed")
+            )
+        return {"table_id": result["table_id"]}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLOUD_EDIT_RECIPE,
+        _handle_cloud_edit_recipe,
+        schema=CLOUD_EDIT_RECIPE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -489,6 +528,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_CLOUD_IMPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_RECIPES,
                 SERVICE_CLOUD_CREATE_RECIPE,
+                SERVICE_CLOUD_EDIT_RECIPE,
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)

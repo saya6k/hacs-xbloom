@@ -373,3 +373,40 @@ class XBloomCloudClient:
         share_id = base64.b64encode(str(table_id).encode("ascii")).decode("ascii")
         share_url = f"{SHARE_BASE}/?id={quote(share_id, safe='')}"
         return {"table_id": table_id, "share_url": share_url}
+
+    async def get_recipe(self, table_id: int) -> dict | None:
+        """Fetch one recipe's current raw cloud-shape dict by ``tableId``.
+
+        The wire API has no single-recipe authenticated fetch, so this
+        lists every recipe on the account (:meth:`list_recipes`) and
+        matches by ``tableId`` — the same approach the reference
+        implementation uses before an edit. Returns ``None`` if not
+        logged in, the call fails, or no recipe matches.
+        """
+        recipes = await self.list_recipes()
+        if recipes is None:
+            return None
+        for r in recipes:
+            if r.get("tableId") == table_id:
+                return r
+        return None
+
+    async def update_recipe(self, table_id: int, cloud_fields: dict) -> bool:
+        """Send a full-replace update for an existing recipe.
+
+        ``cloud_fields`` must already be a complete cloud-shape payload —
+        the wire API is full-replace, not a merge patch, so the caller
+        (:meth:`XBloomCoordinator.async_edit_cloud_recipe`) is responsible
+        for filling in every unchanged field from the recipe's current
+        state first (via :meth:`get_recipe`). Requires a prior successful
+        login. Returns ``False`` on any failure — never raises.
+        """
+        if not self.logged_in:
+            return False
+        payload = {
+            **_auth_base(self.member_id, self.token),
+            **cloud_fields,
+            "tableId": table_id,
+        }
+        resp = await self._post_encrypted("tuRecipeUpdate.tuhtml", payload)
+        return bool(resp and resp.get("result") == "success")
