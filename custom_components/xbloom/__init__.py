@@ -201,31 +201,24 @@ WRITE_RECIPE_TO_EASY_SLOT_SCHEMA = vol.Schema(
 )
 
 
-def _csv_list(value):
-    """Accept either a list or a comma-separated string for the collective
-    search's free-text facet filters (machine/cup_type/origin/varietal/
-    process/roast/flavor) — services.yaml has no good selector for an
-    open-ended multi-value list, so the YAML/UI service form uses a plain
-    comma-separated text field; the LLM tool passes a real list directly."""
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return value
-    return [part.strip() for part in str(value).split(",") if part.strip()]
-
+# Facet filters are lists of codes and/or display names — the services.yaml
+# multi-select submits snapshot codes (custom values allowed for categories
+# added upstream later), the LLM tool passes name lists; both are resolved
+# against the live criteria table in _cloud_client._resolve_criteria_values.
+_FACET_LIST = vol.All(cv.ensure_list, [cv.string])
 
 CLOUD_SEARCH_COLLECTIVE_RECIPES_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_KEYWORD): cv.string,
         vol.Optional(ATTR_CATEGORY): vol.In(["coffee", "tea"]),
         vol.Optional(ATTR_SRC): vol.In(["official", "user"]),
-        vol.Optional(ATTR_MACHINE): _csv_list,
-        vol.Optional(ATTR_CUP_TYPE): _csv_list,
-        vol.Optional(ATTR_ORIGIN): _csv_list,
-        vol.Optional(ATTR_VARIETAL): _csv_list,
-        vol.Optional(ATTR_PROCESS): _csv_list,
-        vol.Optional(ATTR_ROAST): _csv_list,
-        vol.Optional(ATTR_FLAVOR): _csv_list,
+        vol.Optional(ATTR_MACHINE): _FACET_LIST,
+        vol.Optional(ATTR_CUP_TYPE): _FACET_LIST,
+        vol.Optional(ATTR_ORIGIN): _FACET_LIST,
+        vol.Optional(ATTR_VARIETAL): _FACET_LIST,
+        vol.Optional(ATTR_PROCESS): _FACET_LIST,
+        vol.Optional(ATTR_ROAST): _FACET_LIST,
+        vol.Optional(ATTR_FLAVOR): _FACET_LIST,
         vol.Optional(ATTR_SORT, default="likes"): vol.In(["date", "likes", "downloads"]),
         vol.Optional(ATTR_SORT_DIRECTION, default="desc"): vol.In(["asc", "desc"]),
     },

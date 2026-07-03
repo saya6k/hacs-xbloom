@@ -59,17 +59,30 @@ _COLLECTIVE_SORT_DIRECTION = {"asc": 1, "desc": 2}
 def _resolve_criteria_values(
     names: list[str] | None, facet_list: list[dict]
 ) -> tuple[list[str], list[str]]:
-    """Case-insensitive match of user-provided ``names`` against one
-    criteria facet's ``[{"name": ..., "value": ...}]`` list. Returns
-    ``(resolved_values, unmatched_names)`` — unmatched names are reported
-    back rather than silently dropped, so the caller can tell the user."""
+    """Match user-provided ``names`` against one criteria facet's
+    ``[{"name": ..., "value": ...}]`` list.
+
+    Each entry is matched as a raw code first (exact ``value`` match —
+    what the services.yaml multi-select submits, and the escape hatch
+    when upstream adds a category our snapshot doesn't know yet), then
+    as a case-insensitive display name. Codes are also the only way to
+    address facets with duplicate display names (the live varietal list
+    carries e.g. three distinct "Catimor" codes). Returns
+    ``(resolved_values, unmatched_names)`` — unmatched entries are
+    reported back rather than silently dropped, so the caller can tell
+    the user."""
     if not names:
         return [], []
+    codes = {str(item["value"]) for item in facet_list}
     by_name = {str(item["name"]).strip().lower(): item["value"] for item in facet_list}
     resolved: list[str] = []
     unmatched: list[str] = []
     for name in names:
-        value = by_name.get(str(name).strip().lower())
+        key = str(name).strip()
+        if key in codes:
+            resolved.append(key)
+            continue
+        value = by_name.get(key.lower())
         if value is not None:
             resolved.append(value)
         else:
