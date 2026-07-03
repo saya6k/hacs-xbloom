@@ -256,11 +256,23 @@
   "services": {
     "execute_recipe": {
       "name": "Execute recipe",
-      "description": "Run a saved XBloom recipe, optionally overriding the grind size and/or grinder RPM for this brew only (coffee grinding recipes only).",
+      "description": "Run a saved XBloom recipe, optionally overriding any top-level recipe scalar (grind size, RPM, dose, ratio, cup type, bypass) for this brew only — the stored recipe is unchanged. Overriding dose/ratio rescales the pour volumes proportionally.",
       "fields": {
-        "recipe_name": {
-          "name": "Recipe name",
-          "description": "Name of the saved recipe to run. Defaults to the currently selected recipe if omitted."
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which recipe to run — a local uid, a cloud table id, a share URL/id, or the exact recipe name. Defaults to the currently selected recipe."
+        },
+        "dose_g": {
+          "name": "Dose",
+          "description": "Override the coffee dose in grams for this brew only. Pour volumes are rescaled to keep total water = dose × ratio."
+        },
+        "ratio": {
+          "name": "Water ratio",
+          "description": "Override the water ratio (total water = dose × ratio) for this brew only. Pour volumes are rescaled to match."
+        },
+        "cup_type": {
+          "name": "Cup type",
+          "description": "Override the cup/brewer type for this brew only."
         },
         "grind_size": {
           "name": "Grind size",

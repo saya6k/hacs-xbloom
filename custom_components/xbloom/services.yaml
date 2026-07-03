@@ -1,10 +1,12 @@
 execute_recipe:
   name: Execute recipe
   description: >-
-    Run a saved XBloom recipe, optionally overriding the grind size and/or
-    grinder RPM for this brew only (coffee grinding recipes only; ignored for
-    tea / no-grind recipes). Selecting a recipe also syncs the Grind Size and
-    Grinder RPM number entities to it.
+    Run a saved XBloom recipe, optionally overriding any top-level recipe
+    scalar (grind size, RPM, dose, ratio, cup type, bypass) for this brew
+    only — the stored recipe is unchanged. Overriding dose/ratio rescales
+    the pour volumes proportionally to match the new total water.
+    Selecting a recipe also syncs the Grind Size and Grinder RPM number
+    entities to it.
   fields:
     device_id:
       name: Machine
@@ -16,15 +18,54 @@ execute_recipe:
           filter:
             - integration: xbloom
           multiple: true
-    recipe_name:
-      name: Recipe name
+    recipe:
+      name: Recipe
       description: >-
-        Name of the saved recipe to run. Defaults to the currently selected
-        recipe if omitted.
+        Which recipe to run — a local uid, a cloud table id, a share
+        URL/id, or the exact recipe name. Defaults to the currently
+        selected recipe if omitted.
       required: false
       example: Morning V60
       selector:
         text:
+    dose_g:
+      name: Dose
+      description: >-
+        Override the coffee dose in grams for this brew only. Pour volumes
+        are rescaled to keep total water = dose × ratio.
+      required: false
+      example: 18
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 0.5
+          unit_of_measurement: g
+          mode: box
+    ratio:
+      name: Water ratio
+      description: >-
+        Override the water ratio (total water = dose × ratio) for this
+        brew only. Pour volumes are rescaled to match.
+      required: false
+      example: 16
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 0.5
+          mode: box
+    cup_type:
+      name: Cup type
+      description: Override the cup/brewer type for this brew only.
+      required: false
+      selector:
+        select:
+          options:
+            - x_pod
+            - omni_dripper
+            - other
+            - tea
     grind_size:
       name: Grind size
       description: >-

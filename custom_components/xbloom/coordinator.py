@@ -38,6 +38,7 @@ from .schema import (
     dedupe_name,
     find_recipe,
     new_recipe_uid,
+    scale_pours_to_total,
 )
 from xbloom.models.types import (
     CupType,
@@ -724,6 +725,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def async_execute_recipe(
         self,
         *,
+        overrides: Optional[dict] = None,
         pour_overrides: Optional[List[dict]] = None,
         bypass_volume: Optional[float] = None,
         bypass_temperature: Optional[float] = None,
@@ -745,6 +747,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         a recipe that has none. Tea always brews with bypass off.
         ``pour_overrides`` (LLM-only) tweaks individual pours' volume /
         flow_rate / pattern.
+
+        ``overrides`` replaces top-level recipe scalars (``dose_g`` /
+        ``ratio`` / ``cup_type``) for this brew only — the stored recipe
+        is untouched. Changing ``dose_g``/``ratio`` changes the total
+        brew water, so the pours are proportionally rescaled to keep
+        ``sum(pours) + bypass == dose_g * ratio`` (the machine's own
+        invariant). Grind/RPM overrides go through the number-entity
+        values above instead.
         """
         if not self._check_connected():
             return
@@ -776,6 +786,20 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # switch entity if they want physical slot buttons afterwards.
             await self._ensure_pro_mode()
             raw = self.recipes[self.selected_recipe]
+            if overrides:
+                raw = {**raw, **overrides}
+                if "dose_g" in overrides or "ratio" in overrides:
+                    dose = float(raw.get("dose_g", 0) or 0)
+                    ratio = raw.get("ratio")
+                    if dose > 0 and ratio:
+                        effective_bypass = (
+                            float(raw.get("bypass_volume", 0.0) or 0.0)
+                            if bypass_volume is None else float(bypass_volume)
+                        )
+                        raw["pours"] = scale_pours_to_total(
+                            raw.get("pours", []),
+                            dose * float(ratio) - effective_bypass,
+                        )
             recipe = _build_recipe_from_yaml(raw)
             is_tea = brewing.is_tea_recipe(recipe)
             if not is_tea and recipe.grind_size > 0:

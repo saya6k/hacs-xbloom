@@ -40,10 +40,11 @@ from .const import (
     ATTR_MACHINE,
     ATTR_ORIGIN,
     ATTR_PROCESS,
+    ATTR_DOSE_G,
     ATTR_QUERY,
+    ATTR_RATIO,
     ATTR_RECIPE,
     ATTR_RECIPE_ID,
-    ATTR_RECIPE_NAME,
     ATTR_RECIPE_YAML,
     ATTR_ROAST,
     ATTR_RPM,
@@ -81,6 +82,7 @@ from .llm_api import register_llm_api, unregister_llm_api
 from .schema import (  # POUR_SCHEMA/RECIPE_SCHEMA re-exported below
     POUR_SCHEMA,
     RECIPE_SCHEMA,
+    find_recipe,
     new_recipe_uid,
     yaml_recipe_uid,
 )
@@ -117,9 +119,18 @@ CONFIG_SCHEMA = vol.Schema(
 # area_id through alongside the typed fields.
 EXECUTE_RECIPE_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_RECIPE_NAME): cv.string,
+        vol.Optional(ATTR_RECIPE): cv.string,
         vol.Optional(ATTR_GRIND_SIZE): vol.All(vol.Coerce(int), vol.Range(min=1, max=80)),
         vol.Optional(ATTR_RPM): vol.All(vol.Coerce(int), vol.Range(min=60, max=120)),
+        vol.Optional(ATTR_DOSE_G): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=100)
+        ),
+        vol.Optional(ATTR_RATIO): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=50)
+        ),
+        vol.Optional(ATTR_CUP_TYPE): vol.In(
+            ["x_pod", "xpod", "omni_dripper", "other", "tea"]
+        ),
         vol.Optional(ATTR_BYPASS_VOLUME): vol.All(
             vol.Coerce(float), vol.Range(min=0, max=200)
         ),
@@ -248,11 +259,16 @@ def _register_services(hass: HomeAssistant) -> None:
         if not coordinators:
             raise HomeAssistantError("No XBloom machine matched the service call.")
         for coord in coordinators:
-            name = call.data.get(ATTR_RECIPE_NAME) or coord.selected_recipe
+            identifier = call.data.get(ATTR_RECIPE)
+            if identifier:
+                resolved = find_recipe(coord.recipes or {}, identifier)
+                name = resolved[0] if resolved else None
+            else:
+                name = coord.selected_recipe
             if not name or name not in (coord.recipes or {}):
                 _LOGGER.warning(
                     "execute_recipe: recipe %r not found for %s",
-                    name, coord.mac_address,
+                    identifier or name, coord.mac_address,
                 )
                 continue
             # select_recipe syncs the grind/RPM sliders to the recipe;
@@ -263,8 +279,14 @@ def _register_services(hass: HomeAssistant) -> None:
             if ATTR_RPM in call.data:
                 coord.rpm = int(call.data[ATTR_RPM])
             coord.async_update_listeners()
+            overrides = {
+                key: call.data[key]
+                for key in (ATTR_DOSE_G, ATTR_RATIO, ATTR_CUP_TYPE)
+                if key in call.data
+            }
             try:
                 await coord.async_execute_recipe(
+                    overrides=overrides or None,
                     bypass_volume=call.data.get(ATTR_BYPASS_VOLUME),
                     bypass_temperature=call.data.get(ATTR_BYPASS_TEMPERATURE),
                 )

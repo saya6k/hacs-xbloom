@@ -35,9 +35,10 @@ DATA_LLM_UNREGISTER = "llm_unregister"
 
 # Services
 SERVICE_EXECUTE_RECIPE = "execute_recipe"
-ATTR_RECIPE_NAME = "recipe_name"
 ATTR_GRIND_SIZE = "grind_size"
 ATTR_RPM = "rpm"
+ATTR_DOSE_G = "dose_g"
+ATTR_RATIO = "ratio"
 ATTR_BYPASS_VOLUME = "bypass_volume"
 ATTR_BYPASS_TEMPERATURE = "bypass_temperature"
 
