@@ -33,6 +33,9 @@
       "cancel": {
         "default": "mdi:stop-circle"
       },
+      "pause": {
+        "default": "mdi:pause-circle"
+      },
       "vibrate_scale": {
         "default": "mdi:vibrate"
       },
@@ -61,6 +64,9 @@
       },
       "volume": {
         "default": "mdi:cup-water"
+      },
+      "flow_rate": {
+        "default": "mdi:waves-arrow-right"
       }
     },
     "sensor": {
@@ -108,6 +114,9 @@
           "pro": "mdi:coffee-maker-check",
           "easy": "mdi:coffee-maker"
         }
+      },
+      "pour_pattern": {
+        "default": "mdi:rotate-orbit"
       }
     },
     "switch": {
@@ -136,6 +145,35 @@
       "easy_slot_c": {
         "default": "mdi:alpha-c-circle-outline"
       }
+    }
+  },
+  "services": {
+    "list_recipes": {
+      "service": "mdi:notebook-outline"
+    },
+    "create_recipe": {
+      "service": "mdi:notebook-plus-outline"
+    },
+    "edit_recipe": {
+      "service": "mdi:notebook-edit-outline"
+    },
+    "delete_recipe": {
+      "service": "mdi:notebook-minus-outline"
+    },
+    "execute_recipe": {
+      "service": "mdi:play-circle"
+    },
+    "write_recipe_to_easy_slot": {
+      "service": "mdi:content-save-outline"
+    },
+    "cloud_import_recipe": {
+      "service": "mdi:cloud-download-outline"
+    },
+    "cloud_export_recipe": {
+      "service": "mdi:cloud-upload-outline"
+    },
+    "cloud_search_collective_recipes": {
+      "service": "mdi:cloud-search-outline"
     }
   }
 }

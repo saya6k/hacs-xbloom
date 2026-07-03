@@ -157,42 +157,54 @@ origin/varietal/process/flavor, which are already human-readable strings) —
 `_collective_result_to_summary()` reverse-maps it through the same
 `roastList` fetched for the request.
 
-## Recipe sync architecture
+## Recipe store architecture (local source of truth)
 
-`default_recipes.py`'s bundled `DEFAULT_RECIPES` is **not** an always-active
-recipe layer anymore — it's now only a network-failure fallback. The lowest
-recipe-precedence layer is `coordinator.cloud_synced_recipes`, populated by
-`coordinator.async_sync_cloud_recipes()`: the account's own private cloud
-recipes (`cloud_client.list_recipes()`, already includes full `pourList`) if
-a cloud account is configured and login succeeds, otherwise XBloom's official
-public recipes from the collective hub (`cloud_client.fetch_official_recipes()`
-— capped at `_OFFICIAL_RECIPE_SYNC_LIMIT` since each one needs its own
-`fetch_shared_recipe()` round-trip, unlike the account list). Only if *both*
-of those fail (e.g. no network at all) does it fall back to the bundled
-`default_recipes.py` list.
+> The previous always-on cloud sync layer (`cloud_synced_recipes` /
+> `async_sync_cloud_recipes()` / hourly interval) was removed in the
+> local-source-of-truth rework; its plan/todo live in
+> `tasks/archive/2026-06-cloud-recipes-{plan,todo}.md` and the current
+> project's in `SPEC.md` + `tasks/plan.md`.
 
-`__init__.py`'s `async_setup_entry` seeds `cloud_synced_recipes` synchronously
-with the bundled list (no network call) so `coordinator.recipes` is never
-empty, then kicks off the real sync via `hass.async_create_task(...)` —
-**not** awaited inline — so a slow/unreachable cloud API can't stall
-integration setup (fetching `_OFFICIAL_RECIPE_SYNC_LIMIT` official recipes is
-one detail-fetch per recipe; awaiting that inline could push entry setup past
-HA's own timeout). It also registers `async_track_time_interval(...,
-CLOUD_RECIPE_SYNC_INTERVAL)` (hourly) so recipes added to the account (or new
-official recipes) eventually show up without a manual reload.
-`coordinator._rebuild_recipes()` recomputes `self.recipes` from
-`cloud_synced_recipes` < YAML < `entry.options[CONF_RECIPES]` (unchanged
-tombstone-by-`None` override semantics) and is called both at setup and at
-the end of every sync; `async_sync_cloud_recipes()` also calls
-`self.async_update_listeners()` so the recipe select entity and any other
-`CoordinatorEntity` pick up the change immediately.
+**The local store — `entry.options[CONF_RECIPES]`, keyed by recipe name — is
+the single source of truth.** Every recipe dict carries metadata (all
+optional in `RECIPE_SCHEMA`): `uid` (`uuid4().hex[:12]`, assigned on
+create/import/seed; YAML recipes get a deterministic `"yaml-" + sha1(name)[:8]`),
+`cloud_table_id` + `share_url` (set on export/import), and `source`
+(`manual`/`import`/`seed_*`/`yaml`). The brewing path ignores metadata fields.
+`schema.find_recipe(recipes, identifier)` resolves the cross-identifier every
+service/LLM tool accepts — uid → cloud table id (int) → share URL/id → exact
+name, returning `(name, recipe)` — and `coordinator._looks_like_share_ref()`
+decides whether an unresolved identifier triggers auto-import (edit /
+write-slot do; execute doesn't).
 
-**`config_flow.py`'s `_all_visible_recipes()` duplicates this merge** (needed
-because the OptionsFlow doesn't have direct access to `coordinator.recipes`
-at the time it needs to know what's "visible" for Add/Edit/Delete) — it reads
-`coordinator.cloud_synced_recipes` via `_synced_recipes()`, not the static
-`hass.data[DOMAIN]["default_recipes"]` directly. If the merge logic changes
-in one place, check the other.
+**Seeding is one-time, not a sync.** `__init__.py`'s `async_setup_entry`
+calls the synchronous bundled seed (writes `default_recipes.py` into the
+store with uids, only when the store is empty and `CONF_RECIPES_SEEDED` is
+unset — so the dropdown is never empty), then kicks off
+`coordinator.async_seed_recipes()` via `hass.async_create_task(...)` — **not**
+awaited inline, so a slow cloud API can't stall setup (the official-recipes
+path is one `fetch_shared_recipe()` round-trip per recipe, capped at
+`_OFFICIAL_RECIPE_SYNC_LIMIT`). That task fetches the account's own recipes
+when a cloud login is configured (flag `CONF_ACCOUNT_RECIPES_SEEDED` — so
+linking an account later seeds once more) or XBloom's official public recipes
+otherwise (flag `CONF_RECIPES_SEEDED`); names already present locally —
+including tombstones (user deletions) and YAML names — are skipped, and a
+failed fetch leaves the flag unset so the next HA start retries.
+
+`coordinator._rebuild_recipes()` merges just **two layers**: YAML
+(`hass.data[DOMAIN]["yaml_recipes"]`) < the local store, where a `None` store
+value is a tombstone hiding a YAML name. All CRUD
+(`create_local_recipe` / `async_edit_local_recipe` / `delete_local_recipe`,
+plus import/export) funnels through `_write_options_recipes()`, which
+persists, rebuilds, and calls `async_update_listeners()` so the recipe select
+updates immediately. Name collisions get a ` (2)` suffix (`dedupe_name`),
+never an overwrite. Config entry **v3** (`async_migrate_entry`) injects
+`uid`/`source` into pre-existing stored recipes, preserving tombstones.
+
+**`config_flow.py`'s `_all_visible_recipes()` duplicates the two-layer
+merge** (the OptionsFlow needs "visible" recipes for Add/Edit/Delete without
+going through the coordinator). If the merge logic changes in one place,
+check the other.
 
 ## Entity translation flow
 
@@ -210,7 +222,10 @@ Use the devcontainer:
 scripts/develop          # boots HA on :8123 with this integration mounted
 ```
 
-There is no automated test suite yet. The integration is validated by:
+`pytest tests/` covers the pure-logic pieces (uid metadata, `find_recipe`
+resolution, pour scaling, v2→v3 migration, name dedupe, criteria matching,
+LLM-prompt/tool-name consistency) and runs without an HA instance. Everything
+BLE-facing is still validated manually:
 
 1. Starting the devcontainer.
 2. Adding the integration via Settings → Devices & Services with a real BLE MAC.
