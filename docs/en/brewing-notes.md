@@ -64,7 +64,7 @@ Removed the four QUIT commands from `_async_brew_coffee`; kept only `8022 RD_Bac
 **Status: FIXED (2026-05-29, hardware-confirmed).** A multi-steep tea recipe (e.g. 홍차: 120 ml @95 °C soak 180 s + 120 ml @95 °C soak 120 s) used to brew as a **single ~316 ml pour** instead of two separate steeps. The official-app capture pinpointed the cause via a byte diff of the 4513 payload:
 
 ```
-ha-xbloom: 10 | 78 5f 03 00 | 4c 00 00 1e | 78 5f 03 00 | 88 00 00 1e | 00 60
+hacs-xbloom: 10 | 78 5f 03 00 | 4c 00 00 1e | 78 5f 03 00 | 88 00 00 1e | 00 60
 official:  10 | 5a 63 01 00 | 00 60 00 23 | 46 63 01 00 | ce 20 00 23 | 32 00
                   +-substep-+   +-timing--+
 ```
@@ -79,7 +79,7 @@ official:  10 | 5a 63 01 00 | 00 60 00 23 | 46 63 01 00 | ce 20 00 23 | 32 00
 
 **Soak scale calibrated (approximate) 2026-05-29.** A 홍차 brew measured the firmware running the idle wait at ~**1.67×** byte[1] (byte 180 → ~300 s, 120 → ~180 s). `_build_tea_payload` now writes `byte[1] = clamp(round(pausing × 0.6), 1, 255)` so the actual wait ≈ the recipe's `pausing` seconds (kept ≥1 to preserve the nonzero steep marker). The 0.6 is from two coarse stopwatch points — re-time a brew if you want it tighter.
 
-**Real soak / siphon FIXED 2026-05-29 (hardware-confirmed).** ha-xbloom previously poured the recipe's full volume (120 ml), which hits the ~120 ml siphon threshold and drains *instantly* — no soak. The official app instead sends a sub-threshold pour and lets the firmware auto-top-up past the threshold AFTER the soak to trigger the drain. `_build_tea_payload` now caps each wire pour at `_TEA_SIPHON_CAP = 90 ml` (the recipe keeps its authored volume — e.g. 홍차 stays 120/120). Verified brew of 홍차: steep1 = 90 ml pour → **3 min soak with water held in the brewer** → firmware auto-top-up ~38 ml → siphon drain → vibrate; steep2 = ~90 ml → 2 min soak → +38 ml → drain. Soak durations matched the recipe (180 s / 120 s); total ~255 ml ≈ authored 240. So ha-xbloom's 4513 path triggers the same firmware soak+top-up as the official app — **we don't replicate the top-up, we just stay under the threshold and let the firmware do it.** Consequence: a real multi-minute soak IS achievable (this corrects the "flash steep only" note below).
+**Real soak / siphon FIXED 2026-05-29 (hardware-confirmed).** hacs-xbloom previously poured the recipe's full volume (120 ml), which hits the ~120 ml siphon threshold and drains *instantly* — no soak. The official app instead sends a sub-threshold pour and lets the firmware auto-top-up past the threshold AFTER the soak to trigger the drain. `_build_tea_payload` now caps each wire pour at `_TEA_SIPHON_CAP = 90 ml` (the recipe keeps its authored volume — e.g. 홍차 stays 120/120). Verified brew of 홍차: steep1 = 90 ml pour → **3 min soak with water held in the brewer** → firmware auto-top-up ~38 ml → siphon drain → vibrate; steep2 = ~90 ml → 2 min soak → +38 ml → drain. Soak durations matched the recipe (180 s / 120 s); total ~255 ml ≈ authored 240. So hacs-xbloom's 4513 path triggers the same firmware soak+top-up as the official app — **we don't replicate the top-up, we just stay under the threshold and let the firmware do it.** Consequence: a real multi-minute soak IS achievable (this corrects the "flash steep only" note below).
 
 ## xBloom Omni Tea Brewer — siphon mechanics
 
@@ -97,8 +97,8 @@ This section documents the **hardware (Pythagorean cup) behavior**, not firmware
 
 - Tea leaves (3-5 g loose leaf) occupy ~30-40 ml of physical volume inside the brewer
 - Effective threshold: **pouring ~120 ml of water triggers the siphon immediately**
-- If you pour **≥ threshold** → instant siphon drain, no soak (this was ha-xbloom's old bug)
-- If you pour **< threshold** → water is **held** in the brewer and **really soaks** for the programmed time, then the firmware auto-tops-up past the threshold to trigger the drain (verified 2026-05-29: 90 ml → 3 min soak → +38 ml → drain). This is what the official app and now ha-xbloom (via `_TEA_SIPHON_CAP`) do.
+- If you pour **≥ threshold** → instant siphon drain, no soak (this was hacs-xbloom's old bug)
+- If you pour **< threshold** → water is **held** in the brewer and **really soaks** for the programmed time, then the firmware auto-tops-up past the threshold to trigger the drain (verified 2026-05-29: 90 ml → 3 min soak → +38 ml → drain). This is what the official app and now hacs-xbloom (via `_TEA_SIPHON_CAP`) do.
 
 ### Recipe design implications
 
@@ -133,5 +133,5 @@ This section documents the **hardware (Pythagorean cup) behavior**, not firmware
 5. **Tea-flatten FIXED:** root cause was pattern=3 (firmware misparses → 316 ml = 120 + 76 + 120). `_build_tea_payload` now uses pattern=1, `[grind, ratio]` footer, and soak in timing byte[1]. Hardware-confirmed two separate steeps.
 6. **Tea soak FIXED:** byte[1] = `round(pausing × 0.6)` (firmware runs the wait at ~1.67× the byte; hardware soaks came out at the recipe's seconds). An earlier negated byte inverted the steep order — corrected to positive.
 7. **Tea real-soak / siphon FIXED:** added `_TEA_SIPHON_CAP = 90` — caps the wire pour below the siphon threshold so the firmware soaks then auto-tops-up to drain (recipe keeps its authored volume). Hardware-confirmed: 90 ml → 3 min held soak → +38 ml → drain, per steep. Disproves the old "flash steep only / long-soak impossible" claim.
-8. Confirmed the official app **auto-converts** authored tea volumes (preset 120/120 → wire 90/70 fitting the 160 ml capacity); ha-xbloom doesn't replicate the converter but the sub-threshold cap + firmware top-up achieves the same real-soak result.
+8. Confirmed the official app **auto-converts** authored tea volumes (preset 120/120 → wire 90/70 fitting the 160 ml capacity); hacs-xbloom doesn't replicate the converter but the sub-threshold cap + firmware top-up achieves the same real-soak result.
 9. BP temperature observation: a user-confirmed BP tea pour encoded as byte 99 (not the 98/100 the upstreams guessed) — likely a computed near-boiling value, not a fixed sentinel.

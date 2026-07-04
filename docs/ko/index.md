@@ -132,7 +132,7 @@ data:
   share_url: "https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D"
 ```
 
-collective-search 필터 드롭다운은 허브 분류 코드의 스냅샷입니다. XBloom이 드롭다운이 모르는 새 분류를 추가했다면 숫자 코드를 직접 입력하세요(필드가 custom value를 받습니다) — 그리고 다음 릴리스의 스냅샷·번역에 반영할 수 있도록 [이슈](https://github.com/saya6k/ha-xbloom/issues)로 코드를 제보해 주세요.
+collective-search 필터 드롭다운은 허브 분류 코드의 스냅샷입니다. XBloom이 드롭다운이 모르는 새 분류를 추가했다면 숫자 코드를 직접 입력하세요(필드가 custom value를 받습니다) — 그리고 다음 릴리스의 스냅샷·번역에 반영할 수 있도록 [이슈](https://github.com/saya6k/hacs-xbloom/issues)로 코드를 제보해 주세요.
 
 **클라우드 계정(선택)** — `cloud_export_recipe`만 계정이 필요합니다. 초기 설정의 config flow "XBloom Cloud Account" 단계에서 XBloom 앱 이메일/비밀번호를 입력하거나, 나중에 설정 → 기기 및 서비스 → XBloom → ⋯ → **구성** → **클라우드 계정**에서 추가/변경/삭제하세요. Apple로 로그인해서 XBloom 비밀번호가 없다면, XBloom 자체의 "비밀번호 찾기" 플로우(Apple이 릴레이하는 이메일 사용, 앱의 계정 설정에서 확인 가능)로 먼저 설정하세요.
 
@@ -174,7 +174,7 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 scripts/develop
 ```
 
-컨테이너 내부에서 HA가 표준 포트 8123을 바인딩. 호스트 네트워크의 프로덕션 HA 인스턴스와 구분되도록 컨테이너 호스트명은 `ha-xbloom-dev`로 설정. VS Code가 8123을 호스트로 포워딩 (호스트에 이미 8123이 사용 중이면 자동으로 다른 포트 선택).
+컨테이너 내부에서 HA가 표준 포트 8123을 바인딩. 호스트 네트워크의 프로덕션 HA 인스턴스와 구분되도록 컨테이너 호스트명은 `hacs-xbloom-dev`로 설정. VS Code가 8123을 호스트로 포워딩 (호스트에 이미 8123이 사용 중이면 자동으로 다른 포트 선택).
 
 ## 라이선스
 

@@ -34,7 +34,7 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=ha-xbloom&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=hacs-xbloom&category=integration)
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
 2. Install **XBloom Coffee Machine**.
@@ -150,7 +150,7 @@ data:
 The collective-search facet dropdowns are a snapshot of the hub's category codes.
 If XBloom adds a category the dropdown doesn't know yet, type its numeric code
 directly (the fields accept custom values) — and please [open an
-issue](https://github.com/saya6k/ha-xbloom/issues) with the code so it can be added
+issue](https://github.com/saya6k/hacs-xbloom/issues) with the code so it can be added
 to the snapshot and translated in the next release.
 
 **Cloud account (optional)** — only `cloud_export_recipe` needs one. Enter your
@@ -217,7 +217,7 @@ A devcontainer is provided for testing the integration against a real Home Assis
 scripts/develop
 ```
 
-HA binds the standard port 8123 inside the container. The container's hostname is set to `ha-xbloom-dev` so it's distinguishable from any production HA instance you run on the host network. VS Code forwards 8123 to the host (and auto-picks a different host port if 8123 is already taken there).
+HA binds the standard port 8123 inside the container. The container's hostname is set to `hacs-xbloom-dev` so it's distinguishable from any production HA instance you run on the host network. VS Code forwards 8123 to the host (and auto-picks a different host port if 8123 is already taken there).
 
 ## License
 
