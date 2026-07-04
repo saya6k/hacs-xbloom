@@ -30,7 +30,7 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DEFAULT_WEIGHT_UNIT,
 )
-from ._client import XBloomClientWithEvents as XBloomClient, strict_ascii
+from ._client import HABleakConnection, XBloomClientWithEvents as XBloomClient, strict_ascii
 from ._cloud_client import (
     XBloomCloudClient,
     cloud_recipe_to_local,
@@ -404,7 +404,10 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             _LOGGER.info("Connecting to XBloom at %s …", self.mac_address)
             try:
-                self.client = XBloomClient(mac_address=self.mac_address)
+                self.client = XBloomClient(
+                    mac_address=self.mac_address,
+                    connection=HABleakConnection(self.hass),
+                )
                 self.client._cleanup_on_disconnect = False
 
                 # Propagate BLE notifications → coordinator refresh
