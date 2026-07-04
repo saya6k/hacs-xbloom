@@ -291,9 +291,14 @@ class HABleakConnection(XBloomConnection):
     without touching the vendored client.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        disconnected_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
         self._hass = hass
         self._client: Optional[BleakClient] = None
+        self._disconnected_callback = disconnected_callback
 
     async def connect(self, address: str, timeout: float = 20.0) -> bool:
         ble_device = bluetooth.async_ble_device_from_address(
@@ -302,9 +307,23 @@ class HABleakConnection(XBloomConnection):
         if ble_device is None:
             raise ConnectionError(f"XBloom device {address} not found via HA Bluetooth")
         self._client = await establish_connection(
-            BleakClient, ble_device, address, timeout=timeout
+            BleakClient,
+            ble_device,
+            address,
+            timeout=timeout,
+            disconnected_callback=self._on_bleak_disconnected,
         )
         return self._client.is_connected
+
+    def _on_bleak_disconnected(self, client: BleakClient) -> None:
+        """bleak's own disconnect hook — fires for both requested and dropped links.
+
+        The coordinator tells the two apart (it skips reconnecting after its
+        own ``async_disconnect()``); this just relays the event.
+        """
+        _LOGGER.warning("XBloom BLE link disconnected")
+        if self._disconnected_callback:
+            self._hass.loop.call_soon_threadsafe(self._disconnected_callback)
 
     async def disconnect(self) -> None:
         if self._client:
