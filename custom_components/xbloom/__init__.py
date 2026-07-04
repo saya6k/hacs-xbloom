@@ -58,6 +58,7 @@ from .const import (
     CONF_EASY_SLOTS,
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
+    CONF_MODE,
     CONF_PASSWORD,
     CONF_RECIPES,
     CONF_RECIPES_SEEDED,
@@ -694,7 +695,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # they survive HA restarts.  Falls back to sensible defaults if never set.
     initial_water_source = entry.options.get(CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE)
 
-    from .const import CONF_MODE, DEFAULT_MODE
+    from .const import DEFAULT_MODE
     initial_mode = entry.options.get(CONF_MODE, DEFAULT_MODE)
     initial_weight_unit = entry.options.get(CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT)
     initial_temp_unit = entry.options.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)
@@ -768,14 +769,23 @@ _RECIPE_ONLY_OPTION_KEYS = {
     CONF_EASY_SLOTS,
 }
 
+# CONF_MODE is persisted by XBloomCoordinator.async_set_mode() purely so the
+# preference survives restarts/reconnects — the BLE mode-switch command has
+# already been sent over the air by that point. Live-observed 2026-07-04: a
+# full reload here disconnects BLE (async_unload_entry -> async_disconnect())
+# and nothing reconnects automatically afterwards, so the connection switch
+# was left stuck "off" on every mode change. No BLE-affecting work is needed
+# for this key, so it's exempt from the reload just like the recipe keys.
+_NO_RELOAD_OPTION_KEYS = _RECIPE_ONLY_OPTION_KEYS | {CONF_MODE}
+
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change.
 
-    Exception: changes confined to the recipe store (see
-    ``_RECIPE_ONLY_OPTION_KEYS``) skip the reload and just rebuild the
-    coordinator's merged recipe view, so recipe CRUD updates entities
-    in place without dropping the BLE connection.
+    Exception: changes confined to ``_NO_RELOAD_OPTION_KEYS`` (the recipe
+    store plus the mode preference) skip the reload — a recipe rebuild is
+    enough for the former, and the latter needs no follow-up at all — so
+    these updates apply in place without dropping the BLE connection.
     """
     data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if data and DATA_COORDINATOR in data:
@@ -783,9 +793,10 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
         cur = dict(entry.options)
         changed = {k for k in set(prev) | set(cur) if prev.get(k) != cur.get(k)}
         data["options_snapshot"] = cur
-        if changed and changed <= _RECIPE_ONLY_OPTION_KEYS:
+        if changed and changed <= _NO_RELOAD_OPTION_KEYS:
             coordinator: XBloomCoordinator = data[DATA_COORDINATOR]
-            coordinator._rebuild_recipes()
+            if changed & _RECIPE_ONLY_OPTION_KEYS:
+                coordinator._rebuild_recipes()
             coordinator.async_update_listeners()
             return
     await hass.config_entries.async_reload(entry.entry_id)
