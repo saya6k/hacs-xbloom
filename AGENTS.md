@@ -53,6 +53,13 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 
 Helpful constants live in `src/xbloom/protocol/constants.py`; the most thoroughly-decoded protocol reference is `src/xbloom-ble/PROTOCOL.md` (HCI snoop captures from the official iOS app). Notable inbound responses: `RD_MachineInfo` (40521), `RD_WATER_VOLUME` (40523), `RD_BREWER_PAUSE` (9010), `RD_TEA_RECIP_PAUSE` (40515), `RD_ENJOY` (40512), `RD_BLOOM`, `RD_BREWER_BEGIN`, `RD_Brewer_Stop`, `RD_GRINDER_BEGIN`, `RD_Grinder_Stop`. Notable outbound commands: `APP_BREWER_START`, `APP_RECIPE_SEND_AUTO` (8001, with grinding), `APP_RECIPE_SEND_MANUAL` (8004, no grinding), `APP_TEA_RECIP_CODE` (4513) / `APP_TEA_RECIP_MAKE` (4512, the live tea path), `APP_RECIPE_EXECUTE` (8002), `APP_RECIPE_STOP` (40519), `8022` (Back to Home, sent at the start of every recipe).
 
+## BLE connection management
+
+- **Connects through HA's Bluetooth integration, not a bare `BleakClient`.** The vendored `src/xbloom/connection/bleak_impl.py` opens `BleakClient(mac_address)` directly — no HA proxy routing, no `bleak-retry-connector` retry/cache-clear handling. `_client.HABleakConnection` (injected via the vendored `XBloomClient(connection=...)` constructor param, never by editing the vendored file) resolves the address through `bluetooth.async_ble_device_from_address` and connects via `bleak_retry_connector.establish_connection` instead. `manifest.json` depends on the `bluetooth` integration and requires `bleak-retry-connector` for this.
+- **Auto-reconnects on an unexpected BLE drop.** Before 2026-07-04 nothing ever called `coordinator.async_connect()` again after an unrequested disconnect — only the connection switch's `async_turn_on` did — so any drop left the switch stuck "off" until manually flipped. `HABleakConnection`'s `disconnected_callback` now calls `coordinator._handle_unexpected_disconnect()`, which reconnects unless the drop was caused by `async_disconnect()` itself (tracked via `_manual_disconnect`, so turning the switch off on purpose doesn't immediately reconnect).
+- **A stray header byte inside telemetry can produce a garbage frame length.** The vendored framing loop (`src/xbloom/core/client.py:_on_notification`) scans raw notification bytes for a header byte (`0x58`/`0x02`) and reads the next 4 bytes as the packet length with no bounds check — a false match inside the weight/water-volume telemetry stream (which floods at multi-Hz) can read garbage (e.g. `0xc2000001` = 3254779905) and, in the vendored code, discards the rest of the buffer with a misleading "Partial packet received" warning. `_client.py`'s `_on_notification` override replaces the framing loop (`_split_and_parse`) with the same logic plus a `_MAX_PACKET_LEN` (256) sanity bound: anything larger is a false-positive header byte, skipped instead of aborting the buffer.
+- **Changing the mode-select entity must not reload the config entry.** `coordinator.async_set_mode()` persists the preference via `hass.config_entries.async_update_entry()`, which fires `__init__.py`'s `_async_update_listener`. `CONF_MODE` is in `_NO_RELOAD_OPTION_KEYS` (alongside the recipe-store keys) specifically so this doesn't trigger `hass.config_entries.async_reload()` — a reload's `async_unload_entry` calls `coordinator.async_disconnect()`, and nothing in `async_setup_entry` reconnects automatically, so every mode switch used to drop the connection and leave it dropped (confirmed live 2026-07-04, and easy to mistake for a firmware quirk — it wasn't).
+
 ## XBloom cloud API
 
 `_cloud_client.py` (HA-side, no vendored library — this API has no upstream) talks to
@@ -113,7 +120,8 @@ error code:
    aren't the same "already gone" case.
 
 **Pattern/vibration mapping** (local schema, `schema.py`, was deliberately *not*
-renumbered to match cloud — see `tasks/todo.md` Phase 1 deviation note): local
+renumbered to match cloud — see `tasks/archive/2026-07-recipe-local-source-of-truth-todo.md`
+Phase 1 deviation note): local
 `pattern` ints `0/1/2` = `center/circular/spiral`; cloud ints `1/2/3` =
 `centered/spiral/circular` — note both names and numbers differ, mapped through
 `_LOCAL_PATTERN_TO_CLOUD`/`_CLOUD_PATTERN_TO_LOCAL` in `_cloud_client.py`, never
@@ -160,7 +168,8 @@ reverse-maps it through the same `roastList`.
 ## Recipe store architecture (local source of truth)
 
 > Replaces an earlier always-on cloud sync layer (`cloud_synced_recipes` /
-> hourly interval); see `SPEC.md` + `tasks/plan.md` for the rework, and
+> hourly interval); see `tasks/archive/2026-07-recipe-local-source-of-truth-{spec,plan,todo}.md`
+> for the rework (verified against real hardware 2026-07-04), and
 > `tasks/archive/2026-06-cloud-recipes-{plan,todo}.md` for what preceded it.
 
 **`entry.options[CONF_RECIPES]`, keyed by name, is the single source of
