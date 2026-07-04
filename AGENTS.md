@@ -93,9 +93,14 @@ error code:
    rejected.
 2. **`sum(pours[].volume_ml) + bypass_volume` must equal `dose_g * ratio`** for
    dosed (coffee-style, bypass-off) recipes — `validate_pour_volume_consistency()`
-   checks this client-side before any network call. **Bypass-ON payload
-   requirements are still unconfirmed live** — no currently-live example recipe has
-   bypass enabled, so `cloud_export_recipe` proceeds but attaches a `warning`
+   checks this client-side before any network call, but `async_export_recipe`
+   only runs that check when `bypass_volume == 0`. **Bypass-ON recipes don't
+   follow this formula**: live account data confirmed 2026-07-04 shows
+   `pours` alone already summing to `dose_g * ratio`, with `bypass_volume`
+   sitting on top as extra water rather than counting toward that budget —
+   the opposite of what the bypass-off formula would require. The exact
+   bypass-ON wire constraint (if any) is still unconfirmed, so
+   `cloud_export_recipe` skips the hard check and just attaches a `warning`
    for any recipe with nonzero `bypass_volume`.
 3. **`share_url` is server-assigned, not derivable client-side.** The reference
    implementation's own `btoa(String(tableId))` guess is wrong — decoding a real

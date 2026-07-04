@@ -1682,13 +1682,21 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "error": "invalid_recipe",
                 "message": f"Recipe does not match the schema: {exc}",
             }
-        mismatch = validate_pour_volume_consistency(validated)
-        if mismatch:
-            return {
-                "success": False,
-                "error": "pour_volume_mismatch",
-                "message": f"Recipe rejected before sending to the cloud: {mismatch}",
-            }
+        # Only enforced for bypass-off recipes — that's the formula
+        # actually confirmed live (see AGENTS.md). For bypass>0 the
+        # `warning` above already covers it; hard-rejecting here would
+        # contradict "the export proceeds anyway" and block recipes
+        # where bypass water sits on top of the dose*ratio budget
+        # instead of inside it (confirmed against a live account recipe
+        # 2026-07-04).
+        if not warning:
+            mismatch = validate_pour_volume_consistency(validated)
+            if mismatch:
+                return {
+                    "success": False,
+                    "error": "pour_volume_mismatch",
+                    "message": f"Recipe rejected before sending to the cloud: {mismatch}",
+                }
         if not await self.async_ensure_cloud_login():
             return {
                 "success": False,
