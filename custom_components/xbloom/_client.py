@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 from typing import Callable, List, Optional
 
 from bleak import BleakClient
@@ -48,6 +49,10 @@ _LOGGER = logging.getLogger(__name__)
 # Cmd 40521 (RD_MachineInfo) as little-endian bytes, matching the upstream
 # packet layout: header(3) | cmd(2) | len(4) | type(1) | payload | crc(2).
 _MACHINE_INFO_CMD_BYTES = (40521).to_bytes(2, "little")  # b"\x09\xa9"
+
+# Generous upper bound on a real XBloom packet — used by _split_and_parse to
+# reject a garbage length field read from a false-positive header byte.
+_MAX_PACKET_LEN = 256
 
 # MachineInfo payload byte offsets (from PROTOCOL.md field map).
 # Mode is a 4-byte hex string at payload offset 51–54:
@@ -184,11 +189,46 @@ class XBloomClientWithEvents(XBloomClient):
             char_uuid, len(raw), raw.hex(),
         )
         # Recover MachineInfo even if upstream's length-based parser discards
-        # the frame. Run BEFORE super() so a successful manual extract beats
-        # a bogus parser warning.
+        # the frame. Run BEFORE the framing loop so a successful manual
+        # extract beats a bogus parser warning.
         if not self._status.serial_number:
             self._scan_for_machine_info(raw)
-        super()._on_notification(char, data)
+        self._split_and_parse(raw)
+
+    def _split_and_parse(self, raw_data: bytes) -> None:
+        """Reimplementation of the vendored framing loop in
+        src/xbloom/core/client.py:_on_notification, with a sanity bound on
+        the parsed length field.
+
+        A header byte (0x58/0x02) can turn up by coincidence inside the
+        weight/water-volume telemetry stream, which floods at multi-Hz
+        rates. When that happens, upstream's parser reads garbage at
+        offset+5:9 as the packet length — real captures show values like
+        3254779905 — logs a misleading "Partial packet received" warning,
+        and discards the rest of the buffer. Real XBloom packets never
+        approach that size, so anything past ``_MAX_PACKET_LEN`` is treated
+        as a false-positive header match: skip one byte and keep scanning
+        instead of bailing out on the whole notification.
+        """
+        offset = 0
+        n = len(raw_data)
+        while offset < n:
+            if raw_data[offset] not in (0x58, 0x02):
+                offset += 1
+                continue
+            if n - offset < 10:
+                break
+            total_len = struct.unpack("<I", raw_data[offset + 5 : offset + 9])[0]
+            if total_len > _MAX_PACKET_LEN:
+                offset += 1
+                continue
+            if offset + total_len > n:
+                _LOGGER.debug(
+                    "Partial packet received: %d/%d bytes", n - offset, total_len
+                )
+                break
+            self._parse_response(raw_data[offset : offset + total_len])
+            offset += total_len
 
     def _scan_for_machine_info(self, raw: bytes) -> None:
         """Extract RD_MachineInfo by signature, ignoring the length field.
