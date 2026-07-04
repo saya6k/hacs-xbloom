@@ -1,10 +1,10 @@
 [project]
 site_name = "XBloom Coffee Machine"
-site_url = "https://saya6k.github.io/ha-xbloom/en/"
+site_url = "https://saya6k.github.io/hacs-xbloom/en/"
 site_description = "Local Bluetooth control of an XBloom Studio coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud."
 docs_dir = "docs/en"
 site_dir = "site/en"
-repo_url = "https://github.com/saya6k/ha-xbloom"
+repo_url = "https://github.com/saya6k/hacs-xbloom"
 edit_uri = "edit/main/docs/en/"
 
 [project.theme]
@@ -12,10 +12,10 @@ language = "en"
 
 [[project.extra.alternate]]
 name = "English"
-link = "https://saya6k.github.io/ha-xbloom/en/"
+link = "https://saya6k.github.io/hacs-xbloom/en/"
 lang = "en"
 
 [[project.extra.alternate]]
 name = "한국어"
-link = "https://saya6k.github.io/ha-xbloom/ko/"
+link = "https://saya6k.github.io/hacs-xbloom/ko/"
 lang = "ko"

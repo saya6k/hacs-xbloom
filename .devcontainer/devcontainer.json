@@ -1,7 +1,7 @@
 {
-  "name": "ha-xbloom-dev",
+  "name": "hacs-xbloom-dev",
   "image": "mcr.microsoft.com/devcontainers/python:3-3.14-bookworm",
-  "runArgs": ["--hostname=ha-xbloom-dev"],
+  "runArgs": ["--hostname=hacs-xbloom-dev"],
   "postCreateCommand": "scripts/setup",
   "forwardPorts": [8123],
   "portsAttributes": {
