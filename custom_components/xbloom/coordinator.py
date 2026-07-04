@@ -1225,12 +1225,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 else:
                     merged[name] = recipe
         self.recipes = merged
-        self._refresh_recipe_service_schemas()
+        # _rebuild_recipes is sync (called from many non-async contexts —
+        # see its own callers), but the schema refresh needs to await
+        # async_get_all_descriptions, so it can't be called inline here.
+        # Fire-and-forget via the event loop instead of awaiting inline.
+        self.hass.async_create_task(self._async_refresh_recipe_service_schemas())
 
     # Services whose `recipe` field is a select selector (services.yaml
     # ships it with empty static options + custom_value: true) that we
     # keep populated with the live recipe list — see
-    # _refresh_recipe_service_schemas.
+    # _async_refresh_recipe_service_schemas.
     _RECIPE_SELECTOR_SERVICES = (
         "execute_recipe",
         "edit_recipe",
@@ -1239,7 +1243,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         "cloud_export_recipe",
     )
 
-    def _refresh_recipe_service_schemas(self) -> None:
+    async def _async_refresh_recipe_service_schemas(self) -> None:
         """Populate the `recipe` dropdown on recipe-taking services.
 
         A plain text field for "which recipe" is exactly what let a typo
@@ -1269,7 +1273,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             for uid, (name, _recipe) in sorted(merged.items(), key=lambda kv: kv[1][0].lower())
         ]
 
-        descriptions = service_helper.async_get_all_descriptions(self.hass).get(DOMAIN, {})
+        descriptions = (await service_helper.async_get_all_descriptions(self.hass)).get(
+            DOMAIN, {}
+        )
         for svc_name in self._RECIPE_SELECTOR_SERVICES:
             current = descriptions.get(svc_name)
             if not current or "recipe" not in current.get("fields", {}):

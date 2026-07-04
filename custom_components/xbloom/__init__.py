@@ -735,7 +735,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # dropdown refresh they triggered couldn't see this machine's own
     # recipes yet (only any other already-configured machine's). Refresh
     # once more now that self-lookup works.
-    coordinator._refresh_recipe_service_schemas()
+    await coordinator._async_refresh_recipe_service_schemas()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -822,6 +822,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     hass.services.async_remove(DOMAIN, service)
         else:
             # Drop this machine's recipes from the other machines'
-            # recipe-service dropdowns (see _refresh_recipe_service_schemas).
-            remaining[0][DATA_COORDINATOR]._refresh_recipe_service_schemas()
+            # recipe-service dropdowns (see
+            # _async_refresh_recipe_service_schemas).
+            await remaining[0][DATA_COORDINATOR]._async_refresh_recipe_service_schemas()
     return unload_ok
