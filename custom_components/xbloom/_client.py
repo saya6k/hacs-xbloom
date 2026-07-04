@@ -34,7 +34,13 @@ import asyncio
 import logging
 from typing import Callable, List, Optional
 
+from bleak import BleakClient
+from bleak_retry_connector import establish_connection
+from homeassistant.components import bluetooth
+from homeassistant.core import HomeAssistant
+
 from xbloom import XBloomClient
+from xbloom.connection import XBloomConnection
 from xbloom.protocol import XBloomResponse
 
 _LOGGER = logging.getLogger(__name__)
@@ -267,3 +273,62 @@ class XBloomClientWithEvents(XBloomClient):
             self._fire_event("notification", _NOTIFICATION_MAP[response])
         elif response in _ERROR_MAP:
             self._fire_event("error", _ERROR_MAP[response])
+
+
+class HABleakConnection(XBloomConnection):
+    """HA-aware XBloomConnection, injected via ``XBloomClient(connection=...)``.
+
+    The vendored ``BleakConnection`` (src/xbloom/connection/bleak_impl.py)
+    opens a bare ``BleakClient(mac_address)`` — bypassing HA's Bluetooth
+    integration entirely, so it can't route through Bluetooth proxies and
+    gets none of bleak-retry-connector's reconnect/cache-clear handling.
+    Live-observed 2026-07-04: switching Easy<->Pro mode makes the machine
+    drop the BLE link momentarily, and the bare-client reconnect that
+    followed came back with garbled notifications ("Partial packet
+    received: 11/3254779905 bytes") instead of a clean resync. Resolving
+    the address through ``bluetooth.async_ble_device_from_address`` and
+    connecting via ``establish_connection`` fixes that reconnect path
+    without touching the vendored client.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+        self._client: Optional[BleakClient] = None
+
+    async def connect(self, address: str, timeout: float = 20.0) -> bool:
+        ble_device = bluetooth.async_ble_device_from_address(
+            self._hass, address, connectable=True
+        )
+        if ble_device is None:
+            raise ConnectionError(f"XBloom device {address} not found via HA Bluetooth")
+        self._client = await establish_connection(
+            BleakClient, ble_device, address, timeout=timeout
+        )
+        return self._client.is_connected
+
+    async def disconnect(self) -> None:
+        if self._client:
+            await self._client.disconnect()
+
+    @property
+    def is_connected(self) -> bool:
+        return self._client is not None and self._client.is_connected
+
+    async def write_command(self, char_uuid: str, data: bytes, response: bool = False) -> None:
+        if not self.is_connected:
+            raise ConnectionError("Not connected")
+        await self._client.write_gatt_char(char_uuid, data, response=response)
+
+    async def start_notify(
+        self, char_uuid: str, callback: Callable[[int, bytearray], None]
+    ) -> None:
+        if not self.is_connected:
+            raise ConnectionError("Not connected")
+        await self._client.start_notify(char_uuid, callback)
+
+    async def stop_notify(self, char_uuid: str) -> None:
+        if self.is_connected:
+            try:
+                await self._client.stop_notify(char_uuid)
+            except Exception as exc:
+                _LOGGER.warning("Failed to stop notify: %s", exc)
