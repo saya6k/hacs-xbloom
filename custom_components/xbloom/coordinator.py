@@ -319,6 +319,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # default (Easy) mode so the physical slot buttons work again.
         self._auto_switched_to_pro: bool = False
 
+        # Set just before a user/HA-initiated disconnect so
+        # _handle_unexpected_disconnect() can tell it apart from the
+        # machine dropping the link on its own (observed on Easy<->Pro
+        # mode switches) and skip reconnecting in the former case.
+        self._manual_disconnect: bool = False
+
     # ------------------------------------------------------------------
     # DataUpdateCoordinator contract
     # ------------------------------------------------------------------
@@ -403,10 +409,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 return True
 
             _LOGGER.info("Connecting to XBloom at %s …", self.mac_address)
+            self._manual_disconnect = False
             try:
                 self.client = XBloomClient(
                     mac_address=self.mac_address,
-                    connection=HABleakConnection(self.hass),
+                    connection=HABleakConnection(
+                        self.hass, disconnected_callback=self._handle_unexpected_disconnect
+                    ),
                 )
                 self.client._cleanup_on_disconnect = False
 
@@ -440,6 +449,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def async_disconnect(self) -> None:
         """Disconnect from the BLE device."""
+        self._manual_disconnect = True
         if self._machine_info_task and not self._machine_info_task.done():
             self._machine_info_task.cancel()
         self._machine_info_task = None
@@ -451,6 +461,25 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             finally:
                 self.client = None
         await self.async_refresh()
+
+    def _handle_unexpected_disconnect(self) -> None:
+        """Reconnect after the machine drops the BLE link on its own.
+
+        Live-observed 2026-07-04: the machine briefly drops the link when
+        switching Easy<->Pro mode, and this integration had no watchdog for
+        that — the connection switch entity just stayed "off" until the
+        user flipped it back on manually. Skipped when the drop was caused
+        by our own ``async_disconnect()`` (``_manual_disconnect``), so
+        turning the connection switch off doesn't immediately reconnect.
+        """
+        if self._manual_disconnect:
+            return
+        _LOGGER.warning("XBloom BLE link dropped unexpectedly — reconnecting")
+        if self._machine_info_task and not self._machine_info_task.done():
+            self._machine_info_task.cancel()
+        self._machine_info_task = None
+        self.client = None
+        self.hass.async_create_task(self.async_connect())
 
     def _schedule_machine_info_retry(self) -> None:
         """Kick off a background retry task to populate MachineInfo if missing.
