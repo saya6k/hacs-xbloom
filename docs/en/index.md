@@ -23,7 +23,7 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse XBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export. See [Recipe services](#recipe-services) below.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — errors (water shortage, no beans, abnormal dose/gear) and notifications (grinding/brewing/pour/bloom/pause/complete/tea soaking).
-- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to Home Assistant Assist with safety confirmations (beans, filter, cup-on-scale, delete).
+- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to Home Assistant Assist with safety confirmations (beans, dripper, filter, cup-on-scale, delete) — skipped entirely for no-grind recipes (e.g. a water-only pour).
 - **Korean and English** UI translations.
 
 ## Installation (HACS)

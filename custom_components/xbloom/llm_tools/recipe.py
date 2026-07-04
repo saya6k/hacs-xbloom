@@ -203,10 +203,15 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         "brew only — the stored recipe is unchanged, and a dose/ratio "
         "override rescales the pour volumes proportionally. SAFETY: before calling this "
         "tool you MUST ask the user to confirm: (1) that beans (or tea "
-        "leaves, for tea recipes) have been added, (2) that the paper "
-        "coffee filter has been installed (the machine cannot detect the "
-        "filter on its own), and (3) that the cup or dripper is on the "
-        "scale. The tool can usually detect the cup automatically by its "
+        "leaves, for tea recipes) have been added, (2) that the dripper is "
+        "attached, (3) for coffee only, that the paper coffee filter has "
+        "been installed in the dripper (the machine cannot detect the "
+        "filter on its own), and (4) that the cup or dripper is on the "
+        "scale. Recipes that don't grind (dose_g or grind_size is 0/absent — "
+        "check get_xbloom_recipe first — e.g. a water-only pour) skip the "
+        "beans/dripper/filter confirmation entirely, since there are no "
+        "grounds to add or catch; you can call this tool directly for those "
+        "without asking. The tool can usually detect the cup automatically by its "
         "weight; however, if a cup was placed before the machine powered "
         "on, the scale reads it as 0 g — in that case the tool will ask "
         "the user to verify the cup and you should pass cup_confirmed=true "
@@ -225,6 +230,15 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     "Set to true ONLY after the user has explicitly confirmed "
                     "that beans (or tea leaves) have been loaded. If you have "
                     "not yet asked the user, set this to false."
+                ),
+            ): bool,
+            vol.Required(
+                "dripper_confirmed",
+                description=(
+                    "Set to true ONLY after the user has explicitly confirmed "
+                    "that the dripper is attached (coffee and tea recipes "
+                    "both use it). Not needed for a no-grind recipe (see "
+                    "tool description)."
                 ),
             ): bool,
             vol.Required(
@@ -338,6 +352,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         llm_context: llm.LLMContext,
     ) -> dict:
         beans_confirmed = bool(tool_input.tool_args["beans_confirmed"])
+        dripper_confirmed = bool(tool_input.tool_args["dripper_confirmed"])
         filter_confirmed = bool(tool_input.tool_args["filter_confirmed"])
         cup_confirmed = bool(tool_input.tool_args["cup_confirmed"])
 
@@ -351,14 +366,35 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         is_tea = cup_type == "tea"
         ingredient = "tea leaves" if is_tea else "beans"
 
+        # A recipe with no dose/grind (e.g. a water-only "pour" recipe)
+        # never grinds coffee, so there are no grounds to hold beans or
+        # catch in a filter — mirrors the `grinding` check coordinator.py /
+        # brewing.py use to decide whether to send the grind command at all.
+        needs_grind = (
+            not is_tea
+            and float(recipe.get("dose_g", 0) or 0) > 0
+            and int(recipe.get("grind_size", 0) or 0) > 0
+        )
+
         missing: list[str] = []
-        if not beans_confirmed:
-            missing.append(ingredient)
-        if not filter_confirmed and not is_tea:
-            missing.append("paper coffee filter")
+        if is_tea or needs_grind:
+            if not beans_confirmed:
+                missing.append(ingredient)
+            if not dripper_confirmed:
+                missing.append("dripper")
+            if needs_grind and not filter_confirmed:
+                missing.append("paper coffee filter")
 
         if missing:
             items = " and ".join(missing)
+            confirmed_flags = {
+                ingredient: "beans_confirmed",
+                "dripper": "dripper_confirmed",
+                "paper coffee filter": "filter_confirmed",
+            }
+            retry_flags = " and ".join(
+                f"{confirmed_flags[item]}=true" for item in missing
+            )
             return {
                 "success": False,
                 "confirmation_required": True,
@@ -370,7 +406,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     f"'{recipe_name}' recipe. The machine cannot detect the "
                     f"filter on its own, so the user must verify it manually. "
                     f"Once they confirm, call execute_xbloom_recipe again "
-                    f"with beans_confirmed=true and filter_confirmed=true."
+                    f"with {retry_flags}."
                 ),
             }
 
