@@ -34,6 +34,11 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
+> **Requires Home Assistant 2026.8.0 or newer** (until the 2026.8 beta ships,
+> that means a dev nightly ≥ `2026.8.0.dev202607110310`). The Assist/LLM
+> tools ride on HA's new `llm` tools platform; on older versions the LLM API
+> fails at conversation time.
+
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=hacs-xbloom&category=integration)
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.

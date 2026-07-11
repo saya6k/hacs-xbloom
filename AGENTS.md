@@ -209,6 +209,46 @@ preserving tombstones.
 merge (the OptionsFlow needs it without going through the coordinator) —
 change both together.
 
+## LLM tools platform (`llm/`)
+
+> Introduced 2026-07 for HA ≥ 2026.8 (core's new `llm` integration platform —
+> the reason for the `2026.8.0.dev*` floor in `hacs.json`); see
+> `tasks/2026-07-llm-platform-migration-spec.md` for the full design.
+
+The 13 Assist tools live in the **`llm/` platform package** — `catalog.py`
+(`build_tools()`, the single tool list; `tests/test_llm_prompt.py` checks
+`XBLOOM_LLM_PROMPT` against it) plus one module per tool group. The entry
+point `llm/__init__.py` implements core's `async_get_tools(hass, llm_context,
+api_id)` hook and answers **only** our per-entry api_ids
+(`xbloom_coffee_<entry_id>`); Assist and every other API get `None`, so the
+tools surface exclusively through the user-selected custom API registered by
+`llm_api.py` (a thin shell — the opt-in UX predates the platform and must
+stay). MCP exposure is automatic: every registered API is served at
+`/api/mcp/<api_id>` (admin token required for non-Assist).
+
+**Lazy-loading invariants — AST-pinned by `tests/test_llm_platform.py`; do
+not break them when refactoring:**
+
+1. `llm/__init__.py` stays import-light: no tool/catalog/
+   `homeassistant.components.llm` imports at module level. Core imports every
+   integration's `llm` platform on the first tool collection of *any* API —
+   a heavy entry module would load our tools for users who never enabled the
+   XBloom API (and break the pre-2026.8 test host).
+2. The setup path (`__init__.py`, `llm_api.py`) never imports `.llm` **or any
+   `.llm.*` submodule** (a submodule import executes the package `__init__`
+   first). `llm_api.py` references the platform by string module path only.
+3. `XBloomCoffeeAPI.async_get_api_instance` pre-imports `llm.catalog` via
+   `helpers.importlib.async_import_module` (executor) before calling **our
+   own** `async_get_tools` — not core's collector, which isn't a documented
+   surface for custom APIs. The callback's function-level imports are then
+   cache hits; HA's `block_async_io` flags a module's first import inside the
+   event loop.
+
+API id/name strings (`xbloom_coffee_<entry_id>`, `"XBloom Coffee Machine
+(<MAC>)"`) are pinned by test — changing them breaks existing agent configs.
+Unregistration rides `entry.async_on_unload` (official docs pattern); there
+is no manual unregister path.
+
 ## Entity translation flow
 
 `_attr_has_entity_name = True` + `_attr_translation_key = "<key>"` →
@@ -219,7 +259,12 @@ For event entities with attribute enums, populate `entity.<platform>.<key>.state
 
 ## Testing
 
-Use the devcontainer:
+Use the devcontainer — its base image is the **official HA dev nightly**
+(`homeassistant/home-assistant:2026.8.0.dev202607110310`), which bundles HA
+core and every default_config runtime dep, so `scripts/setup` only pip-installs
+dev tools. The image tag, `hacs.json`'s `homeassistant` floor, and
+`requirements_test.txt`'s pin must stay the **same version string** (move all
+three to `>=2026.8.0b0` together once the 2026.8 beta ships):
 
 ```bash
 scripts/develop          # boots HA on :8123 with this integration mounted
@@ -227,7 +272,9 @@ scripts/develop          # boots HA on :8123 with this integration mounted
 
 `pytest tests/` covers the pure-logic pieces (uid metadata, `find_recipe`
 resolution, pour scaling, v2→v3 migration, name dedupe, criteria matching,
-LLM-prompt/tool-name consistency) and runs without an HA instance. Everything
+LLM-prompt/tool-name consistency, llm platform gating/catalog/lazy-loading
+invariants) and runs without an HA instance — on a pre-2026.8 host the
+success-path tests skip; inside the devcontainer everything runs. Everything
 BLE-facing is still validated manually:
 
 1. Starting the devcontainer.

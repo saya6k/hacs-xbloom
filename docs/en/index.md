@@ -28,6 +28,11 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
+> **Requires Home Assistant 2026.8.0 or newer** (until the 2026.8 beta ships,
+> that means a dev nightly ≥ `2026.8.0.dev202607110310`). The Assist/LLM
+> tools ride on HA's new `llm` tools platform; on older versions the LLM API
+> fails at conversation time.
+
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
 2. Install **XBloom Coffee Machine**.
 3. Restart Home Assistant.
