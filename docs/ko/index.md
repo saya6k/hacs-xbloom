@@ -23,7 +23,7 @@
 - **클라우드는 가져오기/내보내기 경계** — 공유된 레시피를 가져오거나(`cloud_import_recipe`, 계정 불필요), 로컬 레시피를 내보내 공유 링크를 받거나(`cloud_export_recipe`), XBloom 공개 커뮤니티 허브를 검색(`cloud_search_collective_recipes`). 계정은 선택 사항이며 내보내기에만 필요합니다. 아래 [레시피 서비스](#레시피-서비스) 참고.
 - **실시간 텔레메트리** — 브루어 온도, 저울 무게, 수위 상태, 현재 추출 단계.
 - **이벤트 엔티티** — 에러(물 부족, 원두 없음, 비정상 dose/기어)와 알림(그라인딩/추출/pour/bloom/일시정지/완료/차 침지).
-- **LLM API** — 상태, 레시피 CRUD, 추출, 슬롯 쓰기, 가져오기/내보내기, 허브 검색을 Assist에 노출(안전 확인: 원두, 필터, 저울 위 컵, 삭제).
+- **LLM API** — 상태, 레시피 CRUD, 추출, 슬롯 쓰기, 가져오기/내보내기, 허브 검색을 음성/채팅 에이전트에 노출 — 옵트인 방식의 XBloom LLM API 경유([Assist / LLM 도구](#assist--llm-도구) 참고), 안전 확인 포함(원두, 드리퍼, 필터, 저울 위 컵, 삭제).
 - **한국어·영어** UI 번역.
 
 ## 설치 (HACS)
@@ -93,6 +93,20 @@ xbloom:
 ### UI로 레시피 관리
 
 설정 → 기기 및 서비스 → XBloom → ⋯ → **구성** → **레시피 추가** / **레시피 수정** / **레시피 삭제**. 삭제는 로컬에만 적용되며 즉시 반영됩니다 — 클라우드 계정의 사본은 건드리지 않습니다. YAML 레시피도 Edit/Delete에 나타나며, 수정하면 로컬 오버라이드로 저장됩니다(YAML 파일 자체는 건드리지 않음). 삭제하면 tombstone 처리(같은 이름으로 다시 추가하면 복원).
+
+### Assist / LLM 도구
+
+LLM 도구는 **대화 에이전트별 옵트인**입니다: 에이전트 설정(설정 → 음성
+비서 → *해당 어시스턴트* → 대화 에이전트 옵션)의 LLM API 선택에서
+**"XBloom Coffee Machine (MAC)"** API를 켜세요. 도구는 순정 Assist API에
+절대 끼어들지 않습니다 — XBloom API를 선택하지 않은 에이전트에는 도구가
+전혀 보이지 않고, API가 처음 사용되기 전까지는 도구 코드가 로딩조차 되지
+않습니다. 머신마다 API가 하나씩 등록되므로 여러 대라면 에이전트별로
+선택하면 됩니다.
+
+[MCP Server 통합](https://www.home-assistant.io/integrations/mcp_server/)을
+설정하면 같은 도구가 MCP로도 제공됩니다 —
+`/api/mcp/xbloom_coffee_<entry_id>` (관리자 액세스 토큰 필요).
 
 ### 브루별 오버라이드
 
@@ -173,7 +187,7 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 
 이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조.
 
-실제 Home Assistant 설치에 대해 통합을 테스트하기 위한 devcontainer가 제공됩니다. VS Code에서 Dev Containers 확장으로 폴더를 열고 실행:
+실제 Home Assistant 설치에 대해 통합을 테스트하기 위한 devcontainer가 제공됩니다. 베이스 이미지는 공식 HA **dev 나이틀리** Docker 이미지(`.devcontainer/devcontainer.json`에 `hacs.json` 플로어와 같은 버전으로 고정)라 HA core와 모든 런타임 의존성이 내장돼 있고, `scripts/setup`은 개발 도구만 설치합니다. VS Code에서 Dev Containers 확장으로 폴더를 열고 실행:
 
 ```bash
 scripts/develop
