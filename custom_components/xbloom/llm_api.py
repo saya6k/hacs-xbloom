@@ -15,25 +15,11 @@ from .const import (
     XBLOOM_LLM_PROMPT,
 )
 from .coordinator import XBloomCoordinator
-from .llm_tools.cloud_recipe import (
-    XBloomExportRecipeTool,
-    XBloomImportCloudRecipeTool,
-    XBloomSearchCollectiveRecipesTool,
-)
-from .llm_tools.local_recipe import (
-    XBloomCreateRecipeTool,
-    XBloomDeleteRecipeTool,
-    XBloomEditRecipeTool,
-)
-from .llm_tools.pour import XBloomPourTool
-from .llm_tools.recipe import (
-    XBloomExecuteRecipeTool,
-    XBloomGetRecipeTool,
-    XBloomListRecipesTool,
-)
-from .llm_tools.slot import XBloomWriteEasySlotTool
-from .llm_tools.status import XBloomStatusTool
-from .llm_tools.tare import XBloomTareScaleTool
+
+# Transitional (removed in T3 of tasks/2026-07-llm-platform-migration-plan.md):
+# module-level catalog import keeps the old API working during the migration;
+# T3 replaces it with an executor pre-import so tools load lazily.
+from .llm.catalog import build_tools
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,21 +44,7 @@ class XBloomCoffeeAPI(llm.API):
     async def async_get_api_instance(
         self, llm_context: llm.LLMContext
     ) -> llm.APIInstance:
-        tools = [
-            XBloomStatusTool(self.coordinator, self.hass),
-            XBloomListRecipesTool(self.coordinator, self.hass),
-            XBloomGetRecipeTool(self.coordinator, self.hass),
-            XBloomCreateRecipeTool(self.coordinator, self.hass),
-            XBloomEditRecipeTool(self.coordinator, self.hass),
-            XBloomDeleteRecipeTool(self.coordinator, self.hass),
-            XBloomPourTool(self.coordinator, self.hass),
-            XBloomExecuteRecipeTool(self.coordinator, self.hass),
-            XBloomWriteEasySlotTool(self.coordinator, self.hass),
-            XBloomTareScaleTool(self.coordinator, self.hass),
-            XBloomImportCloudRecipeTool(self.coordinator, self.hass),
-            XBloomSearchCollectiveRecipesTool(self.coordinator, self.hass),
-            XBloomExportRecipeTool(self.coordinator, self.hass),
-        ]
+        tools = build_tools(self.coordinator, self.hass)
         return llm.APIInstance(
             api=self,
             api_prompt=XBLOOM_LLM_PROMPT,

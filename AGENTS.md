@@ -13,7 +13,7 @@ ha_xbloom/
 ├── custom_components/xbloom/      ← the HA integration (edit this)
 │   ├── src/xbloom/                ← VENDORED upstream #1 (fhenwood/PyBloom) — DO NOT MODIFY
 │   ├── src/xbloom-ble/            ← VENDORED upstream #2 (brAzzi64/xbloom-ble) — DO NOT MODIFY
-│   ├── llm_tools/                 ← tools exposed via the HA LLM API
+│   ├── llm/                       ← LLM tools platform (entry point + catalog + tools)
 │   ├── translations/              ← per-locale entity/config UI strings
 │   ├── strings.json               ← English source-of-truth for translations
 │   ├── icons.json                 ← entity icons keyed by translation_key
