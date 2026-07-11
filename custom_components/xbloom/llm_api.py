@@ -1,81 +1,70 @@
-"""LLM API registration for the XBloom Coffee Machine."""
+"""LLM API registration for the XBloom Coffee Machine.
+
+Thin shell around the llm/ platform package: the per-entry custom API that
+users opt into from their conversation-agent settings. Tool building lives
+in llm/catalog.py, reached through the platform's async_get_tools callback.
+
+This module must never import the llm/ package (or any submodule — a
+submodule import executes the package __init__ first) at module level:
+the setup path imports this file, and pulling llm/ in would defeat the
+platform's lazy loading. The platform is referenced by string module path
+and pre-imported in the executor on first use instead.
+"""
 from __future__ import annotations
 
 import logging
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
+from homeassistant.helpers.importlib import async_import_module
 
 from .const import (
-    DATA_COORDINATOR,
-    DATA_LLM_UNREGISTER,
+    CONF_MAC_ADDRESS,
     DOMAIN,
     XBLOOM_LLM_API_ID,
     XBLOOM_LLM_API_NAME,
-    XBLOOM_LLM_PROMPT,
 )
-from .coordinator import XBloomCoordinator
-
-# Transitional (removed in T3 of tasks/2026-07-llm-platform-migration-plan.md):
-# module-level catalog import keeps the old API working during the migration;
-# T3 replaces it with an executor pre-import so tools load lazily.
-from .llm.catalog import build_tools
 
 _LOGGER = logging.getLogger(__name__)
+
+_PLATFORM = f"custom_components.{DOMAIN}.llm"
 
 
 class XBloomCoffeeAPI(llm.API):
     """Expose XBloom Studio control as an LLM API."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        coordinator: XBloomCoordinator,
-        entry_id: str,
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, entry_id: str, mac_address: str) -> None:
         # Use a per-entry id so multiple machines can each register their own API.
         super().__init__(
             hass=hass,
             id=f"{XBLOOM_LLM_API_ID}_{entry_id}",
-            name=f"{XBLOOM_LLM_API_NAME} ({coordinator.mac_address})",
+            name=f"{XBLOOM_LLM_API_NAME} ({mac_address})",
         )
-        self.coordinator = coordinator
 
     async def async_get_api_instance(
         self, llm_context: llm.LLMContext
     ) -> llm.APIInstance:
-        tools = build_tools(self.coordinator, self.hass)
+        # Pre-import in the executor so the platform callback's function-level
+        # imports are cache hits — HA's block_async_io flags a module's first
+        # import inside the event loop.
+        await async_import_module(self.hass, f"{_PLATFORM}.catalog")
+        platform = await async_import_module(self.hass, _PLATFORM)
+        llm_tools = platform.async_get_tools(self.hass, llm_context, self.id)
+        if llm_tools is None:
+            # The entry was unloaded after the agent resolved this API.
+            raise HomeAssistantError("XBloom machine is no longer available")
         return llm.APIInstance(
             api=self,
-            api_prompt=XBLOOM_LLM_PROMPT,
+            api_prompt=llm_tools.prompt or "",
             llm_context=llm_context,
-            tools=tools,
+            tools=llm_tools.tools,
         )
 
 
-def register_llm_api(hass: HomeAssistant, entry_id: str) -> None:
-    """Register the XBloom LLM API for a config entry."""
-    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
-    if not entry_data:
-        _LOGGER.debug("No entry data for %s, skipping LLM API registration", entry_id)
-        return
-    coordinator: XBloomCoordinator = entry_data[DATA_COORDINATOR]
-
-    api = XBloomCoffeeAPI(hass, coordinator, entry_id)
-    unregister = llm.async_register_api(hass, api)
-    entry_data[DATA_LLM_UNREGISTER] = unregister
-    _LOGGER.info("Registered XBloom LLM API for entry %s", entry_id)
-
-
-def unregister_llm_api(hass: HomeAssistant, entry_id: str) -> None:
-    """Unregister the XBloom LLM API for a config entry."""
-    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
-    if not entry_data:
-        return
-    unregister = entry_data.pop(DATA_LLM_UNREGISTER, None)
-    if unregister:
-        try:
-            unregister()
-            _LOGGER.info("Unregistered XBloom LLM API for entry %s", entry_id)
-        except Exception as exc:  # pragma: no cover — defensive cleanup
-            _LOGGER.debug("LLM API unregister error: %s", exc)
+def register_llm_api(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Register the XBloom LLM API for a config entry (auto-unregisters on unload)."""
+    api = XBloomCoffeeAPI(hass, entry.entry_id, entry.data[CONF_MAC_ADDRESS])
+    entry.async_on_unload(llm.async_register_api(hass, api))
+    _LOGGER.debug("Registered XBloom LLM API for entry %s", entry.entry_id)

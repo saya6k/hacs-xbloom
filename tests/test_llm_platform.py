@@ -14,6 +14,7 @@ the devcontainer image) and skips elsewhere.
 from __future__ import annotations
 
 import ast
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -155,6 +156,60 @@ def test_two_entries_each_bind_their_own_coordinator():
     assert all(tool.coordinator is coord_b for tool in result_b.tools)
 
 
+# --- API shell (llm_api.py) delegates to the platform ----------------------
+
+
+class _ShellHass(SimpleNamespace):
+    """Minimal hass satisfying async_import_module + the API shell."""
+
+    def __init__(self, domain_data: dict) -> None:
+        super().__init__(data={DOMAIN: domain_data})
+
+    @property
+    def loop(self):
+        return asyncio.get_running_loop()
+
+    async def async_add_import_executor_job(self, func, *args):
+        return func(*args)
+
+
+def test_api_shell_keeps_id_and_name_format():
+    from custom_components.xbloom.const import XBLOOM_LLM_API_NAME
+    from custom_components.xbloom.llm_api import XBloomCoffeeAPI
+
+    api = XBloomCoffeeAPI(_ShellHass({}), "entry1", "AA:BB:CC:DD:EE:FF")
+    assert api.id == f"{XBLOOM_LLM_API_ID}_entry1"
+    assert api.name == f"{XBLOOM_LLM_API_NAME} (AA:BB:CC:DD:EE:FF)"
+
+
+def test_api_shell_builds_instance_via_platform():
+    pytest.importorskip(
+        "homeassistant.components.llm", reason="HA ≥ 2026.8 (devcontainer image)"
+    )
+    from custom_components.xbloom.llm_api import XBloomCoffeeAPI
+
+    coordinator = SimpleNamespace()
+    hass = _ShellHass({"entry1": _entry(coordinator)})
+    api = XBloomCoffeeAPI(hass, "entry1", "AA:BB:CC:DD:EE:FF")
+    instance = asyncio.run(api.async_get_api_instance(None))
+    assert {tool.name for tool in instance.tools} == set(REGISTERED_TOOLS)
+    assert instance.api_prompt == XBLOOM_LLM_PROMPT
+    assert all(tool.coordinator is coordinator for tool in instance.tools)
+
+
+def test_api_shell_raises_when_entry_is_gone():
+    """Platform returns None (entry unloaded) → the shell must raise, not
+    hand the agent an empty APIInstance."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.xbloom.llm_api import XBloomCoffeeAPI
+
+    hass = _ShellHass({})
+    api = XBloomCoffeeAPI(hass, "gone", "AA:BB:CC:DD:EE:FF")
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(api.async_get_api_instance(None))
+
+
 # --- lazy-loading invariants (AST — SPEC §8) --------------------------------
 
 
@@ -195,7 +250,6 @@ def test_platform_entry_module_stays_light():
     )
 
 
-@pytest.mark.skip(reason="T3에서 활성화 — llm_api.py가 아직 도구 카탈로그를 직접 import")
 def test_setup_path_never_imports_the_platform_package():
     """__init__.py / llm_api.py must not import .llm or any .llm.* submodule
     at module level — a submodule import executes llm/__init__.py (and the

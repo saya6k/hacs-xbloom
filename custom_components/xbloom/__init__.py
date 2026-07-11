@@ -86,7 +86,7 @@ from .const import (
 )
 from .coordinator import XBloomCoordinator, WATER_SOURCE_TANK
 from .default_recipes import DEFAULT_RECIPES
-from .llm_api import register_llm_api, unregister_llm_api
+from .llm_api import register_llm_api
 from .schema import (  # POUR_SCHEMA/RECIPE_SCHEMA re-exported below
     POUR_SCHEMA,
     RECIPE_SCHEMA,
@@ -741,7 +741,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register the LLM API so voice/chat agents can drive the machine.
-    register_llm_api(hass, entry.entry_id)
+    # entry.async_on_unload handles the unregister when the entry unloads.
+    register_llm_api(hass, entry)
 
     # Register integration services (idempotent across multiple entries).
     _register_services(hass)
@@ -804,8 +805,6 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry and disconnect BLE."""
-    unregister_llm_api(hass, entry.entry_id)
-
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     await coordinator.async_disconnect()
 
