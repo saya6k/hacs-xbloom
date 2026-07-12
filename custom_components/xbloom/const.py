@@ -40,7 +40,6 @@ DEFAULT_TEMP_UNIT = "c"
 
 # Data keys
 DATA_COORDINATOR = "coordinator"
-DATA_LLM_UNREGISTER = "llm_unregister"
 
 # Services
 SERVICE_EXECUTE_RECIPE = "execute_recipe"

@@ -210,7 +210,7 @@ def compute_total_water_ml(recipe: dict) -> float:
     undefined) — this mirrors the pre-``ratio`` behaviour where a missing
     ``total_water`` was derived from the pours. Shared by
     ``coordinator._build_recipe_from_yaml`` (what the machine actually
-    brews) and ``llm_tools/recipe.py`` (what we tell the user/LLM it will
+    brews) and ``llm/recipe.py`` (what we tell the user/LLM it will
     brew) so the two can't drift apart.
     """
     dose_g = float(recipe.get("dose_g", 0) or 0)

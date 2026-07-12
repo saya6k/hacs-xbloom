@@ -23,10 +23,15 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 - **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse XBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export. See [Recipe services](#recipe-services) below.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — errors (water shortage, no beans, abnormal dose/gear) and notifications (grinding/brewing/pour/bloom/pause/complete/tea soaking).
-- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to Home Assistant Assist with safety confirmations (beans, dripper, filter, cup-on-scale, delete) — skipped entirely for no-grind recipes (e.g. a water-only pour).
+- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to voice/chat agents through the opt-in XBloom LLM API (see [Assist / LLM tools](#assist--llm-tools)) with safety confirmations (beans, dripper, filter, cup-on-scale, delete) — skipped entirely for no-grind recipes (e.g. a water-only pour).
 - **Korean and English** UI translations.
 
 ## Installation (HACS)
+
+> **Requires Home Assistant 2026.8.0 or newer** (until the 2026.8 beta ships,
+> that means a dev nightly ≥ `2026.8.0.dev202607110310`). The Assist/LLM
+> tools ride on HA's new `llm` tools platform; on older versions the LLM API
+> fails at conversation time.
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
 2. Install **XBloom Coffee Machine**.
@@ -88,6 +93,20 @@ For tea recipes, each pour represents one steep. `pause_seconds` is the real soa
 ### Recipe management via UI
 
 Settings → Devices & Services → XBloom → ⋯ → **Configure** → **Add a recipe** / **Edit a recipe** / **Delete a recipe**. Deleting is local-only and immediate; a copy on your cloud account is never touched. YAML recipes appear in Edit/Delete too — editing one saves the edit as a local override (the YAML file is never written to); deleting one tombstones it (add a same-named recipe to restore it).
+
+### Assist / LLM tools
+
+The LLM tools are **opt-in per conversation agent**: in your agent's settings
+(Settings → Voice assistants → *your assistant* → conversation agent options)
+enable the **"XBloom Coffee Machine (MAC)"** API under the LLM API selection.
+The tools never ride along in the plain Assist API — an agent without the
+XBloom API selected sees none of them, and the tool code isn't even loaded
+until the API is first used. One API is registered per machine, so
+multi-machine households pick per agent.
+
+With the [MCP Server integration](https://www.home-assistant.io/integrations/mcp_server/)
+set up, the same tools are also served over MCP at
+`/api/mcp/xbloom_coffee_<entry_id>` (admin access token required).
 
 ### Per-brew overrides
 
@@ -168,7 +187,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md).
 
-A devcontainer is provided for testing the integration against a real Home Assistant install. Open the folder in VS Code with the Dev Containers extension and run:
+A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA **dev-nightly** Docker image (pinned in `.devcontainer/devcontainer.json` to the same version as `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 
 ```bash
 scripts/develop

@@ -1,2 +1,5 @@
-homeassistant>=2025.1.0
+# Must match the devcontainer image tag and hacs.json's `homeassistant` floor
+# (one version string across all three; ">=2026.8.0b0" once the beta ships).
+# Inside the devcontainer this is satisfied by the image's preinstalled copy.
+homeassistant>=2026.8.0.dev202607110310
 pytest
