@@ -1,1 +1,3 @@
 - [Edit tool only](feedback_edit_tool_only.md) — never use Bash/Python to splice-rewrite a tracked file; retry Edit with corrected exact text instead.
+- [HA dev version channels](reference_ha_dev_version_channels.md) — no HA .dev builds on PyPI; nightly version via version.home-assistant.io/dev.json; git installs report dev0.
+- [LLM platform migration](project_llm_platform_migration_rc.md) — v1.5.0-rc.0 shipped on dev floor; stable v1.5.0 gated on HA 2026.8.0b0 (bump 3 pins + re-verify).
