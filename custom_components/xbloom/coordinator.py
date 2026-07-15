@@ -1077,6 +1077,17 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         persisted in ``entry.options["easy_slots"]`` so the slot text
         entities can show (and restore) what HA last wrote; the machine
         itself never reports slot contents.
+
+        Live-verified 2026-07-15 (cross-referenced against
+        Janczykkkko/xbloom-ble's independent capture): the machine only
+        *persists* a slot when all three (A/B/C) are written together —
+        writing one alone leaves it hung at "saving" (RETRY) — and only
+        accepts slot writes in Pro Mode. So this call fills in the other
+        two slots from ``entry.options["easy_slots"]`` (falling back to
+        the target recipe for a slot HA has never written — the machine
+        has no readback, so there's nothing else to preserve it with),
+        force-switches to Pro Mode if needed, writes all three, then
+        restores whatever mode the machine was in before.
         """
         if identifier:
             resolved = find_recipe(self.recipes or {}, identifier)
@@ -1111,12 +1122,43 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "error": "not_connected",
                 "message": "The XBloom is not connected over Bluetooth.",
             }
+
+        target_letter = slot_letter.strip().upper()
+        if target_letter not in ("A", "B", "C"):
+            return {
+                "success": False,
+                "error": "invalid_slot",
+                "message": f"slot must be A, B, or C — got {slot_letter!r}",
+            }
+
+        # Fill in the other two slots from our own record of what HA last
+        # wrote (the machine can't be asked what's actually there). A
+        # slot HA has never written mirrors the target recipe rather than
+        # being left as an unknown/blank.
+        slot_names = {target_letter: name}
+        slot_raws = {target_letter: raw}
+        for other in ("A", "B", "C"):
+            if other == target_letter:
+                continue
+            contents = self.easy_slot_contents(other)
+            other_resolved = (
+                find_recipe(self.recipes or {}, contents["uid"])
+                if contents and contents.get("uid") else None
+            )
+            if other_resolved:
+                slot_names[other], slot_raws[other] = other_resolved
+            else:
+                slot_names[other], slot_raws[other] = name, raw
+
         try:
-            recipe = _build_recipe_from_yaml(raw)
-            await brewing.async_write_easy_slot(self.client, slot_letter, recipe)
+            slot_recipes = {
+                letter: _build_recipe_from_yaml(slot_raws[letter])
+                for letter in ("A", "B", "C")
+            }
         except Exception as exc:
             _LOGGER.error(
-                "Easy slot write error (%s): %s", slot_letter, exc, exc_info=True
+                "Easy slot write error building recipes (%s): %s",
+                target_letter, exc, exc_info=True,
             )
             return {
                 "success": False,
@@ -1124,15 +1166,48 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "message": f"Slot write failed: {exc}",
             }
 
+        switched_to_pro = False
+        try:
+            if (self.data or {}).get("mode", "pro") == "easy":
+                await self.client._send_command_raw(
+                    11511, bytes.fromhex("00000000"), type_code=2,
+                )
+                switched_to_pro = True
+                await asyncio.sleep(0.5)
+
+            await brewing.async_write_easy_slots(self.client, slot_recipes)
+        except Exception as exc:
+            _LOGGER.error(
+                "Easy slot write error (%s): %s", target_letter, exc, exc_info=True
+            )
+            return {
+                "success": False,
+                "error": "write_failed",
+                "message": f"Slot write failed: {exc}",
+            }
+        finally:
+            if switched_to_pro:
+                try:
+                    await asyncio.sleep(0.5)
+                    await self.client._send_command_raw(
+                        11511, bytes.fromhex("91327856"), type_code=2,
+                    )
+                    await self.async_refresh()
+                except Exception as exc:
+                    _LOGGER.warning("Restoring Easy Mode after slot write failed: %s", exc)
+
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is not None:
             slots = dict(entry.options.get(CONF_EASY_SLOTS) or {})
-            slots[slot_letter.upper()] = {"uid": raw.get("uid"), "name": name}
+            for letter in ("A", "B", "C"):
+                slots[letter] = {
+                    "uid": slot_raws[letter].get("uid"), "name": slot_names[letter],
+                }
             new_options = dict(entry.options)
             new_options[CONF_EASY_SLOTS] = slots
             self.hass.config_entries.async_update_entry(entry, options=new_options)
         self.async_update_listeners()
-        return {"success": True, "slot": slot_letter.upper(), "name": name,
+        return {"success": True, "slot": target_letter, "name": name,
                 "uid": raw.get("uid")}
 
     def easy_slot_contents(self, slot_letter: str) -> Optional[dict]:
