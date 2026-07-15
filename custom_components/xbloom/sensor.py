@@ -88,8 +88,8 @@ class XBloomBrewerTempSensor(_XBloomSensor):
         return self.coordinator.brewer_device_info
 
     @property
-    def native_value(self) -> float:
-        return self.coordinator.data.get("temperature", 0.0)
+    def native_value(self) -> float | None:
+        return self.coordinator.data.get("temperature")
 
 
 class XBloomFlowRateSensor(_XBloomSensor):
@@ -223,9 +223,9 @@ class XBloomEasySlotSensor(_XBloomSensor):
         self._attr_unique_id = f"xbloom_easy_slot_{slot.lower()}"
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         contents = self.coordinator.easy_slot_contents(self._slot)
-        return (contents or {}).get("name") or "none"
+        return (contents or {}).get("name") or None
 
     @property
     def extra_state_attributes(self) -> dict | None:
