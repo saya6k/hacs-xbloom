@@ -87,6 +87,21 @@ _MACHINE_INFO_VOLTAGE_OFFSET = 39
 _GRIND_SIZE_RAW_OFFSET = 30  # UI value = max(1, raw - 30)
 _VALID_POUR_PATTERNS = (0, 1, 2)  # matches coordinator.POUR_PATTERN_OPTIONS values
 
+# Raw status-heartbeat frame (distinct from the cmd-tagged RD_* notifications
+# above — never reaches _handle_response, no XBloomResponse enum entry).
+# Cross-referenced against Janczykkkko/xbloom-ble's independent capture and
+# confirmed live on our own hardware (2026-07-15): header(0x58|0x02) | dev_id
+# | 0x57 | ... | const(0x01) | state_byte | .... The type byte sits at offset
+# 3; the state byte is the first byte after the same 10-byte preamble the
+# cmd-tagged frames use. Only two codes are consumed here — the machine
+# stopping a brew (RD_Brewer_Stop) already flips vendored state to IDLE the
+# instant pouring stops, which is *before* the "coffee ready" beep window
+# where the cup is still sitting on the scale; nothing else in the existing
+# cmd-tagged notifications distinguishes that window from true idle.
+_STATUS_FRAME_TYPE_BYTE = 0x57
+_STATUS_READY_CODE = 0x24   # brew done (beep), cup still on the scale
+_STATUS_IDLE_CODE = 0x01    # true idle (cup has been lifted)
+
 EventCallback = Callable[[str, str, dict], None]
 
 # 8100 — MTU handshake. Cherry-picked from
@@ -219,7 +234,28 @@ class XBloomClientWithEvents(XBloomClient):
         # extract beats a bogus parser warning.
         if not self._status.serial_number:
             self._scan_for_machine_info(raw)
+        self._scan_for_status_frame(raw)
         self._split_and_parse(raw)
+
+    def _scan_for_status_frame(self, raw: bytes) -> None:
+        """Track the "ready" (brew done, cup still on the scale) window.
+
+        See ``_STATUS_FRAME_TYPE_BYTE`` above for the frame shape. Sets
+        ``self._status._brew_ready`` on the ready code, clears it on the
+        true-idle code; ``_handle_response`` also clears it the instant a
+        new grind/brew starts, in case the machine skips straight from
+        "ready" into a new brew without a true-idle frame in between.
+        """
+        if len(raw) <= 12 or raw[3] != _STATUS_FRAME_TYPE_BYTE:
+            return
+        payload = raw[10:-2]
+        if not payload:
+            return
+        code = payload[0]
+        if code == _STATUS_READY_CODE:
+            self._status._brew_ready = True
+        elif code == _STATUS_IDLE_CODE:
+            self._status._brew_ready = False
 
     def _split_and_parse(self, raw_data: bytes) -> None:
         """Reimplementation of the vendored framing loop in
@@ -377,6 +413,13 @@ class XBloomClientWithEvents(XBloomClient):
                 self._status._mode_ack_hex = payload[:4].hex()
                 _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
         if response in _NOTIFICATION_MAP:
+            event_type = _NOTIFICATION_MAP[response]
+            if event_type in ("grinding_started", "brewing_started"):
+                # Safety net: if the machine goes straight from "ready"
+                # (cup still on the scale) into a new brew without ever
+                # sending a true-idle status frame, don't leave the state
+                # sensor stuck on "ready".
+                self._status._brew_ready = False
             attrs: dict = {}
             if response == XBloomResponse.RD_BLOOM:
                 # Pour-boundary notification — payload is a little-endian
@@ -387,7 +430,7 @@ class XBloomClientWithEvents(XBloomClient):
                 payload = data[10:-2] if len(data) > 12 else b""
                 if len(payload) >= 4:
                     attrs["pour_index"] = struct.unpack_from("<I", payload, 0)[0]
-            self._fire_event("notification", _NOTIFICATION_MAP[response], attrs)
+            self._fire_event("notification", event_type, attrs)
         elif response in _ERROR_MAP:
             self._fire_event("error", _ERROR_MAP[response])
 

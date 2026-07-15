@@ -172,7 +172,10 @@
           "brewing": "Brewing",
           "paused": "Paused",
           "error": "Error",
-          "sleeping": "Sleeping"
+          "sleeping": "Sleeping",
+          "no_beans": "No Beans",
+          "water_shortage": "Water Shortage",
+          "ready": "Ready"
         }
       },
       "weight": {
