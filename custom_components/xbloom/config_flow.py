@@ -104,9 +104,11 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                from xbloom import XBloomClient
+                from ._client import HABleakConnection, XBloomClientWithEvents
 
-                client = XBloomClient(mac_address=mac)
+                client = XBloomClientWithEvents(
+                    mac_address=mac, connection=HABleakConnection(self.hass)
+                )
                 ok = await client.connect(timeout=15.0)
                 if ok:
                     await client.disconnect()
@@ -145,9 +147,11 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # Quick connection test
                 try:
-                    from xbloom import XBloomClient
+                    from ._client import HABleakConnection, XBloomClientWithEvents
 
-                    client = XBloomClient(mac_address=mac)
+                    client = XBloomClientWithEvents(
+                        mac_address=mac, connection=HABleakConnection(self.hass)
+                    )
                     ok = await client.connect(timeout=15.0)
                     if ok:
                         await client.disconnect()
