@@ -160,6 +160,9 @@ DEFAULT_STATE: Dict[str, Any] = {
     "serial_number": "",
     "mode": "pro",
     "error": None,
+    "live_grind_size": None,
+    "live_grind_speed": None,
+    "voltage": None,
 }
 
 # Water source integer values used in APP_BREWER_START payload.
@@ -282,6 +285,18 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # execution uses each pour's own pattern from the YAML.
         self.pour_pattern: int = 0
 
+        # Recipe-execution pour tracking, so sensor.xbloom_flow_rate can
+        # report the *current* pour's flow rate instead of a fixed manual
+        # setpoint — recipes vary it per pour (see default_recipes.py).
+        # Populated by async_execute_recipe(); advanced live by each
+        # RD_BLOOM ("bloom") notification's pour_index (see
+        # _client.py/_dispatch_event below). Cleared on recipe completion
+        # or cancel, at which point self.flow_rate reverts to being the
+        # manual-pour setpoint again.
+        self._executing_recipe: bool = False
+        self._active_recipe_pours: Optional[List] = None
+        self.current_pour_index: Optional[int] = None
+
         # Water source for MANUAL POUR only (0=tank, 1=direct).
         # Loaded from entry.options so it survives HA restarts.
         # Recipe execution (APP_RECIPE_EXECUTE) does NOT use this value.
@@ -314,6 +329,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # successful brew/pour notification.
         self._water_shortage: bool = False
 
+        # Same idea as _water_shortage, driven by RD_ErrorIdling ("no_beans")
+        # instead of RD_ErrorLackOfWater — the machine WAITS in this state
+        # rather than refusing outright, so it's worth surfacing as a
+        # distinct sensor.state value instead of leaving it generic.
+        self._no_beans: bool = False
+
         # Track whether we temporarily switched to Pro Mode for an HA
         # operation.  When the operation completes we switch back to the
         # default (Easy) mode so the physical slot buttons work again.
@@ -344,11 +365,33 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     water_ok = bool(s.water_level_ok)
                 else:
                     water_ok = not self._water_shortage
+                # Layer the richer states our own event/status tracking can
+                # see on top of the vendored DeviceState value: no_beans /
+                # water_shortage (the machine WAITS rather than refusing),
+                # and starting/brewing/ready from the raw status-heartbeat
+                # stream. The cmd-tagged path alone is unreliable here —
+                # hardware-confirmed 2026-07-15: RD_GRINDER_BEGIN never
+                # fired during ~11s of real grinding, RD_BREWER_BEGIN fires
+                # immediately after commit (well before real pouring
+                # starts), and RD_Grinder_Stop flips vendored state to IDLE
+                # right as grinding *ends*, moments before pouring begins.
+                # See _client.py's _scan_for_status_frame /
+                # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
+                # _water_shortage for provenance.
+                raw_label = getattr(s, "_raw_state_label", None)
+                if self._no_beans:
+                    state_str = "no_beans"
+                elif self._water_shortage:
+                    state_str = "water_shortage"
+                elif raw_label:
+                    state_str = raw_label
+                else:
+                    state_str = s.state.value
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
                     "temperature": round(s.brewer.temperature, 1),
-                    "state": s.state.value,
+                    "state": state_str,
                     "grinder_running": s.grinder.is_running,
                     "brewer_running": s.brewer.is_running,
                     "water_level_ok": water_ok,
@@ -359,7 +402,31 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     # MachineInfo arrives.
                     "mode": self.client._machine_mode() if s.serial_number else self._mode,
                     "error": None,
+                    # Live readings from the machine's own knobs/heartbeat —
+                    # see _client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
+                    # RD_MachineInfo handling. None until first observed;
+                    # 0 (the dataclass default) is not a real reading.
+                    "live_grind_size": s.grinder.size or None,
+                    "live_grind_speed": s.grinder.speed or None,
+                    "voltage": getattr(s, "voltage", None),
                 }
+                # Mirror the physical temperature/pattern knobs onto the
+                # manual-pour setpoints so number.temperature and
+                # select.*_pour_pattern track knob turns in real time — but
+                # only while idle. The knobs (and the app) are locked out
+                # during an active grind/brew/pause, so any RD_
+                # BREWER_TEMPERATURE (8108) seen in that window is the
+                # machine's own in-progress reading (e.g. heating toward a
+                # recipe's target), not a knob turn — mirroring it would
+                # clobber the user's manual-pour setpoint with brew-transient
+                # noise. Once back to idle, the knob is live again and the
+                # setpoint should track it as normal.
+                if data["state"] == "idle":
+                    if s.brewer.temperature:
+                        self.temperature = round(s.brewer.temperature)
+                    live_pattern = getattr(s, "pour_pattern_live", None)
+                    if live_pattern is not None:
+                        self.pour_pattern = live_pattern
                 # If MachineInfo arrived since last poll, update the device registry
                 # so HA shows the correct serial/firmware version in the device page.
                 self._maybe_update_device_registry(data)
@@ -682,16 +749,50 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """
         _LOGGER.debug("XBloom event [%s] %s %s", category, event_type, attributes)
 
-        # Drive the water-shortage flag from the BLE event stream.
+        # Drive the water-shortage / no-beans flags from the BLE event stream.
         prev_shortage = self._water_shortage
+        prev_no_beans = self._no_beans
         if category == "error" and event_type == "water_shortage":
             self._water_shortage = True
+        elif category == "error" and event_type == "no_beans":
+            self._no_beans = True
         elif category == "notification" and event_type in (
             "brewing_started", "pour_complete", "recipe_complete",
         ):
-            # A successful brew implies water is available again.
+            # A successful brew implies water and beans were both available.
             self._water_shortage = False
-        if prev_shortage != self._water_shortage and self.hass and self.hass.loop:
+            self._no_beans = False
+        if (
+            (prev_shortage != self._water_shortage or prev_no_beans != self._no_beans)
+            and self.hass and self.hass.loop
+        ):
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.hass.async_create_task(self.async_refresh())
+            )
+
+        # ── Track the active pour during recipe execution ──
+        # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a
+        # 0-based pour_index (see _client.py). Only meaningful while a
+        # recipe execute is in flight (async_execute_recipe snapshots
+        # _active_recipe_pours) — a manual pour's single bloom event is
+        # ignored here since there's no recipe pour list to look up.
+        pour_index_changed = False
+        if (
+            category == "notification" and event_type == "bloom"
+            and self._executing_recipe and self._active_recipe_pours
+        ):
+            idx = attributes.get("pour_index")
+            if isinstance(idx, int) and 0 <= idx < len(self._active_recipe_pours):
+                self.current_pour_index = idx
+                self.flow_rate = float(self._active_recipe_pours[idx].flow_rate)
+                pour_index_changed = True
+        elif category == "notification" and event_type in (
+            "pour_complete", "recipe_complete",
+        ):
+            self._executing_recipe = False
+            self._active_recipe_pours = None
+            self.current_pour_index = None
+        if pour_index_changed and self.hass and self.hass.loop:
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
@@ -864,6 +965,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 recipe.rpm = int(self.rpm)
             if pour_overrides:
                 _apply_pour_overrides(recipe, pour_overrides)
+            # Snapshot the final (post-override, post-rescale) pour list so
+            # the "bloom" handler in _dispatch_event can look up each
+            # pour's actual flow_rate as the brew progresses.
+            self._active_recipe_pours = recipe.pours
+            self._executing_recipe = True
+            self.current_pour_index = None
             # Bypass — coffee only. Default to the recipe's YAML value;
             # an explicit override (service / LLM) wins. The tea sequence
             # forces bypass off internally, so tea always passes 0/0.
@@ -885,6 +992,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             )
         except Exception as exc:
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
+            self._executing_recipe = False
+            self._active_recipe_pours = None
 
     async def async_pause_resume(self) -> None:
         """Toggle between pause and resume based on machine state.
@@ -910,6 +1019,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Emergency stop all operations."""
         if not self._check_connected():
             return
+        self._executing_recipe = False
+        self._active_recipe_pours = None
+        self.current_pour_index = None
         try:
             await self.client.stop_recipe()
             await asyncio.sleep(0.3)
@@ -1077,6 +1189,17 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         persisted in ``entry.options["easy_slots"]`` so the slot text
         entities can show (and restore) what HA last wrote; the machine
         itself never reports slot contents.
+
+        Live-verified 2026-07-15 (cross-referenced against
+        Janczykkkko/xbloom-ble's independent capture): the machine only
+        *persists* a slot when all three (A/B/C) are written together —
+        writing one alone leaves it hung at "saving" (RETRY) — and only
+        accepts slot writes in Pro Mode. So this call fills in the other
+        two slots from ``entry.options["easy_slots"]`` (falling back to
+        the target recipe for a slot HA has never written — the machine
+        has no readback, so there's nothing else to preserve it with),
+        force-switches to Pro Mode if needed, writes all three, then
+        restores whatever mode the machine was in before.
         """
         if identifier:
             resolved = find_recipe(self.recipes or {}, identifier)
@@ -1111,12 +1234,43 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "error": "not_connected",
                 "message": "The XBloom is not connected over Bluetooth.",
             }
+
+        target_letter = slot_letter.strip().upper()
+        if target_letter not in ("A", "B", "C"):
+            return {
+                "success": False,
+                "error": "invalid_slot",
+                "message": f"slot must be A, B, or C — got {slot_letter!r}",
+            }
+
+        # Fill in the other two slots from our own record of what HA last
+        # wrote (the machine can't be asked what's actually there). A
+        # slot HA has never written mirrors the target recipe rather than
+        # being left as an unknown/blank.
+        slot_names = {target_letter: name}
+        slot_raws = {target_letter: raw}
+        for other in ("A", "B", "C"):
+            if other == target_letter:
+                continue
+            contents = self.easy_slot_contents(other)
+            other_resolved = (
+                find_recipe(self.recipes or {}, contents["uid"])
+                if contents and contents.get("uid") else None
+            )
+            if other_resolved:
+                slot_names[other], slot_raws[other] = other_resolved
+            else:
+                slot_names[other], slot_raws[other] = name, raw
+
         try:
-            recipe = _build_recipe_from_yaml(raw)
-            await brewing.async_write_easy_slot(self.client, slot_letter, recipe)
+            slot_recipes = {
+                letter: _build_recipe_from_yaml(slot_raws[letter])
+                for letter in ("A", "B", "C")
+            }
         except Exception as exc:
             _LOGGER.error(
-                "Easy slot write error (%s): %s", slot_letter, exc, exc_info=True
+                "Easy slot write error building recipes (%s): %s",
+                target_letter, exc, exc_info=True,
             )
             return {
                 "success": False,
@@ -1124,15 +1278,48 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "message": f"Slot write failed: {exc}",
             }
 
+        switched_to_pro = False
+        try:
+            if (self.data or {}).get("mode", "pro") == "easy":
+                await self.client._send_command_raw(
+                    11511, bytes.fromhex("00000000"), type_code=2,
+                )
+                switched_to_pro = True
+                await asyncio.sleep(0.5)
+
+            await brewing.async_write_easy_slots(self.client, slot_recipes)
+        except Exception as exc:
+            _LOGGER.error(
+                "Easy slot write error (%s): %s", target_letter, exc, exc_info=True
+            )
+            return {
+                "success": False,
+                "error": "write_failed",
+                "message": f"Slot write failed: {exc}",
+            }
+        finally:
+            if switched_to_pro:
+                try:
+                    await asyncio.sleep(0.5)
+                    await self.client._send_command_raw(
+                        11511, bytes.fromhex("91327856"), type_code=2,
+                    )
+                    await self.async_refresh()
+                except Exception as exc:
+                    _LOGGER.warning("Restoring Easy Mode after slot write failed: %s", exc)
+
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is not None:
             slots = dict(entry.options.get(CONF_EASY_SLOTS) or {})
-            slots[slot_letter.upper()] = {"uid": raw.get("uid"), "name": name}
+            for letter in ("A", "B", "C"):
+                slots[letter] = {
+                    "uid": slot_raws[letter].get("uid"), "name": slot_names[letter],
+                }
             new_options = dict(entry.options)
             new_options[CONF_EASY_SLOTS] = slots
             self.hass.config_entries.async_update_entry(entry, options=new_options)
         self.async_update_listeners()
-        return {"success": True, "slot": slot_letter.upper(), "name": name,
+        return {"success": True, "slot": target_letter, "name": name,
                 "uid": raw.get("uid")}
 
     def easy_slot_contents(self, slot_letter: str) -> Optional[dict]:
@@ -1804,6 +1991,34 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if version:
             info["sw_version"] = version
         return info
+
+    def _sub_device_info(self, key: str, name: str) -> DeviceInfo:
+        """Child DeviceInfo for a physical sub-component (grinder/scale/brewer).
+
+        Same config entry, separate device-registry entry — nested under
+        the main device via ``via_device`` so its page only shows that
+        component's entities instead of everything at once. unique_ids
+        are untouched, so this is a pure device-registry regrouping: no
+        entity_id changes, no automation/dashboard breakage.
+        """
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self.entry_id}_{key}")},
+            name=name,
+            manufacturer="XBloom",
+            via_device=(DOMAIN, self.entry_id),
+        )
+
+    @property
+    def grinder_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("grinder", "Grinder")
+
+    @property
+    def scale_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("scale", "Scale")
+
+    @property
+    def brewer_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("brewer", "Brewer")
 
     @property
     def recipe_names(self) -> list[str]:

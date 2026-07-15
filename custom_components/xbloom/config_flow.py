@@ -9,6 +9,7 @@ import voluptuous as vol
 import yaml
 
 from homeassistant import config_entries
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
@@ -77,6 +78,57 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._discovered_devices: list[dict] = []
         self._mac_step_data: dict[str, Any] = {}
+        self._discovered_mac: str | None = None
+        self._discovered_name: str | None = None
+
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> FlowResult:
+        """Handle a machine discovered via the service_uuid matcher in manifest.json."""
+        mac = discovery_info.address.upper()
+        await self.async_set_unique_id(mac)
+        self._abort_if_unique_id_configured()
+
+        self._discovered_mac = mac
+        self._discovered_name = discovery_info.name or mac
+        self.context["title_placeholders"] = {"name": self._discovered_name}
+        return await self.async_step_bluetooth_confirm()
+
+    async def async_step_bluetooth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """One-click confirmation for a Bluetooth-discovered machine."""
+        errors: dict[str, str] = {}
+        mac = self._discovered_mac
+        assert mac is not None
+
+        if user_input is not None:
+            try:
+                from xbloom import XBloomClient
+
+                client = XBloomClient(mac_address=mac)
+                ok = await client.connect(timeout=15.0)
+                if ok:
+                    await client.disconnect()
+                else:
+                    errors["base"] = "cannot_connect"
+            except Exception:
+                errors["base"] = "cannot_connect"
+
+            if not errors:
+                self._mac_step_data = {
+                    CONF_MAC_ADDRESS: mac,
+                    CONF_TELEMETRY_INTERVAL: DEFAULT_TELEMETRY_INTERVAL,
+                    CONF_SESSION_TIMEOUT: DEFAULT_SESSION_TIMEOUT,
+                }
+                return await self.async_step_account()
+
+        return self.async_show_form(
+            step_id="bluetooth_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._discovered_name or mac},
+            errors=errors,
+        )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}

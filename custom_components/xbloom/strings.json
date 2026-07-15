@@ -1,6 +1,10 @@
 {
   "config": {
     "step": {
+      "bluetooth_confirm": {
+        "title": "XBloom Coffee Machine",
+        "description": "Set up {name}?"
+      },
       "user": {
         "title": "XBloom Coffee Machine",
         "description": "Enter the Bluetooth MAC address of your XBloom device. Run `xbloom scan` from a terminal to discover it, or check the XBloom Studio app.",
@@ -156,9 +160,6 @@
       },
       "volume": {
         "name": "Volume"
-      },
-      "flow_rate": {
-        "name": "Flow Rate"
       }
     },
     "sensor": {
@@ -171,7 +172,11 @@
           "brewing": "Brewing",
           "paused": "Paused",
           "error": "Error",
-          "sleeping": "Sleeping"
+          "sleeping": "Sleeping",
+          "no_beans": "No Beans",
+          "water_shortage": "Water Shortage",
+          "ready": "Ready",
+          "starting": "Starting"
         }
       },
       "weight": {
@@ -179,6 +184,9 @@
       },
       "brewer_temperature": {
         "name": "Brewer Temperature"
+      },
+      "flow_rate": {
+        "name": "Flow Rate"
       },
       "last_error": {
         "name": "Last Error"
@@ -197,6 +205,15 @@
       },
       "easy_slot_c": {
         "name": "Easy Slot C"
+      },
+      "live_grind_size": {
+        "name": "Grind Size (Live)"
+      },
+      "live_grind_speed": {
+        "name": "Grind Speed (Live)"
+      },
+      "voltage_raw": {
+        "name": "Voltage (Raw)"
       }
     },
     "select": {
@@ -300,6 +317,16 @@
         "bypass_temperature": {
           "name": "Bypass temperature",
           "description": "Bypass water temperature in °C (0 = bypass off). Pair with a non-zero bypass volume. Coffee recipes only."
+        }
+      }
+    },
+    "execute_tea_recipe": {
+      "name": "Execute tea recipe",
+      "description": "Run a saved XBloom tea recipe. Tea uses a different BLE sequence than coffee and takes no dose/ratio/grind/bypass overrides — use execute_recipe for coffee recipes instead.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which tea recipe to run — a local uid, a cloud table id, a share URL/id, or the exact recipe name. Defaults to the currently selected recipe."
         }
       }
     },

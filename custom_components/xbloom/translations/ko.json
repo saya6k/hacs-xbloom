@@ -1,6 +1,10 @@
 {
   "config": {
     "step": {
+      "bluetooth_confirm": {
+        "title": "XBloom 커피 머신",
+        "description": "{name}을(를) 설정할까요?"
+      },
       "user": {
         "title": "XBloom 커피 머신",
         "description": "XBloom 기기의 블루투스 MAC 주소를 입력하세요. 터미널에서 `xbloom scan`을 실행하거나, XBloom Studio 앱에서 확인할 수 있습니다.",
@@ -156,9 +160,6 @@
       },
       "volume": {
         "name": "추출량"
-      },
-      "flow_rate": {
-        "name": "유량"
       }
     },
     "sensor": {
@@ -171,7 +172,11 @@
           "brewing": "추출 중",
           "paused": "일시 정지",
           "error": "오류",
-          "sleeping": "절전 모드"
+          "sleeping": "절전 모드",
+          "no_beans": "원두 없음",
+          "water_shortage": "물 부족",
+          "ready": "완료 (컵 대기)",
+          "starting": "시작 중"
         }
       },
       "weight": {
@@ -179,6 +184,9 @@
       },
       "brewer_temperature": {
         "name": "추출 온도"
+      },
+      "flow_rate": {
+        "name": "유량"
       },
       "last_error": {
         "name": "마지막 오류"
@@ -197,6 +205,15 @@
       },
       "easy_slot_c": {
         "name": "이지 슬롯 C"
+      },
+      "live_grind_size": {
+        "name": "분쇄도 (실시간)"
+      },
+      "live_grind_speed": {
+        "name": "그라인더 RPM (실시간)"
+      },
+      "voltage_raw": {
+        "name": "전압 (원시값)"
       }
     },
     "select": {
@@ -300,6 +317,16 @@
         "bypass_temperature": {
           "name": "바이패스 물 온도",
           "description": "바이패스 물 온도(°C, 0=바이패스 끔). 0이 아닌 바이패스 물 양과 함께 설정하세요. 커피 레시피만 해당."
+        }
+      }
+    },
+    "execute_tea_recipe": {
+      "name": "티 레시피 실행",
+      "description": "저장된 XBloom 티 레시피를 실행합니다. 티는 커피와 다른 BLE 시퀀스를 사용하며 원두량/비율/분쇄도/바이패스 재정의를 지원하지 않습니다 — 커피 레시피는 레시피 실행 서비스를 사용하세요.",
+      "fields": {
+        "recipe": {
+          "name": "레시피",
+          "description": "실행할 티 레시피 — 로컬 uid, 클라우드 테이블 ID, 공유 URL/ID, 또는 정확한 레시피 이름. 생략하면 현재 선택된 레시피를 실행합니다."
         }
       }
     },

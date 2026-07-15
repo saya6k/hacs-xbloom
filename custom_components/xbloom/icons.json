@@ -64,9 +64,6 @@
       },
       "volume": {
         "default": "mdi:cup-water"
-      },
-      "flow_rate": {
-        "default": "mdi:waves-arrow-right"
       }
     },
     "sensor": {
@@ -87,6 +84,9 @@
       "brewer_temperature": {
         "default": "mdi:thermometer"
       },
+      "flow_rate": {
+        "default": "mdi:waves-arrow-right"
+      },
       "last_error": {
         "default": "mdi:alert-circle-outline"
       },
@@ -104,6 +104,15 @@
       },
       "easy_slot_c": {
         "default": "mdi:alpha-c-circle-outline"
+      },
+      "live_grind_size": {
+        "default": "mdi:grain"
+      },
+      "live_grind_speed": {
+        "default": "mdi:speedometer"
+      },
+      "voltage_raw": {
+        "default": "mdi:flash-outline"
       }
     },
     "select": {
@@ -160,6 +169,9 @@
     },
     "execute_recipe": {
       "service": "mdi:play-circle"
+    },
+    "execute_tea_recipe": {
+      "service": "mdi:tea"
     },
     "write_recipe_to_easy_slot": {
       "service": "mdi:content-save-outline"

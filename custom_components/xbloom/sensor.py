@@ -25,10 +25,14 @@ async def async_setup_entry(
             XBloomStateSensor(coordinator, entry),
             XBloomWeightSensor(coordinator, entry),
             XBloomBrewerTempSensor(coordinator, entry),
+            XBloomFlowRateSensor(coordinator, entry),
             XBloomErrorSensor(coordinator, entry),
             XBloomFirmwareVersionSensor(coordinator, entry),
             XBloomSerialNumberSensor(coordinator, entry),
             *(XBloomEasySlotSensor(coordinator, entry, slot) for slot in ("A", "B", "C")),
+            XBloomLiveGrindSizeSensor(coordinator, entry),
+            XBloomLiveGrindSpeedSensor(coordinator, entry),
+            XBloomVoltageSensor(coordinator, entry),
         ]
     )
 
@@ -48,7 +52,10 @@ class XBloomStateSensor(_XBloomSensor):
     _attr_translation_key = "state"
     _attr_unique_id = "xbloom_state"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping"]
+    _attr_options = [
+        "unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping",
+        "no_beans", "water_shortage", "ready", "starting",
+    ]
 
     @property
     def native_value(self) -> str:
@@ -62,6 +69,10 @@ class XBloomWeightSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = UnitOfMass.GRAMS
 
     @property
+    def device_info(self):
+        return self.coordinator.scale_device_info
+
+    @property
     def native_value(self) -> float:
         return self.coordinator.data.get("weight", 0.0)
 
@@ -73,8 +84,36 @@ class XBloomBrewerTempSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
+
+    @property
     def native_value(self) -> float:
         return self.coordinator.data.get("temperature", 0.0)
+
+
+class XBloomFlowRateSensor(_XBloomSensor):
+    """Read-only — the flow rate in use right now.
+
+    Not a control: recipes vary flow_rate per pour (see
+    default_recipes.py), so a single manual setpoint doesn't represent
+    "the" flow rate. During recipe execution this tracks the active
+    pour's own flow_rate (updated on each RD_BLOOM/"bloom" notification —
+    see coordinator._dispatch_event); otherwise it reports the manual-pour
+    value (coordinator.flow_rate, settable via the pour_xbloom LLM tool).
+    """
+
+    _attr_translation_key = "flow_rate"
+    _attr_unique_id = "xbloom_flow_rate"
+    _attr_native_unit_of_measurement = "mL/s"
+
+    @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
+
+    @property
+    def native_value(self) -> float:
+        return float(self.coordinator.flow_rate)
 
 
 class XBloomErrorSensor(_XBloomSensor):
@@ -109,6 +148,62 @@ class XBloomSerialNumberSensor(_XBloomSensor):
     @property
     def native_value(self) -> str:
         return self.coordinator.data.get("serial_number") or "unknown"
+
+
+class XBloomLiveGrindSizeSensor(_XBloomSensor):
+    """Grinder-knob position (1-80 UI units), from the physical knob or MachineInfo.
+
+    Distinct from ``number.xbloom_grind_size`` — that's the setpoint used by
+    the next standalone-grind action; this is a live read of what the
+    machine itself last reported (knob turn or connect-time heartbeat).
+    """
+
+    _attr_translation_key = "live_grind_size"
+    _attr_unique_id = "xbloom_live_grind_size"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("live_grind_size")
+
+
+class XBloomLiveGrindSpeedSensor(_XBloomSensor):
+    """Grinder RPM knob position, live from the machine (see XBloomLiveGrindSizeSensor)."""
+
+    _attr_translation_key = "live_grind_speed"
+    _attr_unique_id = "xbloom_live_grind_speed"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "RPM"
+
+    @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("live_grind_speed")
+
+
+class XBloomVoltageSensor(_XBloomSensor):
+    """Raw byte 39 of the RD_MachineInfo heartbeat.
+
+    Unscaled — the third-party capture this was cross-referenced against
+    (see _client.py) didn't establish a volts conversion, so this is
+    exposed as a raw diagnostic number rather than with a VOLTAGE device
+    class that would imply a confirmed unit.
+    """
+
+    _attr_translation_key = "voltage_raw"
+    _attr_unique_id = "xbloom_voltage_raw"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("voltage")
 
 
 class XBloomEasySlotSensor(_XBloomSensor):

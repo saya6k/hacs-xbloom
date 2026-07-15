@@ -1,1 +1,6 @@
 - [Edit tool only](feedback_edit_tool_only.md) — never use Bash/Python to splice-rewrite a tracked file; retry Edit with corrected exact text instead.
+- [HA dev version channels](reference_ha_dev_version_channels.md) — no HA .dev builds on PyPI; nightly version via version.home-assistant.io/dev.json; git installs report dev0.
+- [LLM platform migration](project_llm_platform_migration_rc.md) — v1.5.0-rc.0 shipped on dev floor; stable v1.5.0 gated on HA 2026.8.0b0 (bump 3 pins + re-verify).
+- [xbloom-studio review adoptions](project_xbloom_studio_review_adoptions.md) — uncommitted: BT discovery, live knob sync, 4-device split, flow_rate sensor, execute_tea_recipe. Needs hardware verification.
+- [Additive variant split](feedback_additive_variant_split.md) — splitting a service/entity for a variant (coffee/tea): add a leaner sibling, don't restructure the original, keep shared field names.
+- [Commit incrementally](feedback_commit_incrementally.md) — commit each discrete change as it lands, don't batch a whole session into one uncommitted diff.

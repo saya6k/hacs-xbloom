@@ -266,7 +266,16 @@ async def _async_brew_coffee(
         raise ConnectionError("XBloom not connected")
 
     grinding = recipe.grind_size > 0 and recipe.bean_weight > 0
-    dose = int(recipe.bean_weight) if grinding else 0
+    # dose (sent via 8102) must track the recipe's actual weighed dose
+    # regardless of whether the grinder runs -- `grinding` only decides the
+    # opcode (8001 vs 8004) and cup-bounds table below. Hardware-confirmed
+    # 2026-07-15: sending dose=0 to 8102 (the old `if grinding else 0`
+    # behavior) makes the machine silently never arm the 8004 (no-grind)
+    # recipe -- no refusal notification, just permanent silence -- even
+    # when the 8004 payload's own footer ratio byte is healthy. This broke
+    # every no-grind ("pre-ground coffee") recipe, the entire point of the
+    # grind_size=0 feature.
+    dose = int(recipe.bean_weight) if recipe.bean_weight > 0 else 0
 
     _LOGGER.info(
         "Coffee brew start: %s (grind=%s, dose=%dg, bypass=%.0fml@%.0f°C)",
@@ -300,6 +309,20 @@ async def _async_brew_coffee(
 
     # 8104 — Cup bounds. Grind path uses min=40; no-grind path uses
     # min=0 to bypass the 0 g telemetry safety check.
+    #
+    # Unconfirmed alternative theory (Janczykkkko/xbloom-ble): this same
+    # payload shape (01 + f32×2) is "stage preheat temps" (default
+    # 110.0/90.0), not cup weight bounds. Deliberately NOT adopted:
+    # hardware-tested 2026-07-15, no observable difference in behavior or
+    # RD_BREWER_TEMPERATURE telemetry across 4 separate brews regardless of
+    # the value sent (BLE telemetry can't confirm or refute either theory
+    # on this unit), and — more importantly — the values below already
+    # brew correctly in practice, so there's no working code to fix. Two
+    # other Janczykkkko semantic/behavioral claims tested this same session
+    # (an 18g dose cap, cmd 40518 = "start") both turned out to be wrong on
+    # direct hardware test, even though their lower-level protocol
+    # structure (CRC, command IDs, footer encoding) checked out — so this
+    # one isn't trusted on cross-claim credibility alone either.
     bounds_table = _COFFEE_CUP_BOUNDS_GRIND if grinding else _COFFEE_CUP_BOUNDS_NO_GRIND
     cup_max, cup_min = bounds_table.get(_cup_value(recipe), _COFFEE_CUP_BOUNDS_DEFAULT)
     await client.set_cup(cup_max, cup_min)
@@ -388,42 +411,57 @@ async def async_tare(client) -> None:
     await client._send_command(_CMD_TARE)
 
 
-async def async_write_easy_slot(
+async def async_write_easy_slots(
     client,
-    slot_letter: str,
-    recipe: XBloomRecipe,
+    slot_recipes: dict,
     *,
     scale_on: bool = True,
 ) -> None:
-    """Write a recipe to Easy Mode slot A/B/C (cmd 11510, type-2).
+    """Write all three Easy Mode slots A/B/C in one batch (cmd 11510, type-2).
 
-    Mirrors ``send_command.py slot`` plus
-    ``build_slot_packet`` / ``slot_flags`` in src/xbloom-ble. The
-    ``grinder_on`` flag is derived from the recipe (any positive
-    grind_size + bean_weight implies the slot should grind).
+    ``slot_recipes`` must have all three keys — ``{"A": XBloomRecipe, "B":
+    XBloomRecipe, "C": XBloomRecipe}``.
 
-    Payload layout (after the header / type / cmd / len / 0x01 prefix
-    that build_command_raw applies): ``[slot_index][flags][recipe_hex]``.
+    Live-verified on real hardware (2026-07-15, cross-referenced against
+    Janczykkkko/xbloom-ble's independent HCI capture): the machine only
+    *persists* an Easy Mode slot batch when all three are written
+    back-to-back in one session. Writing a single slot gets ACKed but
+    leaves the machine hung at status ``0x43`` (saving) showing RETRY —
+    it never reaches ``0x25`` (saved) / idle. Completing the other two
+    slots immediately unsticks it (an ``0xf8`` notification, then
+    ``0x43`` → ``0x25`` → idle). There is no way to read a slot's current
+    contents back from the machine, so callers must always supply all
+    three — coordinator.async_write_easy_slot fills in the two the caller
+    didn't ask to change from its own local record of what HA last wrote.
+
+    Mirrors ``send_command.py slot`` plus ``build_slot_packet`` /
+    ``slot_flags`` in src/xbloom-ble. The ``grinder_on`` flag is derived
+    per-recipe (any positive grind_size + bean_weight implies the slot
+    should grind).
+
+    Payload layout per slot (after the header / type / cmd / len / 0x01
+    prefix that build_command_raw applies): ``[slot_index][flags][recipe_hex]``.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
-    letter = slot_letter.strip().upper()
-    if letter not in _SLOT_INDEX_BY_LETTER:
-        raise ValueError(f"slot must be A, B, or C — got {slot_letter!r}")
-    slot_index = _SLOT_INDEX_BY_LETTER[letter]
+    missing = [letter for letter in _SLOT_INDEX_BY_LETTER if letter not in slot_recipes]
+    if missing:
+        raise ValueError(f"slot_recipes missing entries for: {missing}")
 
-    grinder_on = recipe.grind_size > 0 and recipe.bean_weight > 0
-    flags = slot_flags(scale_on, grinder_on)
+    for letter, slot_index in _SLOT_INDEX_BY_LETTER.items():
+        recipe = slot_recipes[letter]
+        grinder_on = recipe.grind_size > 0 and recipe.bean_weight > 0
+        flags = slot_flags(scale_on, grinder_on)
+        recipe_blob = _build_coffee_recipe_payload(recipe)
+        payload = bytes([slot_index, flags]) + recipe_blob
 
-    recipe_blob = _build_coffee_recipe_payload(recipe)
-    payload = bytes([slot_index, flags]) + recipe_blob
-
-    _LOGGER.info(
-        "Easy slot write: %s ← %s (grinder=%s scale=%s, %d-byte recipe)",
-        letter, recipe.name, grinder_on, scale_on, len(recipe_blob),
-    )
-    # Type-2 packet: brAzzi64 build_packet_type2(11510, hex_data). Our
-    # vendored build_command_raw produces the same bytes when type_code=2.
-    await client._send_command_raw(
-        _CMD_EASY_RECIPE_SEND, payload, type_code=2,
-    )
+        _LOGGER.info(
+            "Easy slot write: %s ← %s (grinder=%s scale=%s, %d-byte recipe)",
+            letter, recipe.name, grinder_on, scale_on, len(recipe_blob),
+        )
+        # Type-2 packet: brAzzi64 build_packet_type2(11510, hex_data). Our
+        # vendored build_command_raw produces the same bytes when type_code=2.
+        await client._send_command_raw(
+            _CMD_EASY_RECIPE_SEND, payload, type_code=2,
+        )
+        await asyncio.sleep(0.3)
