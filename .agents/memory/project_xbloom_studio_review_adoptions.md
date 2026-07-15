@@ -248,3 +248,67 @@ new states, real `brewing._async_brew_coffee()` (`xbloom_probe15.py`).**
     testing was deliberately not repeated given this result — the
     "no_beans = safe wait" assumption that justified trying it turned out
     to not hold.
+
+**Round 7, same session (2026-07-15): first fully-completed real grind
+brew (5 g beans finally loaded by the user) — `xbloom_probe16.py` /
+`xbloom_probe17.py`, minimal recipe (5 g dose, 75 ml water 1:15,
+grind_size=45, 90°C, spiral, single pour) via the real
+`brewing._async_brew_coffee()`.**
+
+- **`xbloom_probe16.py` (sent cmd 40518 after only a 3 s stall at
+  `awaiting_confirm`): 40518 reset the brew back to `armed` instead of
+  starting it**, then the machine sat at `armed` doing nothing for the
+  rest of a 90 s window until force-stopped. No `starting (0x22)` was
+  ever observed — grinding almost certainly never began, so the 5 g dose
+  was not meaningfully consumed. Side effect: post-test `RD_MachineInfo`
+  grind-size telemetry again tracked the recipe's requested value
+  (`grind_raw=76`≈UI 46, recipe asked for 45) even though grinding never
+  ran — reinforces the round-6 inference that the grind-size *setting*
+  updates independently of whether actual grinding happens.
+- **`xbloom_probe17.py` (identical recipe, did NOT send 40518 at all,
+  just waited): the brew completed naturally and cleanly end-to-end**
+  (`armed`(3.9s) → `awaiting_confirm`(4.8s) → `starting`(13.8s, i.e. a
+  ~9s confirm delay — comfortably past the 3s threshold that triggered
+  probe16's premature 40518) → `brewing`(25.1s, i.e. ~11.3s of real
+  grinding) → `pour_complete`(53.3s, ~28s pour for 75ml) →
+  `recipe_complete`). **This is now the strongest evidence yet that cmd
+  40518 is NOT "start"** — the brew never needed it, and sending it
+  early actively cancelled a brew that was already proceeding normally.
+  Closer to brAzzi64's `CMD_BREW_PAUSE` naming than Janczykkkko's
+  `build_start()` claim, though "cancel/reset-to-armed" isn't an exact
+  match for "pause" either. **The `>3s at awaiting_confirm = stalled`
+  heuristic (borrowed from Janczykkkko's own client.py) is too
+  aggressive for a real grind-path brew on this firmware — a ~9s confirm
+  delay is apparently normal, not a hang.**
+- **Corrects the round-5 "starting" skip decision — it was wrong.**
+  During probe17's real grinding window, `RD_GRINDER_BEGIN` (which sets
+  vendored `DeviceState.GRINDING`) **never fired at all.** Only
+  `RD_Grinder_Stop` ("grinding_complete") fired, and it fired at
+  t=24.6s — the *end* of grinding, moments before the raw status flipped
+  to `brewing (0x10)` at t=25.1s. Meanwhile `RD_BREWER_BEGIN`
+  ("brewing_started") fired at t=4.5s, immediately after commit — long
+  *before* grinding even started. Net effect on our own vendored-state
+  derivation, if traced through: `state` would jump to "brewing" at
+  4.5s (before anything is actually happening), stay "brewing" through
+  the entire real grinding phase, then **briefly flip to "idle" at
+  24.6s** (the instant `RD_Grinder_Stop` fires) right as real pouring is
+  about to start — a real, if brief, mislabeling that a raw-status-based
+  "starting"/"grinding" state would have avoided. Adding a real
+  "starting" state (or at least not trusting `RD_GRINDER_BEGIN`'s timing)
+  is now worth doing — not yet implemented.
+- **cmd 8104 / `RD_BREWER_TEMPERATURE`: still zero signal, now across 4
+  separate tests** (no-grind load-only, no-grind real brew ×2, and this
+  real grind+brew) — `RD_BREWER_TEMPERATURE` (8108) has **never fired
+  once** on this hardware regardless of recipe type. This is now a
+  strong negative result: whatever cmd 8104 does, it can't be observed
+  via this telemetry channel on this unit, so the "stage temps" theory
+  can't be confirmed or refuted this way. The weight-bound theory is
+  similarly unconfirmed (never saw a weight-related refusal either).
+  **cmd 8104's semantics remain genuinely unresolved** and further
+  progress would need a different observation method (e.g. actual
+  physical water temperature measurement, not BLE telemetry).
+- Real grinding **did** happen this round (`RD_Grinder_Stop` fired for
+  real, ~11.3s), so the 5g dose was consumed this time, unlike probe16's
+  aborted attempt. Final health check: `grind_raw=75` (UI 45), exactly
+  matching the recipe's requested `grind_size=45` — confirms the
+  grind-size setting genuinely does track the last-loaded recipe.
