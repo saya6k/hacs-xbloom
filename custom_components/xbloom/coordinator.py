@@ -367,18 +367,24 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     water_ok = not self._water_shortage
                 # Layer the richer states our own event/status tracking can
                 # see on top of the vendored DeviceState value: no_beans /
-                # water_shortage (the machine WAITS rather than refusing) and
-                # ready (brew done/beeped, cup still on the scale — distinct
-                # from RD_Brewer_Stop's immediate IDLE, which fires the
-                # instant pouring stops). See _client.py's
-                # _scan_for_status_frame and coordinator._no_beans /
+                # water_shortage (the machine WAITS rather than refusing),
+                # and starting/brewing/ready from the raw status-heartbeat
+                # stream. The cmd-tagged path alone is unreliable here —
+                # hardware-confirmed 2026-07-15: RD_GRINDER_BEGIN never
+                # fired during ~11s of real grinding, RD_BREWER_BEGIN fires
+                # immediately after commit (well before real pouring
+                # starts), and RD_Grinder_Stop flips vendored state to IDLE
+                # right as grinding *ends*, moments before pouring begins.
+                # See _client.py's _scan_for_status_frame /
+                # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
+                raw_label = getattr(s, "_raw_state_label", None)
                 if self._no_beans:
                     state_str = "no_beans"
                 elif self._water_shortage:
                     state_str = "water_shortage"
-                elif getattr(s, "_brew_ready", False):
-                    state_str = "ready"
+                elif raw_label:
+                    state_str = raw_label
                 else:
                     state_str = s.state.value
                 data = {

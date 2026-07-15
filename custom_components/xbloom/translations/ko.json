@@ -175,7 +175,8 @@
           "sleeping": "절전 모드",
           "no_beans": "원두 없음",
           "water_shortage": "물 부족",
-          "ready": "완료 (컵 대기)"
+          "ready": "완료 (컵 대기)",
+          "starting": "시작 중"
         }
       },
       "weight": {

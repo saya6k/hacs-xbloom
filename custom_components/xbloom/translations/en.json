@@ -175,7 +175,8 @@
           "sleeping": "Sleeping",
           "no_beans": "No Beans",
           "water_shortage": "Water Shortage",
-          "ready": "Ready"
+          "ready": "Ready",
+          "starting": "Starting"
         }
       },
       "weight": {
