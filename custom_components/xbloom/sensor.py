@@ -121,13 +121,13 @@ class XBloomErrorSensor(_XBloomSensor):
     _attr_unique_id = "xbloom_error"
 
     @property
-    def native_value(self) -> str:
-        return self.coordinator.data.get("error") or "none"
+    def native_value(self) -> str | None:
+        return self.coordinator.data.get("error") or None
 
     @property
     def icon(self) -> str:
         # Dynamic — error string state is open-ended, so handle in code.
-        return "mdi:check-circle" if self.native_value == "none" else "mdi:alert-circle"
+        return "mdi:check-circle" if self.native_value is None else "mdi:alert-circle"
 
 
 class XBloomFirmwareVersionSensor(_XBloomSensor):
