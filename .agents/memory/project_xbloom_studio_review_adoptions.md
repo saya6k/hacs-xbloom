@@ -9,8 +9,15 @@ metadata:
 
 Reviewed the newly-published `Alshekhi/xbloom-studio` HA integration (2026-07-15) as
 a feature comparison against this repo, then implemented several of the ideas over
-the same session — all currently **uncommitted** on `main` (15 files touched, no
-commit made yet; confirm with the user before committing/pushing).
+the same session. **Committed to `main` as 5 separate commits** (not pushed —
+confirm with the user before pushing): `c56e886` (slot batch-write fix),
+`8cc072b` (Bluetooth discovery), `78a894f` (execute_tea_recipe),
+`e0ac87e` (telemetry/device-split/flow-rate), `2b714d0` (memory). The
+same session also cloned and cross-referenced `Janczykkkko/xbloom-ble`
+(a second independent reverse-engineering effort) and live-tested several
+of its claims directly against real hardware over BLE from this machine
+(see the hardware-verification note below) — that's what surfaced and
+confirmed the Easy Mode slot-batching bug now fixed in `c56e886`.
 
 **What was adopted, in order:**
 
@@ -56,10 +63,28 @@ far ahead there already), tea-recipe handling (their tea path reuses the generic
 `8004` sequence, which this repo's own HCI capture already proved does **not**
 enter real tea mode — see the tea firmware-quirk entry in `AGENTS.md`).
 
-**Follow-up still needed:** none of this has been exercised on real hardware yet.
-Before considering it done: verify in the devcontainer that (a) Bluetooth discovery
-actually surfaces the "discovered" card, (b) turning the physical knobs updates the
-mirrored Number/Select entities and reverts correctly after a brew, (c) the 4-device
-split renders as expected in Settings → Devices, (d) `flow_rate` sensor tracks
-per-pour values during a real coffee recipe brew, (e) `execute_tea_recipe` actually
-brews tea end-to-end.
+**Hardware verification (2026-07-15, direct BLE from this Mac via bleak, machine
+"XBLOOM 4CV030" / firmware V12.0D.500 — the exact firmware Janczykkkko tested
+against):**
+- MachineInfo byte 37/39 parsing: confirmed live (grind byte 87→UI 57 plausible;
+  voltage byte 220 matches Korean 220V mains — strong signal it's really volts).
+- Recipe LOAD-only tests (never sent commit/start — physically safe): dose_g=20
+  armed fine, **refuting** Janczykkkko's claimed "18g firm cap" at the protocol
+  level. Our own `ratio×10` footer fix (independently found via decompiling the
+  app) was hardware-confirmed correct. no-grind sentinel (0x00 vs 0xFE) was
+  **inconclusive** — both arm identically; distinguishing them needs a completed
+  brew or a slot-write comparison, neither done.
+- Easy Mode slot test: **confirmed and fixed**. Single-slot write hangs the real
+  machine at status 0x43 (RETRY) exactly as Janczykkkko documented; completing
+  the A/B/C batch immediately unsticks it (0x43→0x25→idle, with an 0xf8
+  notification in between). PRO mode is required first. Both now handled in
+  `coordinator.async_write_easy_slot` (see `c56e886`).
+- Still untested/unverified: cmd 8104 semantics (cup-weight-bounds vs
+  preheat-stage-temps — genuine unresolved conflict, not tested since it needs a
+  live brew to observe), cmd 40518 (pause vs start — **never tested, physically
+  risky**, would need explicit fresh confirmation), no-grind 0xFE's actual effect
+  on stored slot memory.
+- Still needs devcontainer/UI-level check (not done via raw BLE): (a) the
+  Bluetooth discovery card actually renders in Settings → Devices & Services,
+  (b) the 4-device split renders as expected there, (c) `execute_tea_recipe`
+  brews tea end-to-end.
