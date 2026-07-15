@@ -43,6 +43,12 @@ DATA_COORDINATOR = "coordinator"
 
 # Services
 SERVICE_EXECUTE_RECIPE = "execute_recipe"
+# Tea recipes take a completely different BLE sequence (brewing.py's
+# _async_brew_tea) and none of execute_recipe's coffee-only fields
+# (dose/ratio/grind/bypass) apply — a separate, leaner service avoids
+# exposing them for a tea brew. Shares ATTR_RECIPE with execute_recipe /
+# create_recipe / edit_recipe so recipe targeting stays consistent.
+SERVICE_EXECUTE_TEA_RECIPE = "execute_tea_recipe"
 ATTR_GRIND_SIZE = "grind_size"
 ATTR_RPM = "rpm"
 ATTR_DOSE_G = "dose_g"

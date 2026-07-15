@@ -307,6 +307,16 @@
         }
       }
     },
+    "execute_tea_recipe": {
+      "name": "Execute tea recipe",
+      "description": "Run a saved XBloom tea recipe. Tea uses a different BLE sequence than coffee and takes no dose/ratio/grind/bypass overrides — use execute_recipe for coffee recipes instead.",
+      "fields": {
+        "recipe": {
+          "name": "Recipe",
+          "description": "Which tea recipe to run — a local uid, a cloud table id, a share URL/id, or the exact recipe name. Defaults to the currently selected recipe."
+        }
+      }
+    },
     "write_recipe_to_easy_slot": {
       "name": "Write recipe to Easy Mode slot",
       "description": "Store a recipe in one of the machine's three onboard Easy Mode slots (A/B/C) so it can be run from the machine's physical buttons. Does not brew; existing slot contents are overwritten.",

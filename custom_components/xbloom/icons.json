@@ -161,6 +161,9 @@
     "execute_recipe": {
       "service": "mdi:play-circle"
     },
+    "execute_tea_recipe": {
+      "service": "mdi:tea"
+    },
     "write_recipe_to_easy_slot": {
       "service": "mdi:content-save-outline"
     },
