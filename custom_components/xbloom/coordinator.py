@@ -1759,8 +1759,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         fetched.append(local)
                     source = "seed_cloud"
         else:
+            # cup_type="Omni" only -- the collective hub's cup-type facet
+            # also has a same-ish-sounding "Omni Tea Brewer" entry (its
+            # actual name on the hub is "Omni Brewer"), which is the tea
+            # accessory (our CupType.TEA), not a coffee cup type. Coffee
+            # brewing never uses that cup type, and tea already has its
+            # own curated defaults in default_recipes.py plus the
+            # dedicated execute_tea_recipe path -- this seed should only
+            # ever contribute coffee recipes.
             official = await self.cloud_client.fetch_official_recipes(
-                limit=_OFFICIAL_RECIPE_SYNC_LIMIT
+                limit=_OFFICIAL_RECIPE_SYNC_LIMIT, cup_type=["Omni"]
             )
             if official is not None:
                 fetched = official
