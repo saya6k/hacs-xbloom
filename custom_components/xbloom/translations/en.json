@@ -1,6 +1,10 @@
 {
   "config": {
     "step": {
+      "bluetooth_confirm": {
+        "title": "XBloom Coffee Machine",
+        "description": "Set up {name}?"
+      },
       "user": {
         "title": "XBloom Coffee Machine",
         "description": "Enter the Bluetooth MAC address of your XBloom device. Run `xbloom scan` from a terminal to discover it, or check the XBloom Studio app.",

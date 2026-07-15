@@ -1,6 +1,10 @@
 {
   "config": {
     "step": {
+      "bluetooth_confirm": {
+        "title": "XBloom 커피 머신",
+        "description": "{name}을(를) 설정할까요?"
+      },
       "user": {
         "title": "XBloom 커피 머신",
         "description": "XBloom 기기의 블루투스 MAC 주소를 입력하세요. 터미널에서 `xbloom scan`을 실행하거나, XBloom Studio 앱에서 확인할 수 있습니다.",
