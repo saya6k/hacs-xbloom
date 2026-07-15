@@ -789,6 +789,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # once more now that self-lookup works.
     await coordinator._async_refresh_recipe_service_schemas()
 
+    # Register the main device explicitly, before any platform is set up.
+    # async_forward_entry_setups fans the platforms out concurrently, so
+    # relying on whichever entity happens to reference the main device
+    # first is a race: if a platform whose entities all point at a
+    # sub-device (grinder/scale/brewer, via_device=(DOMAIN, entry.entry_id))
+    # registers before any main-device entity does, HA logs "non existing
+    # via_device" (confirmed live 2026-07-15, binary_sensor.py). Explicit
+    # registration here removes the ordering dependency entirely.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="XBloom Coffee Machine",
+        manufacturer="XBloom",
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register the LLM API so voice/chat agents can drive the machine.
