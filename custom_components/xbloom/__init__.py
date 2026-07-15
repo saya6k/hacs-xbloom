@@ -81,6 +81,7 @@ from .const import (
     SERVICE_DELETE_RECIPE,
     SERVICE_EDIT_RECIPE,
     SERVICE_EXECUTE_RECIPE,
+    SERVICE_EXECUTE_TEA_RECIPE,
     SERVICE_LIST_RECIPES,
     SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
 )
@@ -145,6 +146,14 @@ EXECUTE_RECIPE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_BYPASS_TEMPERATURE): vol.All(
             vol.Coerce(float), vol.Range(min=0, max=100)
         ),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+# No dose/ratio/grind/bypass — none apply to the tea BLE sequence.
+EXECUTE_TEA_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_RECIPE): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -311,6 +320,48 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_EXECUTE_RECIPE,
         _handle_execute_recipe,
         schema=EXECUTE_RECIPE_SCHEMA,
+    )
+
+    async def _handle_execute_tea_recipe(call: ServiceCall) -> None:
+        """Leaner sibling of execute_recipe for tea — see brewing.py's
+        _async_brew_tea, which takes no dose/ratio/grind/bypass overrides."""
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        for coord in coordinators:
+            identifier = call.data.get(ATTR_RECIPE)
+            if identifier:
+                resolved = find_recipe(coord.recipes or {}, identifier)
+                name = resolved[0] if resolved else None
+            else:
+                name = coord.selected_recipe
+            if not name or name not in (coord.recipes or {}):
+                _LOGGER.warning(
+                    "execute_tea_recipe: recipe %r not found for %s",
+                    identifier or name, coord.mac_address,
+                )
+                continue
+            recipe = coord.recipes[name]
+            if str(recipe.get("cup_type", "")).strip().lower() != "tea":
+                _LOGGER.warning(
+                    "execute_tea_recipe: %r is not a tea recipe (cup_type=%r) — "
+                    "use execute_recipe instead. Skipped for %s.",
+                    name, recipe.get("cup_type"), coord.mac_address,
+                )
+                continue
+            coord.select_recipe(name)
+            try:
+                await coord.async_execute_recipe()
+            except HomeAssistantError as exc:
+                _LOGGER.warning(
+                    "execute_tea_recipe skipped for %s: %s", coord.mac_address, exc,
+                )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXECUTE_TEA_RECIPE,
+        _handle_execute_tea_recipe,
+        schema=EXECUTE_TEA_RECIPE_SCHEMA,
     )
 
     async def _handle_cloud_import_recipe(call: ServiceCall) -> ServiceResponse:
@@ -820,6 +871,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not remaining:
             for service in (
                 SERVICE_EXECUTE_RECIPE,
+                SERVICE_EXECUTE_TEA_RECIPE,
                 SERVICE_LIST_RECIPES,
                 SERVICE_CREATE_RECIPE,
                 SERVICE_EDIT_RECIPE,

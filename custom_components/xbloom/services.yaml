@@ -121,6 +121,37 @@ execute_recipe:
           unit_of_measurement: "°C"
           mode: slider
 
+execute_tea_recipe:
+  name: Execute tea recipe
+  description: >-
+    Run a saved XBloom tea recipe. Tea uses a different BLE sequence than
+    coffee and takes no dose/ratio/grind/bypass overrides — use
+    execute_recipe for coffee recipes instead.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine(s) to brew on. Defaults to all configured machines.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    recipe:
+      name: Recipe
+      description: >-
+        Which tea recipe to run. Pick from the dropdown, or type a cloud
+        table id / share URL / share id if it isn't local yet. Defaults
+        to the currently selected recipe if omitted.
+      required: false
+      example: 히비스커스 베리
+      selector:
+        select:
+          options: []
+          custom_value: true
+          mode: dropdown
+
 write_recipe_to_easy_slot:
   name: Write recipe to Easy Mode slot
   description: >-
