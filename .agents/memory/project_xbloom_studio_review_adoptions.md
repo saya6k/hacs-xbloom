@@ -79,11 +79,95 @@ against):**
   the A/B/C batch immediately unsticks it (0x43→0x25→idle, with an 0xf8
   notification in between). PRO mode is required first. Both now handled in
   `coordinator.async_write_easy_slot` (see `c56e886`).
-- Still untested/unverified: cmd 8104 semantics (cup-weight-bounds vs
-  preheat-stage-temps — genuine unresolved conflict, not tested since it needs a
-  live brew to observe), cmd 40518 (pause vs start — **never tested, physically
-  risky**, would need explicit fresh confirmation), no-grind 0xFE's actual effect
-  on stored slot memory.
+- **cmd 8104 and cmd 40518, real-brew round (2026-07-15, round 3, water only —
+  no beans loaded, user supervised at the machine)**: `xbloom_probe10.py` ran
+  two FULL real brews (opcode 8004 no-grind, dose=15/bean_weight=15 purely for
+  ratio math — no physical beans involved, 60 ml water each) through to
+  natural completion (armed → commit(8002) → brewing(sub) 0x23 → **ready**
+  0x24, ~33 s each), varying only the 8104 payload: `(95.0, 85.0)`
+  (temp-plausible) vs `(3.0, 0.0)` (weight-plausible/temp-absurd, while still
+  pouring 60 ml ≫ any 3-unit bound).
+  - **Result: no observable difference whatsoever** — identical timing,
+    identical status transitions, no refusals, and **zero
+    `RD_BREWER_TEMPERATURE`(8108) notifications in either run** despite a
+    complete brew cycle. For this specific recipe shape (no-grind,
+    bypass-off), 8104's value isn't load-bearing in any way visible over
+    BLE — doesn't resolve the abstract "weight vs temp" question, but does
+    mean our shipped `_COFFEE_CUP_BOUNDS_NO_GRIND` values are practically
+    safe regardless of which interpretation is correct, at least for this
+    recipe type. Grind-path / bypass-enabled recipes (which would need real
+    beans) remain untested.
+  - **cmd 40518 ("start" per Janczykkkko vs `CMD_BREW_PAUSE` per brAzzi64)
+    still unresolved** — on this firmware, commit (8002) alone made the
+    machine proceed straight to brewing both times; it never stalled at
+    `awaiting_confirm` (0x1e), so per Janczykkkko's own safety rule (never
+    send 40518 into an already-acting brew) the probe correctly never sent
+    it. Confirms 40518 isn't *required* for normal brews on this unit;
+    what it actually does remains untested — deliberately, since forcing an
+    artificial stall just to test it would defeat the safety rule that
+    makes the test meaningful.
+  - **ROOT-CAUSED, 2026-07-15 round 4 (`xbloom_probe11.py`/`xbloom_probe12.py`,
+    load-only, fresh-connect isolated single-variable tests)**: cmd
+    `8102`'s **dose byte being `0` is independently sufficient to block the
+    no-grind (8004) recipe from ever arming — silently, no refusal
+    notification at all** — regardless of the 8004 footer's ratio byte.
+    Three clean fresh-connection tests, `total_water=150`/`rpm=100`/
+    `cup=(80.0,0.0)` held fixed throughout:
+    - `dose=15, bean_weight=15` (footer ratio naturally `0x64`) → **armed
+      OK**. (Sanity re-check of probe10's baseline — still holds.)
+    - `dose=0, bean_weight=0` (footer ratio naturally `0x00`) → **no arm
+      status, ever** (10s timeout, clean connection, reproducible).
+    - `dose=0, bean_weight=15` (footer ratio forced/naturally `0x64`,
+      i.e. **the real shape `brewing.py` sends today for any no-grind
+      coffee recipe that has a real weighed dose**) → **also no arm
+      status.** This isolates the cause to the 8102 dose byte alone, not
+      the footer.
+    - **This is a live production bug**, not a hypothetical: `brewing.py`
+      line ~269 is `dose = int(recipe.bean_weight) if grinding else 0` —
+      `grinding` is `False` whenever `grind_size == 0` (the intentional
+      "pre-ground coffee, don't run the grinder" feature, distinct from
+      the opcode 8001-vs-8004 selection which is correct and unrelated).
+      So **every no-grind coffee recipe currently zeroes its own dose
+      before sending it to 8102**, which (per this test) means the
+      machine never arms it — `execute_recipe` for any no-grind recipe
+      would hang waiting for a status that never comes. The vendored
+      upstream's own `brew_without_grinding` (`src/xbloom/core/client.py:496`)
+      has the identical `dose=0` pattern, so this is likely also latent
+      there, not something `brewing.py` introduced.
+    - **Fixed and hardware-verified, same session**: `brewing.py`'s `dose`
+      now follows `recipe.bean_weight > 0` unconditionally (`grinding`
+      still gates opcode 8001-vs-8004 and the cup-bounds table, just no
+      longer the dose value). Re-ran the exact previously-broken shape
+      (`grind_size=0, bean_weight=15`) through the **real**
+      `brewing._async_brew_coffee()` (not a reimplementation — only
+      `execute_coffee_recipe` was intercepted to keep it load-only) —
+      **armed OK**. `pytest tests/` still 66 passed/3 skipped.
+      `dose` should follow `recipe.bean_weight` whenever it's `>0`,
+      independent of `grinding` — `grinding` should only gate opcode
+      selection (8001 vs 8004) and the cup-bounds table, not the 8102
+      dose value. A true water-only recipe (`bean_weight == 0` for a
+      *coffee*-path recipe, not tea) is a separate, narrower open
+      question: this test also showed `dose=0/bean_weight=0` fails to
+      arm, and there's no real dose to substitute in that case — but
+      `schema.py`'s `dose_g` defaults to `15.0` for coffee recipes (only
+      reachable at `0` via explicit user override, and tea already uses a
+      wholly separate 4513/4512 path that never touches 8102/8004), so
+      this edge case may not be practically reachable today.
+- **No-grind footer byte (0xFE vs 0x00), resolved 2026-07-15 (round 2)**: cross-
+  referenced `Janczykkkko/xbloom-ble`'s `NO_GRIND_WIRE=0xFE` sentinel (their
+  claim: sending literal `0` "grinds at the finest setting") against our
+  shipped `_build_coffee_recipe_payload`, which always writes
+  `grind_size & 0xFF` (`0x00` when `grind_size=0`) and never emits `0xFE`.
+  Direct load-only hardware test (`xbloom_probe7.py`): armed the identical
+  no-grind (opcode 8004) recipe once with footer byte `0xFE`, once with
+  `0x00` — **byte-for-byte identical notification streams both times**
+  (same arm sequence, same `RD_MachineInfo` grind field, no errors). At the
+  arm stage the footer grind byte has no observable effect once opcode 8004
+  already tells the firmware "no grinding" — **our shipped `0x00` behavior is
+  safe as-is; no code change needed.** (What happens if the brew is actually
+  *committed*, i.e. whether footer `0x00` would grind on execute the way
+  Janczykkkko warns, is still untested — would need a real brew, out of
+  scope for a load-only check.)
 - Still needs devcontainer/UI-level check (not done via raw BLE): (a) the
   Bluetooth discovery card actually renders in Settings → Devices & Services,
   (b) the 4-device split renders as expected there, (c) `execute_tea_recipe`
