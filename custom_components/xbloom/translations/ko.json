@@ -1,4 +1,15 @@
 {
+  "device": {
+    "grinder": {
+      "name": "그라인더"
+    },
+    "scale": {
+      "name": "저울"
+    },
+    "brewer": {
+      "name": "추출기"
+    }
+  },
   "config": {
     "step": {
       "bluetooth_confirm": {

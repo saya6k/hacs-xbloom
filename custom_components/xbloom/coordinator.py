@@ -151,7 +151,7 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_STATE: Dict[str, Any] = {
     "connected": False,
     "weight": 0.0,
-    "temperature": 0.0,
+    "temperature": None,
     "state": "unknown",
     "grinder_running": False,
     "brewer_running": False,
@@ -390,7 +390,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
-                    "temperature": round(s.brewer.temperature, 1),
+                    # None (not 0.0) when no real reading has ever arrived --
+                    # RD_BREWER_TEMPERATURE (8108) rarely fires on some units
+                    # (hardware-confirmed 2026-07-15: zero signal across 4
+                    # separate brews on one unit), and 0.0C is never a real
+                    # brewer reading, so treating it as "unknown" is safe and
+                    # avoids showing a misleading temperature.
+                    "temperature": round(s.brewer.temperature, 1) if s.brewer.temperature else None,
                     "state": state_str,
                     "grinder_running": s.grinder.is_running,
                     "brewer_running": s.brewer.is_running,
@@ -1992,7 +1998,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             info["sw_version"] = version
         return info
 
-    def _sub_device_info(self, key: str, name: str) -> DeviceInfo:
+    def _sub_device_info(self, key: str) -> DeviceInfo:
         """Child DeviceInfo for a physical sub-component (grinder/scale/brewer).
 
         Same config entry, separate device-registry entry — nested under
@@ -2000,25 +2006,32 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         component's entities instead of everything at once. unique_ids
         are untouched, so this is a pure device-registry regrouping: no
         entity_id changes, no automation/dashboard breakage.
+
+        ``translation_key`` (not a literal ``name``) + the top-level
+        ``device.<key>.name`` block in strings.json/translations — a
+        literal ``name`` would ship English-only device names regardless
+        of the user's HA UI language (confirmed live 2026-07-15: showed
+        untranslated "Grinder"/"Scale"/"Brewer" on a Korean-language
+        instance).
         """
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self.entry_id}_{key}")},
-            name=name,
+            translation_key=key,
             manufacturer="XBloom",
             via_device=(DOMAIN, self.entry_id),
         )
 
     @property
     def grinder_device_info(self) -> DeviceInfo:
-        return self._sub_device_info("grinder", "Grinder")
+        return self._sub_device_info("grinder")
 
     @property
     def scale_device_info(self) -> DeviceInfo:
-        return self._sub_device_info("scale", "Scale")
+        return self._sub_device_info("scale")
 
     @property
     def brewer_device_info(self) -> DeviceInfo:
-        return self._sub_device_info("brewer", "Brewer")
+        return self._sub_device_info("brewer")
 
     @property
     def recipe_names(self) -> list[str]:
