@@ -224,7 +224,7 @@
         "name": "Grind Speed (Live)"
       },
       "voltage_raw": {
-        "name": "Voltage (Raw)"
+        "name": "Voltage"
       }
     },
     "select": {
