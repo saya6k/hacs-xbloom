@@ -1,4 +1,15 @@
 {
+  "device": {
+    "grinder": {
+      "name": "Grinder"
+    },
+    "scale": {
+      "name": "Scale"
+    },
+    "brewer": {
+      "name": "Brewer"
+    }
+  },
   "config": {
     "step": {
       "bluetooth_confirm": {
