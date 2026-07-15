@@ -197,11 +197,54 @@ and `170abf7` (no_beans/water_shortage/ready states):
   entry) for the ready/idle codes, with a safety-net clear if a new brew
   starts before a true-idle frame ever arrives.
 - Deliberately did NOT add a distinct "starting" state (0x22, the ~20s
-  silent-grinding window) — `RD_GRINDER_BEGIN` already sets `grinding`
-  promptly via the existing cmd-tagged path, so the raw frame's silence
-  during that window isn't a gap for us the way it is for a raw-status-only
-  consumer.
-- Not yet verified against a real completed brew (only load-only/idle
-  connectivity checks so far) — the `ready` transition specifically still
-  needs an end-to-end brew to confirm `sensor.state` actually shows
-  `ready` during the beep-to-cup-lift window.
+  silent-grinding window), reasoning that `RD_GRINDER_BEGIN` already sets
+  `grinding` promptly via the existing cmd-tagged path — **this was an
+  untested assumption, corrected below (round 6)**: no grind-path brew had
+  actually been run this session (no beans loaded) when that claim was
+  written, so whether `RD_GRINDER_BEGIN`'s timing actually covers the same
+  window was never verified. Still not resolved either way — round 6 below
+  didn't reach real grinding (aborted at the "starting" transition), so
+  `RD_GRINDER_BEGIN` vs raw-status timing remains genuinely open.
+
+**Round 6, same session (2026-07-15): end-to-end verification of the two
+new states, real `brewing._async_brew_coffee()` (`xbloom_probe15.py`).**
+- **`ready`: confirmed working end-to-end.** A real no-grind 50 ml water
+  brew completed naturally (`brewing_started` → `bloom` → `pour_complete`
+  → `recipe_complete` → raw status `0x24`), and
+  `client.status._brew_ready` flipped `True` within the same second raw
+  status showed `0x24`, then stayed `True` through an extra 10 s wait (no
+  physical cup was ever removed, consistent with "stays ready until the
+  cup is lifted"). The `coordinator.py` derivation itself
+  (`elif getattr(s, "_brew_ready", False): state_str = "ready"`) is
+  simple enough that this confirms the sensor value end-to-end without
+  needing a full HA runtime.
+- **`no_beans`: did NOT trigger as documented — a real behavior gap from
+  what Janczykkkko/AGENTS.md's state table claims.** Armed a real
+  grind-path recipe (`grind_size=50, bean_weight=15`, opcode 8001) with
+  no beans physically loaded, expecting the machine to refuse/wait at
+  status `0x0F` ("machine WAITS here" per the documented state table).
+  Instead it proceeded `armed → awaiting_confirm → starting (0x22)` —
+  the probe's safety check caught this (any of 0x22/0x10/0x23/0x3B is
+  treated as "unexpectedly grinding/brewing, abort") and immediately sent
+  `stop_recipe()`; the machine responded with a `grinding_complete` event
+  and returned cleanly to `0x41 (complete)`. **Neither the `0x0F` status
+  nor a `no_beans` event ever fired** before the abort.
+  - **Side effect**: the post-test health check showed
+    `RD_MachineInfo`'s live grind-size telemetry changed from the
+    session's consistent baseline (`grind_raw=87`, UI 57) to `grind_raw=80`
+    (UI 50) — exactly matching the aborted test recipe's `grind_size=50`.
+    Most likely explanation: "starting" briefly engaged a motorized
+    grind-*size* adjustment (repositioning the burr gap to match the
+    recipe) before any actual bean-grinding attempt, and the probe's
+    abort caught it before it got further — but this is inference, not
+    confirmed. Net effect either way: **the machine's stored/live grind
+    setting was changed by this test** (user was told to check/reset the
+    physical dial if they care about the prior 57 setting).
+  - Implication: the `no_beans` sensor.state value (added round 5) is
+    real, correctly wired to `RD_ErrorIdling`, but **this specific test
+    couldn't confirm it actually fires on this firmware/condition** — the
+    machine may check for beans later (mid-grind, not pre-arm) or via a
+    different signal than assumed. Further grind-path-without-beans
+    testing was deliberately not repeated given this result — the
+    "no_beans = safe wait" assumption that justified trying it turned out
+    to not hold.
