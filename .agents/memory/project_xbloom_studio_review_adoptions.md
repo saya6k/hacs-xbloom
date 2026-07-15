@@ -172,3 +172,36 @@ against):**
   Bluetooth discovery card actually renders in Settings → Devices & Services,
   (b) the 4-device split renders as expected there, (c) `execute_tea_recipe`
   brews tea end-to-end.
+
+**Round 5, same session (2026-07-15): adopted the two informational items
+from the `Janczykkkko/xbloom-ble` cross-reference** (richer status-byte
+table, `0xc1` notification marker) — committed as `203f973` (0xc1 marker)
+and `170abf7` (no_beans/water_shortage/ready states):
+- `0xc1` marker byte: `_client.py`'s `_split_and_parse` now also requires
+  the constant marker byte at offset+9 (confirmed `0xc1` on every captured
+  `RD_MachineInfo` frame this session) alongside the existing
+  `_MAX_PACKET_LEN` bound, as a second independent false-positive-header
+  filter. Verified live — `RD_MachineInfo`/grinder/voltage telemetry still
+  decode correctly with the check in place.
+- `no_beans`/`water_shortage`/`ready` added to `sensor.state`'s
+  `_attr_options`: the first two reuse `RD_ErrorIdling`/
+  `RD_ErrorLackOfWater`, which already fired as events but never reached
+  `sensor.state` — same tracking pattern as the pre-existing
+  `_water_shortage` flag. `ready` (brew done/beeped, cup still on the
+  scale) needed new raw-frame parsing since nothing in the existing
+  cmd-tagged notifications distinguishes it from `RD_Brewer_Stop`'s
+  immediate `IDLE` (which fires the instant pouring physically stops, not
+  when the cup is lifted) — `_client.py._scan_for_status_frame` reads the
+  raw status-heartbeat frame directly (same frame family Janczykkkko
+  documents; never reaches `_handle_response`, no `XBloomResponse` enum
+  entry) for the ready/idle codes, with a safety-net clear if a new brew
+  starts before a true-idle frame ever arrives.
+- Deliberately did NOT add a distinct "starting" state (0x22, the ~20s
+  silent-grinding window) — `RD_GRINDER_BEGIN` already sets `grinding`
+  promptly via the existing cmd-tagged path, so the raw frame's silence
+  during that window isn't a gap for us the way it is for a raw-status-only
+  consumer.
+- Not yet verified against a real completed brew (only load-only/idle
+  connectivity checks so far) — the `ready` transition specifically still
+  needs an end-to-end brew to confirm `sensor.state` actually shows
+  `ready` during the beep-to-cup-lift window.
