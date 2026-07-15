@@ -266,7 +266,16 @@ async def _async_brew_coffee(
         raise ConnectionError("XBloom not connected")
 
     grinding = recipe.grind_size > 0 and recipe.bean_weight > 0
-    dose = int(recipe.bean_weight) if grinding else 0
+    # dose (sent via 8102) must track the recipe's actual weighed dose
+    # regardless of whether the grinder runs -- `grinding` only decides the
+    # opcode (8001 vs 8004) and cup-bounds table below. Hardware-confirmed
+    # 2026-07-15: sending dose=0 to 8102 (the old `if grinding else 0`
+    # behavior) makes the machine silently never arm the 8004 (no-grind)
+    # recipe -- no refusal notification, just permanent silence -- even
+    # when the 8004 payload's own footer ratio byte is healthy. This broke
+    # every no-grind ("pre-ground coffee") recipe, the entire point of the
+    # grind_size=0 feature.
+    dose = int(recipe.bean_weight) if recipe.bean_weight > 0 else 0
 
     _LOGGER.info(
         "Coffee brew start: %s (grind=%s, dose=%dg, bypass=%.0fml@%.0f°C)",
