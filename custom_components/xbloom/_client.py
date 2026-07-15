@@ -61,6 +61,25 @@ _MACHINE_INFO_MODE_OFFSET = 51
 _MACHINE_INFO_MODE_LEN = 4
 _MACHINE_INFO_MODE_EASY_HEX = "91327856"
 
+# Two more MachineInfo payload fields the vendored parser leaves unread —
+# not in PROTOCOL.md, cross-referenced against a third-party HA integration
+# (Alshekhi/xbloom-studio) that independently captured them on firmware
+# V12.0D.500. Unverified against our own hardware, but the -30 grind-size
+# offset matches the live RD_GRINDER_SIZE decode below exactly, so the two
+# readings are treated as the same underlying value from two channels
+# (a periodic snapshot here, a live push there).
+_MACHINE_INFO_GRIND_SIZE_OFFSET = 37
+_MACHINE_INFO_VOLTAGE_OFFSET = 39
+
+# Live knob-turn notifications (RD_GRINDER_SIZE/SPEED/BREWER_MODE) — payload
+# is a little-endian uint32 at offset 0, same layout as RD_WATER_VOLUME etc.
+# Same provenance caveat as above; the RPM range and pattern ints happen to
+# match this integration's own XBloomRPMNumber bounds (60-120) and
+# POUR_PATTERN_OPTIONS (0=center/1=circular/2=spiral), which is the
+# corroboration for shipping them.
+_GRIND_SIZE_RAW_OFFSET = 30  # UI value = max(1, raw - 30)
+_VALID_POUR_PATTERNS = (0, 1, 2)  # matches coordinator.POUR_PATTERN_OPTIONS values
+
 EventCallback = Callable[[str, str, dict], None]
 
 # 8100 — MTU handshake. Cherry-picked from
@@ -292,6 +311,14 @@ class XBloomClientWithEvents(XBloomClient):
             # Cache the raw payload so _machine_mode() can extract the
             # mode bytes at offset 51–54.
             self._status._mode_bytes = payload
+            # Grind size at connect time (see _MACHINE_INFO_GRIND_SIZE_OFFSET
+            # comment) — RD_GRINDER_SIZE below keeps it fresh after this.
+            if len(payload) > _MACHINE_INFO_GRIND_SIZE_OFFSET:
+                self._status.grinder.size = max(
+                    payload[_MACHINE_INFO_GRIND_SIZE_OFFSET] - _GRIND_SIZE_RAW_OFFSET, 1
+                )
+            if len(payload) > _MACHINE_INFO_VOLTAGE_OFFSET:
+                self._status.voltage = payload[_MACHINE_INFO_VOLTAGE_OFFSET]
             _LOGGER.info(
                 "RD_MachineInfo parsed: serial=%r version=%r water_ok=%s mode=%s",
                 self._status.serial_number,
@@ -299,6 +326,28 @@ class XBloomClientWithEvents(XBloomClient):
                 self._status.water_level_ok,
                 self._machine_mode(),
             )
+        elif response == XBloomResponse.RD_GRINDER_SIZE:
+            # Live grinder-knob turn. Same -30/max(1,) mapping as the
+            # MachineInfo byte above — see the offset comment for
+            # provenance/confidence notes.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                self._status.grinder.size = max(raw - _GRIND_SIZE_RAW_OFFSET, 1)
+        elif response == XBloomResponse.RD_GRINDER_SPEED:
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                self._status.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+        elif response == XBloomResponse.RD_BREWER_MODE:
+            # Live pour-pattern knob turn. Stored as the same raw int
+            # coordinator.POUR_PATTERN_OPTIONS uses (0=center/1=circular/
+            # 2=spiral) so the coordinator can drop it straight into
+            # self.pour_pattern.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                if raw in _VALID_POUR_PATTERNS:
+                    self._status.pour_pattern_live = raw
         if response == XBloomResponse.RD_EASYMODE_TYPE:
             # ACK for a mode-switch command (cmd 11511) — the machine
             # echoes the newly-applied mode code back as its payload
@@ -310,7 +359,17 @@ class XBloomClientWithEvents(XBloomClient):
                 self._status._mode_ack_hex = payload[:4].hex()
                 _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
         if response in _NOTIFICATION_MAP:
-            self._fire_event("notification", _NOTIFICATION_MAP[response])
+            attrs: dict = {}
+            if response == XBloomResponse.RD_BLOOM:
+                # Pour-boundary notification — payload is a little-endian
+                # uint32 pour index (0-based), same layout/offset as the
+                # knob notifications above. Lets the coordinator look up
+                # which recipe pour just started (see coordinator.py's
+                # "bloom" handling) instead of only knowing "a pour began".
+                payload = data[10:-2] if len(data) > 12 else b""
+                if len(payload) >= 4:
+                    attrs["pour_index"] = struct.unpack_from("<I", payload, 0)[0]
+            self._fire_event("notification", _NOTIFICATION_MAP[response], attrs)
         elif response in _ERROR_MAP:
             self._fire_event("error", _ERROR_MAP[response])
 

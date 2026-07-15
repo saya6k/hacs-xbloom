@@ -160,9 +160,6 @@
       },
       "volume": {
         "name": "추출량"
-      },
-      "flow_rate": {
-        "name": "유량"
       }
     },
     "sensor": {
@@ -184,6 +181,9 @@
       "brewer_temperature": {
         "name": "추출 온도"
       },
+      "flow_rate": {
+        "name": "유량"
+      },
       "last_error": {
         "name": "마지막 오류"
       },
@@ -201,6 +201,15 @@
       },
       "easy_slot_c": {
         "name": "이지 슬롯 C"
+      },
+      "live_grind_size": {
+        "name": "분쇄도 (실시간)"
+      },
+      "live_grind_speed": {
+        "name": "그라인더 RPM (실시간)"
+      },
+      "voltage_raw": {
+        "name": "전압 (원시값)"
       }
     },
     "select": {

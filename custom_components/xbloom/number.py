@@ -21,7 +21,6 @@ async def async_setup_entry(
             XBloomRPMNumber(coordinator, entry),
             XBloomTemperatureNumber(coordinator, entry),
             XBloomVolumeNumber(coordinator, entry),
-            XBloomFlowRateNumber(coordinator, entry),
         ]
     )
 
@@ -46,6 +45,10 @@ class XBloomGrindSizeNumber(_XBloomNumber):
     _attr_native_step = 1
 
     @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
+    @property
     def native_value(self) -> float:
         return float(self.coordinator.grind_size)
 
@@ -62,6 +65,10 @@ class XBloomRPMNumber(_XBloomNumber):
     _attr_native_step = 10
 
     @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
+    @property
     def native_value(self) -> float:
         return float(self.coordinator.rpm)
 
@@ -71,12 +78,24 @@ class XBloomRPMNumber(_XBloomNumber):
 
 
 class XBloomTemperatureNumber(_XBloomNumber):
+    """Manual-pour temperature setpoint.
+
+    Tracks the physical pour-temperature knob in real time: any RD_
+    BREWER_TEMPERATURE (8108) notification — fired on a knob turn — is
+    mirrored onto this value by coordinator._async_update_data. Dragging
+    the slider in HA overrides it until the next knob turn.
+    """
+
     _attr_translation_key = "temperature"
     _attr_unique_id = "xbloom_temperature"
     _attr_native_min_value = 40
     _attr_native_max_value = 100
     _attr_native_step = 1
     _attr_native_unit_of_measurement = "°C"
+
+    @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
 
     @property
     def native_value(self) -> float:
@@ -96,26 +115,13 @@ class XBloomVolumeNumber(_XBloomNumber):
     _attr_native_unit_of_measurement = "mL"
 
     @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
+
+    @property
     def native_value(self) -> float:
         return float(self.coordinator.volume)
 
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.volume = int(value)
-        self.async_write_ha_state()
-
-
-class XBloomFlowRateNumber(_XBloomNumber):
-    _attr_translation_key = "flow_rate"
-    _attr_unique_id = "xbloom_flow_rate"
-    _attr_native_min_value = 3.0
-    _attr_native_max_value = 3.5
-    _attr_native_step = 0.1
-    _attr_native_unit_of_measurement = "mL/s"
-
-    @property
-    def native_value(self) -> float:
-        return float(self.coordinator.flow_rate)
-
-    async def async_set_native_value(self, value: float) -> None:
-        self.coordinator.flow_rate = round(float(value), 1)
         self.async_write_ha_state()
