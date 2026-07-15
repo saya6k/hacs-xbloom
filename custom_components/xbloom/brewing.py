@@ -388,42 +388,57 @@ async def async_tare(client) -> None:
     await client._send_command(_CMD_TARE)
 
 
-async def async_write_easy_slot(
+async def async_write_easy_slots(
     client,
-    slot_letter: str,
-    recipe: XBloomRecipe,
+    slot_recipes: dict,
     *,
     scale_on: bool = True,
 ) -> None:
-    """Write a recipe to Easy Mode slot A/B/C (cmd 11510, type-2).
+    """Write all three Easy Mode slots A/B/C in one batch (cmd 11510, type-2).
 
-    Mirrors ``send_command.py slot`` plus
-    ``build_slot_packet`` / ``slot_flags`` in src/xbloom-ble. The
-    ``grinder_on`` flag is derived from the recipe (any positive
-    grind_size + bean_weight implies the slot should grind).
+    ``slot_recipes`` must have all three keys — ``{"A": XBloomRecipe, "B":
+    XBloomRecipe, "C": XBloomRecipe}``.
 
-    Payload layout (after the header / type / cmd / len / 0x01 prefix
-    that build_command_raw applies): ``[slot_index][flags][recipe_hex]``.
+    Live-verified on real hardware (2026-07-15, cross-referenced against
+    Janczykkkko/xbloom-ble's independent HCI capture): the machine only
+    *persists* an Easy Mode slot batch when all three are written
+    back-to-back in one session. Writing a single slot gets ACKed but
+    leaves the machine hung at status ``0x43`` (saving) showing RETRY —
+    it never reaches ``0x25`` (saved) / idle. Completing the other two
+    slots immediately unsticks it (an ``0xf8`` notification, then
+    ``0x43`` → ``0x25`` → idle). There is no way to read a slot's current
+    contents back from the machine, so callers must always supply all
+    three — coordinator.async_write_easy_slot fills in the two the caller
+    didn't ask to change from its own local record of what HA last wrote.
+
+    Mirrors ``send_command.py slot`` plus ``build_slot_packet`` /
+    ``slot_flags`` in src/xbloom-ble. The ``grinder_on`` flag is derived
+    per-recipe (any positive grind_size + bean_weight implies the slot
+    should grind).
+
+    Payload layout per slot (after the header / type / cmd / len / 0x01
+    prefix that build_command_raw applies): ``[slot_index][flags][recipe_hex]``.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
-    letter = slot_letter.strip().upper()
-    if letter not in _SLOT_INDEX_BY_LETTER:
-        raise ValueError(f"slot must be A, B, or C — got {slot_letter!r}")
-    slot_index = _SLOT_INDEX_BY_LETTER[letter]
+    missing = [letter for letter in _SLOT_INDEX_BY_LETTER if letter not in slot_recipes]
+    if missing:
+        raise ValueError(f"slot_recipes missing entries for: {missing}")
 
-    grinder_on = recipe.grind_size > 0 and recipe.bean_weight > 0
-    flags = slot_flags(scale_on, grinder_on)
+    for letter, slot_index in _SLOT_INDEX_BY_LETTER.items():
+        recipe = slot_recipes[letter]
+        grinder_on = recipe.grind_size > 0 and recipe.bean_weight > 0
+        flags = slot_flags(scale_on, grinder_on)
+        recipe_blob = _build_coffee_recipe_payload(recipe)
+        payload = bytes([slot_index, flags]) + recipe_blob
 
-    recipe_blob = _build_coffee_recipe_payload(recipe)
-    payload = bytes([slot_index, flags]) + recipe_blob
-
-    _LOGGER.info(
-        "Easy slot write: %s ← %s (grinder=%s scale=%s, %d-byte recipe)",
-        letter, recipe.name, grinder_on, scale_on, len(recipe_blob),
-    )
-    # Type-2 packet: brAzzi64 build_packet_type2(11510, hex_data). Our
-    # vendored build_command_raw produces the same bytes when type_code=2.
-    await client._send_command_raw(
-        _CMD_EASY_RECIPE_SEND, payload, type_code=2,
-    )
+        _LOGGER.info(
+            "Easy slot write: %s ← %s (grinder=%s scale=%s, %d-byte recipe)",
+            letter, recipe.name, grinder_on, scale_on, len(recipe_blob),
+        )
+        # Type-2 packet: brAzzi64 build_packet_type2(11510, hex_data). Our
+        # vendored build_command_raw produces the same bytes when type_code=2.
+        await client._send_command_raw(
+            _CMD_EASY_RECIPE_SEND, payload, type_code=2,
+        )
+        await asyncio.sleep(0.3)
