@@ -577,7 +577,9 @@ class XBloomCloudClient:
             "unmatched": unmatched,
         }
 
-    async def fetch_official_recipes(self, limit: int = 20) -> list[dict] | None:
+    async def fetch_official_recipes(
+        self, limit: int = 20, cup_type: list[str] | None = None
+    ) -> list[dict] | None:
         """Fetch the top ``limit`` official recipes (by likes) from the
         public collective hub, each translated to a full
         ``RECIPE_SCHEMA``-shaped dict.
@@ -594,7 +596,7 @@ class XBloomCloudClient:
         """
         search = await self.search_collective_recipes(
             src="official", sort="likes", sort_direction="desc",
-            page_size=max(1, limit),
+            page_size=max(1, limit), cup_type=cup_type,
         )
         if search is None:
             return None
