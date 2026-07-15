@@ -1,6 +1,6 @@
 ---
 name: xbloom-studio-review-adoptions
-description: "In-flight, uncommitted work adopting ideas from reviewing Alshekhi/xbloom-studio — what changed, why, and what still needs real-hardware verification"
+description: "Adopted ideas from reviewing Alshekhi/xbloom-studio and Janczykkkko/xbloom-ble, all committed to main — what changed, why, and hardware-verification results across 8 rounds"
 metadata: 
   node_type: memory
   type: project
@@ -312,3 +312,49 @@ grind_size=45, 90°C, spiral, single pour) via the real
   aborted attempt. Final health check: `grind_raw=75` (UI 45), exactly
   matching the recipe's requested `grind_size=45` — confirms the
   grind-size setting genuinely does track the last-loaded recipe.
+
+**Round 8, same session (2026-07-15): implemented the "starting" state
+fix identified in round 7, committed `3e6bb5a`.** Replaced the
+single-purpose `_brew_ready` flag with a generic
+`_raw_state_label`/`_RAW_STATE_LABEL_MAP` (`0x22→starting`,
+`0x10/0x23/0x3B→brewing`, `0x24→ready`) in `_client.py`, recomputed on
+every status frame and self-correcting (any code outside the map clears
+it, so a new brew's first status frame — none of which are in the map —
+naturally resets stale labels, no separate reset hook needed).
+`coordinator.py`'s state priority is now `no_beans → water_shortage →
+raw_label → vendored s.state.value`. `sensor.state`'s `_attr_options`
+gained `starting`; `strings.json`/`en.json`/`ko.json` updated to match.
+
+**Verified live, and validated `no_beans` end-to-end as a side effect**:
+re-ran the same minimal grind recipe (5g/75ml/grind=45) — the machine
+ran low on beans **mid-grind** this time (the user's 5g load was already
+mostly consumed by round 7's successful brew), and `RD_ErrorIdling`
+fired for real (`starting`(7.5s) → `error/no_beans`(11.8s) →
+`grinding_complete`(11.9s) → raw status `0x0f`(12.1s) →
+cleanly recovered). Since `self._no_beans` sits at the top of
+`coordinator`'s state-priority chain, this confirms the `no_beans`
+value added in round 5 (previously unconfirmed — round 6's attempt
+never triggered it) now works end-to-end. `pytest tests/` 66
+passed/3 skipped throughout.
+
+**Status of the original "needs real hardware" tracking list, updated
+after round 8 (all three bean-requiring items are now resolved except
+cmd 8104, which appears to be a dead end via BLE alone):**
+- cmd 40518 (start vs pause) — **resolved** (round 7): confirmed NOT
+  "start" — a real grind-path brew completed naturally without it;
+  sending it early resets the brew back to `armed` instead.
+- "starting" vs "grinding" timing — **resolved and fixed** (rounds 7–8):
+  confirmed `RD_GRINDER_BEGIN` unreliable, real timing measured, code
+  fix shipped and verified.
+- cmd 8104 semantics (temp vs weight) — **still unresolved, likely
+  unresolvable via BLE telemetry on this unit**: `RD_BREWER_TEMPERATURE`
+  has now never fired across 4 separate tests (no-grind load-only,
+  no-grind real brew ×2, real grind+brew). Further progress would need
+  a non-BLE observation method (e.g. an actual thermometer in the cup),
+  not more grind-path attempts.
+- `ready` end-to-end — **resolved** (round 6).
+- `no_beans` end-to-end — **resolved** (round 8, confirmed incidentally
+  when the machine ran genuinely low on beans mid-test).
+- Still not done, no beans needed: Bluetooth-discovery card and
+  4-device-split rendering (need a devcontainer/real HA UI, not raw
+  BLE), and `execute_tea_recipe` end-to-end.
