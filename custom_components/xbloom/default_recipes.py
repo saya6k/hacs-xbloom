@@ -13,113 +13,14 @@ from __future__ import annotations
 
 DEFAULT_RECIPES: list[dict] = [
     # ── Coffee ───────────────────────────────────────────────────────
-    # 옴니2 18g 약배v2 (light roast)
-    # https://share-h5.xbloom.com/?id=KmMzhYCe5itq%2FJcqOLhiag%3D%3D
-    # 1:8 ratio, 144 ml brew + bypass for hot (110 ml) / iced (25 ml)
-    # ratio = 254 / 18 = 14.111111 (dose_g * ratio reproduces total_water)
-    {
-        "name": "약배전 핫",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 18.0,
-        "ratio": 14.111111,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 110.0,
-        "bypass_temperature": 90.0,
-        "pours": [
-            {"volume_ml": 21, "temperature_c": 95, "pause_seconds": 0,  "flow_rate": 3.5, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 21, "temperature_c": 95, "pause_seconds": 14, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 52, "temperature_c": 95, "pause_seconds": 16, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 25, "temperature_c": 95, "pause_seconds": 20, "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 25, "temperature_c": 93, "pause_seconds": 0,  "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
-    {
-        "name": "약배전 아이스",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 18.0,
-        "ratio": 9.388889,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 25.0,
-        "bypass_temperature": 93.0,
-        "pours": [
-            {"volume_ml": 21, "temperature_c": 95, "pause_seconds": 0,  "flow_rate": 3.5, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 21, "temperature_c": 95, "pause_seconds": 14, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 52, "temperature_c": 95, "pause_seconds": 16, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 25, "temperature_c": 95, "pause_seconds": 20, "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 25, "temperature_c": 93, "pause_seconds": 0,  "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
-    # B75 옴니 18g 강배 (dark roast)
-    # https://share-h5.xbloom.com/?id=Ruv07imSC5%2FIJNQ6pYY5mg%3D%3D
-    # 1:8 ratio, 144 ml brew + bypass for hot (110 ml) / iced (25 ml)
-    {
-        "name": "강배전 핫",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 18.0,
-        "ratio": 14.111111,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 110.0,
-        "bypass_temperature": 83.0,
-        "pours": [
-            {"volume_ml": 36, "temperature_c": 88, "pause_seconds": 40, "flow_rate": 3.0, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 72, "temperature_c": 86, "pause_seconds": 32, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 36, "temperature_c": 85, "pause_seconds": 16, "flow_rate": 3.5, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
-    {
-        "name": "강배전 아이스",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 18.0,
-        "ratio": 9.388889,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 25.0,
-        "bypass_temperature": 83.0,
-        "pours": [
-            {"volume_ml": 36, "temperature_c": 88, "pause_seconds": 40, "flow_rate": 3.0, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 72, "temperature_c": 86, "pause_seconds": 32, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 36, "temperature_c": 85, "pause_seconds": 16, "flow_rate": 3.5, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
-    # B75 20g 중약배 워시드 (medium-light washed)
-    # 1:8 ratio, 160 ml brew + bypass for hot (120 ml) / iced (30 ml)
-    {
-        "name": "중약배전 워시드 핫",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 20.0,
-        "ratio": 14.0,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 120.0,
-        "bypass_temperature": 92.0,
-        "pours": [
-            {"volume_ml": 21, "temperature_c": 100, "pause_seconds": 0,  "flow_rate": 3.5, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 21, "temperature_c": 95,  "pause_seconds": 15, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 58, "temperature_c": 95,  "pause_seconds": 15, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 30, "temperature_c": 94,  "pause_seconds": 20, "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 58, "temperature_c": 93,  "pause_seconds": 0,  "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
-    {
-        "name": "중약배전 워시드 아이스",
-        "grind_size": 57,
-        "rpm": 60,
-        "dose_g": 20.0,
-        "ratio": 9.5,
-        "cup_type": "omni_dripper",
-        "bypass_volume": 30.0,
-        "bypass_temperature": 92.0,
-        "pours": [
-            {"volume_ml": 36, "temperature_c": 88, "pause_seconds": 40, "flow_rate": 3.0, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 21, "temperature_c": 95, "pause_seconds": 15, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 58, "temperature_c": 95, "pause_seconds": 15, "flow_rate": 3.5, "pattern": "spiral", "vibration": "after"},
-            {"volume_ml": 30, "temperature_c": 94, "pause_seconds": 20, "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-            {"volume_ml": 58, "temperature_c": 93, "pause_seconds": 0,  "flow_rate": 3.0, "pattern": "spiral", "vibration": "none"},
-        ],
-    },
+    # Intentionally empty. coordinator.async_seed_recipes() backgrounds a
+    # live search for real xBloom Official recipes (cup_type="Omni" only —
+    # see its call site) on first setup instead of shipping a hand-picked,
+    # inevitably-stale static list here. Previously held 6 personal
+    # (non-official) coffee recipes; removed per an explicit "bundled
+    # defaults should be real xBloom Official recipes, kept current via
+    # search rather than hardcoded" requirement (2026-07-16).
+    #
     # ── Tea (cup_type=tea) ───────────────────────────────────────────
     # dose_g=0 (no weighed leaf dose tracked) — ratio is omitted and
     # total water is derived from the sum of pour volumes instead (see

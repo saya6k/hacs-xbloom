@@ -12,6 +12,7 @@ import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service as service_helper
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -1759,8 +1760,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         fetched.append(local)
                     source = "seed_cloud"
         else:
+            # cup_type="Omni" only -- the collective hub's cup-type facet
+            # also has a same-ish-sounding "Omni Tea Brewer" entry (its
+            # actual name on the hub is "Omni Brewer"), which is the tea
+            # accessory (our CupType.TEA), not a coffee cup type. Coffee
+            # brewing never uses that cup type, and tea already has its
+            # own curated defaults in default_recipes.py plus the
+            # dedicated execute_tea_recipe path -- this seed should only
+            # ever contribute coffee recipes.
             official = await self.cloud_client.fetch_official_recipes(
-                limit=_OFFICIAL_RECIPE_SYNC_LIMIT
+                limit=_OFFICIAL_RECIPE_SYNC_LIMIT, cup_type=["Omni"]
             )
             if official is not None:
                 fetched = official
@@ -2013,13 +2022,33 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         of the user's HA UI language (confirmed live 2026-07-15: showed
         untranslated "Grinder"/"Scale"/"Brewer" on a Korean-language
         instance).
+
+        ``via_device`` only nests the device-registry entry under the
+        main device (the "connected via" grouping on its page) — HA does
+        NOT propagate area assignment through it (confirmed live
+        2026-07-16: setting the main device's area left the sub-devices
+        unassigned). ``suggested_area`` fills that gap for first-time
+        creation only: it pre-fills the sub-device's area with whatever
+        the main device is *currently* assigned to, without overriding a
+        later manual change on either device — same one-time-only
+        semantics HA already uses for the initial area suggestion on
+        newly discovered devices.
         """
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, f"{self.entry_id}_{key}")},
             translation_key=key,
             manufacturer="XBloom",
             via_device=(DOMAIN, self.entry_id),
         )
+        if self.hass:
+            main_device = dr.async_get(self.hass).async_get_device(
+                identifiers={(DOMAIN, self.entry_id)}
+            )
+            if main_device and main_device.area_id:
+                area = ar.async_get(self.hass).async_get_area(main_device.area_id)
+                if area:
+                    info["suggested_area"] = area.name
+        return info
 
     @property
     def grinder_device_info(self) -> DeviceInfo:
