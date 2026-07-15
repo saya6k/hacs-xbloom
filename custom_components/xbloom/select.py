@@ -143,6 +143,11 @@ class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
 
     Note: applies only to the manual Pour button (APP_BREWER_START).
     Recipe execution uses each pour's own pattern from the recipe.
+
+    Tracks the physical pattern knob in real time: any RD_BREWER_MODE
+    (8107) notification — fired on a knob turn — is mirrored onto
+    coordinator.pour_pattern by _async_update_data. Changing the select in
+    HA overrides it until the next knob turn.
     """
 
     _attr_translation_key = "pour_pattern"
@@ -155,7 +160,7 @@ class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
 
     @property
     def device_info(self):
-        return self.coordinator.device_info
+        return self.coordinator.brewer_device_info
 
     @property
     def current_option(self) -> str:

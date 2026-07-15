@@ -160,6 +160,9 @@ DEFAULT_STATE: Dict[str, Any] = {
     "serial_number": "",
     "mode": "pro",
     "error": None,
+    "live_grind_size": None,
+    "live_grind_speed": None,
+    "voltage": None,
 }
 
 # Water source integer values used in APP_BREWER_START payload.
@@ -282,6 +285,18 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # execution uses each pour's own pattern from the YAML.
         self.pour_pattern: int = 0
 
+        # Recipe-execution pour tracking, so sensor.xbloom_flow_rate can
+        # report the *current* pour's flow rate instead of a fixed manual
+        # setpoint — recipes vary it per pour (see default_recipes.py).
+        # Populated by async_execute_recipe(); advanced live by each
+        # RD_BLOOM ("bloom") notification's pour_index (see
+        # _client.py/_dispatch_event below). Cleared on recipe completion
+        # or cancel, at which point self.flow_rate reverts to being the
+        # manual-pour setpoint again.
+        self._executing_recipe: bool = False
+        self._active_recipe_pours: Optional[List] = None
+        self.current_pour_index: Optional[int] = None
+
         # Water source for MANUAL POUR only (0=tank, 1=direct).
         # Loaded from entry.options so it survives HA restarts.
         # Recipe execution (APP_RECIPE_EXECUTE) does NOT use this value.
@@ -359,7 +374,31 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     # MachineInfo arrives.
                     "mode": self.client._machine_mode() if s.serial_number else self._mode,
                     "error": None,
+                    # Live readings from the machine's own knobs/heartbeat —
+                    # see _client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
+                    # RD_MachineInfo handling. None until first observed;
+                    # 0 (the dataclass default) is not a real reading.
+                    "live_grind_size": s.grinder.size or None,
+                    "live_grind_speed": s.grinder.speed or None,
+                    "voltage": getattr(s, "voltage", None),
                 }
+                # Mirror the physical temperature/pattern knobs onto the
+                # manual-pour setpoints so number.temperature and
+                # select.*_pour_pattern track knob turns in real time — but
+                # only while idle. The knobs (and the app) are locked out
+                # during an active grind/brew/pause, so any RD_
+                # BREWER_TEMPERATURE (8108) seen in that window is the
+                # machine's own in-progress reading (e.g. heating toward a
+                # recipe's target), not a knob turn — mirroring it would
+                # clobber the user's manual-pour setpoint with brew-transient
+                # noise. Once back to idle, the knob is live again and the
+                # setpoint should track it as normal.
+                if data["state"] == "idle":
+                    if s.brewer.temperature:
+                        self.temperature = round(s.brewer.temperature)
+                    live_pattern = getattr(s, "pour_pattern_live", None)
+                    if live_pattern is not None:
+                        self.pour_pattern = live_pattern
                 # If MachineInfo arrived since last poll, update the device registry
                 # so HA shows the correct serial/firmware version in the device page.
                 self._maybe_update_device_registry(data)
@@ -696,6 +735,33 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
 
+        # ── Track the active pour during recipe execution ──
+        # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a
+        # 0-based pour_index (see _client.py). Only meaningful while a
+        # recipe execute is in flight (async_execute_recipe snapshots
+        # _active_recipe_pours) — a manual pour's single bloom event is
+        # ignored here since there's no recipe pour list to look up.
+        pour_index_changed = False
+        if (
+            category == "notification" and event_type == "bloom"
+            and self._executing_recipe and self._active_recipe_pours
+        ):
+            idx = attributes.get("pour_index")
+            if isinstance(idx, int) and 0 <= idx < len(self._active_recipe_pours):
+                self.current_pour_index = idx
+                self.flow_rate = float(self._active_recipe_pours[idx].flow_rate)
+                pour_index_changed = True
+        elif category == "notification" and event_type in (
+            "pour_complete", "recipe_complete",
+        ):
+            self._executing_recipe = False
+            self._active_recipe_pours = None
+            self.current_pour_index = None
+        if pour_index_changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.hass.async_create_task(self.async_refresh())
+            )
+
         # ── Restore Easy Mode after HA-triggered operations finish ──
         # When we auto-switched to Pro for grind/pour/recipe, switch
         # back once the machine reports a completion event so the
@@ -864,6 +930,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 recipe.rpm = int(self.rpm)
             if pour_overrides:
                 _apply_pour_overrides(recipe, pour_overrides)
+            # Snapshot the final (post-override, post-rescale) pour list so
+            # the "bloom" handler in _dispatch_event can look up each
+            # pour's actual flow_rate as the brew progresses.
+            self._active_recipe_pours = recipe.pours
+            self._executing_recipe = True
+            self.current_pour_index = None
             # Bypass — coffee only. Default to the recipe's YAML value;
             # an explicit override (service / LLM) wins. The tea sequence
             # forces bypass off internally, so tea always passes 0/0.
@@ -885,6 +957,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             )
         except Exception as exc:
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
+            self._executing_recipe = False
+            self._active_recipe_pours = None
 
     async def async_pause_resume(self) -> None:
         """Toggle between pause and resume based on machine state.
@@ -910,6 +984,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Emergency stop all operations."""
         if not self._check_connected():
             return
+        self._executing_recipe = False
+        self._active_recipe_pours = None
+        self.current_pour_index = None
         try:
             await self.client.stop_recipe()
             await asyncio.sleep(0.3)
@@ -1879,6 +1956,34 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if version:
             info["sw_version"] = version
         return info
+
+    def _sub_device_info(self, key: str, name: str) -> DeviceInfo:
+        """Child DeviceInfo for a physical sub-component (grinder/scale/brewer).
+
+        Same config entry, separate device-registry entry — nested under
+        the main device via ``via_device`` so its page only shows that
+        component's entities instead of everything at once. unique_ids
+        are untouched, so this is a pure device-registry regrouping: no
+        entity_id changes, no automation/dashboard breakage.
+        """
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self.entry_id}_{key}")},
+            name=name,
+            manufacturer="XBloom",
+            via_device=(DOMAIN, self.entry_id),
+        )
+
+    @property
+    def grinder_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("grinder", "Grinder")
+
+    @property
+    def scale_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("scale", "Scale")
+
+    @property
+    def brewer_device_info(self) -> DeviceInfo:
+        return self._sub_device_info("brewer", "Brewer")
 
     @property
     def recipe_names(self) -> list[str]:

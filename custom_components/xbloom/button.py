@@ -50,6 +50,10 @@ class XBloomGrindButton(_XBloomButton):
     _attr_translation_key = "grind"
     _attr_unique_id = "xbloom_grind"
 
+    @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
     async def async_press(self) -> None:
         await self.coordinator.async_grind()
 
@@ -57,6 +61,10 @@ class XBloomGrindButton(_XBloomButton):
 class XBloomPourButton(_XBloomButton):
     _attr_translation_key = "pour"
     _attr_unique_id = "xbloom_pour"
+
+    @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
 
     async def async_press(self) -> None:
         await self.coordinator.async_pour()
@@ -101,6 +109,10 @@ class XBloomVibrateButton(_XBloomButton):
     _attr_translation_key = "vibrate_scale"
     _attr_unique_id = "xbloom_vibrate"
 
+    @property
+    def device_info(self):
+        return self.coordinator.scale_device_info
+
     async def async_press(self) -> None:
         await self.coordinator.async_vibrate_scale()
 
@@ -108,6 +120,10 @@ class XBloomVibrateButton(_XBloomButton):
 class XBloomTareButton(_XBloomButton):
     _attr_translation_key = "tare_scale"
     _attr_unique_id = "xbloom_tare"
+
+    @property
+    def device_info(self):
+        return self.coordinator.scale_device_info
 
     async def async_press(self) -> None:
         await self.coordinator.async_tare_scale()

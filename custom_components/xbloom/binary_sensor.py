@@ -45,6 +45,10 @@ class XBloomGrinderRunningBinarySensor(_XBloomBinarySensor):
     _attr_device_class = BinarySensorDeviceClass.RUNNING
 
     @property
+    def device_info(self):
+        return self.coordinator.grinder_device_info
+
+    @property
     def is_on(self) -> bool:
         return bool(self.coordinator.data.get("grinder_running"))
 
@@ -53,6 +57,10 @@ class XBloomBrewerRunningBinarySensor(_XBloomBinarySensor):
     _attr_translation_key = "brewer_running"
     _attr_unique_id = "xbloom_brewer_running"
     _attr_device_class = BinarySensorDeviceClass.RUNNING
+
+    @property
+    def device_info(self):
+        return self.coordinator.brewer_device_info
 
     @property
     def is_on(self) -> bool:

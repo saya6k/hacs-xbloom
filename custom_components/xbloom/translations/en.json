@@ -160,9 +160,6 @@
       },
       "volume": {
         "name": "Volume"
-      },
-      "flow_rate": {
-        "name": "Flow Rate"
       }
     },
     "sensor": {
@@ -184,6 +181,9 @@
       "brewer_temperature": {
         "name": "Brewer Temperature"
       },
+      "flow_rate": {
+        "name": "Flow Rate"
+      },
       "last_error": {
         "name": "Last Error"
       },
@@ -201,6 +201,15 @@
       },
       "easy_slot_c": {
         "name": "Easy Slot C"
+      },
+      "live_grind_size": {
+        "name": "Grind Size (Live)"
+      },
+      "live_grind_speed": {
+        "name": "Grind Speed (Live)"
+      },
+      "voltage_raw": {
+        "name": "Voltage (Raw)"
       }
     },
     "select": {
