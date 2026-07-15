@@ -54,6 +54,13 @@ _MACHINE_INFO_CMD_BYTES = (40521).to_bytes(2, "little")  # b"\x09\xa9"
 # reject a garbage length field read from a false-positive header byte.
 _MAX_PACKET_LEN = 256
 
+# Constant marker byte every real notification/response frame carries right
+# after the length field (offset+9) — a second, independent sanity check
+# _split_and_parse uses alongside _MAX_PACKET_LEN. Confirmed on our own
+# hardware (every captured RD_MachineInfo frame) and matches
+# Janczykkkko/xbloom-ble's independent capture.
+_NOTIFICATION_MARKER_BYTE = 0xC1
+
 # MachineInfo payload byte offsets (from PROTOCOL.md field map).
 # Mode is a 4-byte hex string at payload offset 51–54:
 #   "91327856" → Easy/Auto Mode, anything else → Pro Mode.
@@ -228,6 +235,14 @@ class XBloomClientWithEvents(XBloomClient):
         approach that size, so anything past ``_MAX_PACKET_LEN`` is treated
         as a false-positive header match: skip one byte and keep scanning
         instead of bailing out on the whole notification.
+
+        Second, independent check: real notification frames carry a
+        constant marker byte (``_NOTIFICATION_MARKER_BYTE``) right after the
+        length field — confirmed on our own hardware (every captured
+        RD_MachineInfo frame has ``0xc1`` at that exact offset) and matches
+        Janczykkkko/xbloom-ble's independent capture. Requiring it too makes
+        a false-positive header match (right length *and* right marker byte,
+        purely by chance) even less likely.
         """
         offset = 0
         n = len(raw_data)
@@ -239,6 +254,9 @@ class XBloomClientWithEvents(XBloomClient):
                 break
             total_len = struct.unpack("<I", raw_data[offset + 5 : offset + 9])[0]
             if total_len > _MAX_PACKET_LEN:
+                offset += 1
+                continue
+            if raw_data[offset + 9] != _NOTIFICATION_MARKER_BYTE:
                 offset += 1
                 continue
             if offset + total_len > n:
