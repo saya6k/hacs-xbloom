@@ -172,7 +172,10 @@
           "brewing": "추출 중",
           "paused": "일시 정지",
           "error": "오류",
-          "sleeping": "절전 모드"
+          "sleeping": "절전 모드",
+          "no_beans": "원두 없음",
+          "water_shortage": "물 부족",
+          "ready": "완료 (컵 대기)"
         }
       },
       "weight": {

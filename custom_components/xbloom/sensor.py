@@ -52,7 +52,10 @@ class XBloomStateSensor(_XBloomSensor):
     _attr_translation_key = "state"
     _attr_unique_id = "xbloom_state"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping"]
+    _attr_options = [
+        "unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping",
+        "no_beans", "water_shortage", "ready",
+    ]
 
     @property
     def native_value(self) -> str:

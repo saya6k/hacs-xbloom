@@ -329,6 +329,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # successful brew/pour notification.
         self._water_shortage: bool = False
 
+        # Same idea as _water_shortage, driven by RD_ErrorIdling ("no_beans")
+        # instead of RD_ErrorLackOfWater — the machine WAITS in this state
+        # rather than refusing outright, so it's worth surfacing as a
+        # distinct sensor.state value instead of leaving it generic.
+        self._no_beans: bool = False
+
         # Track whether we temporarily switched to Pro Mode for an HA
         # operation.  When the operation completes we switch back to the
         # default (Easy) mode so the physical slot buttons work again.
@@ -359,11 +365,27 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     water_ok = bool(s.water_level_ok)
                 else:
                     water_ok = not self._water_shortage
+                # Layer the richer states our own event/status tracking can
+                # see on top of the vendored DeviceState value: no_beans /
+                # water_shortage (the machine WAITS rather than refusing) and
+                # ready (brew done/beeped, cup still on the scale — distinct
+                # from RD_Brewer_Stop's immediate IDLE, which fires the
+                # instant pouring stops). See _client.py's
+                # _scan_for_status_frame and coordinator._no_beans /
+                # _water_shortage for provenance.
+                if self._no_beans:
+                    state_str = "no_beans"
+                elif self._water_shortage:
+                    state_str = "water_shortage"
+                elif getattr(s, "_brew_ready", False):
+                    state_str = "ready"
+                else:
+                    state_str = s.state.value
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
                     "temperature": round(s.brewer.temperature, 1),
-                    "state": s.state.value,
+                    "state": state_str,
                     "grinder_running": s.grinder.is_running,
                     "brewer_running": s.brewer.is_running,
                     "water_level_ok": water_ok,
@@ -721,16 +743,23 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """
         _LOGGER.debug("XBloom event [%s] %s %s", category, event_type, attributes)
 
-        # Drive the water-shortage flag from the BLE event stream.
+        # Drive the water-shortage / no-beans flags from the BLE event stream.
         prev_shortage = self._water_shortage
+        prev_no_beans = self._no_beans
         if category == "error" and event_type == "water_shortage":
             self._water_shortage = True
+        elif category == "error" and event_type == "no_beans":
+            self._no_beans = True
         elif category == "notification" and event_type in (
             "brewing_started", "pour_complete", "recipe_complete",
         ):
-            # A successful brew implies water is available again.
+            # A successful brew implies water and beans were both available.
             self._water_shortage = False
-        if prev_shortage != self._water_shortage and self.hass and self.hass.loop:
+            self._no_beans = False
+        if (
+            (prev_shortage != self._water_shortage or prev_no_beans != self._no_beans)
+            and self.hass and self.hass.loop
+        ):
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
