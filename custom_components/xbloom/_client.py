@@ -93,14 +93,29 @@ _VALID_POUR_PATTERNS = (0, 1, 2)  # matches coordinator.POUR_PATTERN_OPTIONS val
 # confirmed live on our own hardware (2026-07-15): header(0x58|0x02) | dev_id
 # | 0x57 | ... | const(0x01) | state_byte | .... The type byte sits at offset
 # 3; the state byte is the first byte after the same 10-byte preamble the
-# cmd-tagged frames use. Only two codes are consumed here — the machine
-# stopping a brew (RD_Brewer_Stop) already flips vendored state to IDLE the
-# instant pouring stops, which is *before* the "coffee ready" beep window
-# where the cup is still sitting on the scale; nothing else in the existing
-# cmd-tagged notifications distinguishes that window from true idle.
+# cmd-tagged frames use.
+#
+# Only the codes below are mapped, on top of (not replacing) the vendored
+# cmd-tagged DeviceState — a real grind+brew round-trip (2026-07-15) showed
+# the cmd-tagged path is unreliable exactly where it matters most:
+# RD_GRINDER_BEGIN never fired at all during ~11s of real grinding, while
+# RD_BREWER_BEGIN fired immediately after commit (long before pouring
+# actually starts) and RD_Grinder_Stop flips vendored state to IDLE the
+# instant grinding *ends* — a few hundred ms before real pouring begins.
+# Net effect without this map: "brewing" shown too early, then a false
+# "idle" blip right before the pour, then no cmd-tagged signal at all
+# distinguishing "done, cup still on the scale" from true idle. Everything
+# NOT in this map (armed/awaiting_confirm/loading/no_water/no_beans/etc.)
+# intentionally falls through to the vendored value — no evidence of a
+# problem there, so no need to widen scope.
 _STATUS_FRAME_TYPE_BYTE = 0x57
-_STATUS_READY_CODE = 0x24   # brew done (beep), cup still on the scale
-_STATUS_IDLE_CODE = 0x01    # true idle (cup has been lifted)
+_RAW_STATE_LABEL_MAP = {
+    0x22: "starting",  # post-confirm: grinding/spinning up
+    0x10: "brewing",
+    0x23: "brewing",
+    0x3B: "brewing",
+    0x24: "ready",      # brew done (beep), cup still on the scale
+}
 
 EventCallback = Callable[[str, str, dict], None]
 
@@ -238,24 +253,21 @@ class XBloomClientWithEvents(XBloomClient):
         self._split_and_parse(raw)
 
     def _scan_for_status_frame(self, raw: bytes) -> None:
-        """Track the "ready" (brew done, cup still on the scale) window.
+        """Track ``self._status._raw_state_label`` — see ``_RAW_STATE_LABEL_MAP``.
 
-        See ``_STATUS_FRAME_TYPE_BYTE`` above for the frame shape. Sets
-        ``self._status._brew_ready`` on the ready code, clears it on the
-        true-idle code; ``_handle_response`` also clears it the instant a
-        new grind/brew starts, in case the machine skips straight from
-        "ready" into a new brew without a true-idle frame in between.
+        Recomputed on every status frame (mapped code, or ``None`` for
+        anything not in the map — falling through to the vendored
+        DeviceState). Self-correcting: a new brew's very first status frame
+        (``loading``/``armed``/etc., none of which are in the map) clears
+        any stale ``"ready"``/``"starting"``/``"brewing"`` label from a
+        previous brew automatically, no separate reset needed.
         """
         if len(raw) <= 12 or raw[3] != _STATUS_FRAME_TYPE_BYTE:
             return
         payload = raw[10:-2]
         if not payload:
             return
-        code = payload[0]
-        if code == _STATUS_READY_CODE:
-            self._status._brew_ready = True
-        elif code == _STATUS_IDLE_CODE:
-            self._status._brew_ready = False
+        self._status._raw_state_label = _RAW_STATE_LABEL_MAP.get(payload[0])
 
     def _split_and_parse(self, raw_data: bytes) -> None:
         """Reimplementation of the vendored framing loop in
@@ -414,12 +426,6 @@ class XBloomClientWithEvents(XBloomClient):
                 _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
         if response in _NOTIFICATION_MAP:
             event_type = _NOTIFICATION_MAP[response]
-            if event_type in ("grinding_started", "brewing_started"):
-                # Safety net: if the machine goes straight from "ready"
-                # (cup still on the scale) into a new brew without ever
-                # sending a true-idle status frame, don't leave the state
-                # sensor stuck on "ready".
-                self._status._brew_ready = False
             attrs: dict = {}
             if response == XBloomResponse.RD_BLOOM:
                 # Pour-boundary notification — payload is a little-endian
