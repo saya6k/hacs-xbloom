@@ -309,6 +309,20 @@ async def _async_brew_coffee(
 
     # 8104 — Cup bounds. Grind path uses min=40; no-grind path uses
     # min=0 to bypass the 0 g telemetry safety check.
+    #
+    # Unconfirmed alternative theory (Janczykkkko/xbloom-ble): this same
+    # payload shape (01 + f32×2) is "stage preheat temps" (default
+    # 110.0/90.0), not cup weight bounds. Deliberately NOT adopted:
+    # hardware-tested 2026-07-15, no observable difference in behavior or
+    # RD_BREWER_TEMPERATURE telemetry across 4 separate brews regardless of
+    # the value sent (BLE telemetry can't confirm or refute either theory
+    # on this unit), and — more importantly — the values below already
+    # brew correctly in practice, so there's no working code to fix. Two
+    # other Janczykkkko semantic/behavioral claims tested this same session
+    # (an 18g dose cap, cmd 40518 = "start") both turned out to be wrong on
+    # direct hardware test, even though their lower-level protocol
+    # structure (CRC, command IDs, footer encoding) checked out — so this
+    # one isn't trusted on cross-claim credibility alone either.
     bounds_table = _COFFEE_CUP_BOUNDS_GRIND if grinding else _COFFEE_CUP_BOUNDS_NO_GRIND
     cup_max, cup_min = bounds_table.get(_cup_value(recipe), _COFFEE_CUP_BOUNDS_DEFAULT)
     await client.set_cup(cup_max, cup_min)
