@@ -224,7 +224,7 @@
         "name": "그라인더 RPM (실시간)"
       },
       "voltage_raw": {
-        "name": "전압 (원시값)"
+        "name": "전압"
       }
     },
     "select": {

@@ -7,7 +7,7 @@ from homeassistant.components.sensor import (
     EntityCategory,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfMass
+from homeassistant.const import UnitOfElectricPotential, UnitOfTemperature, UnitOfMass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -189,16 +189,17 @@ class XBloomLiveGrindSpeedSensor(_XBloomSensor):
 
 
 class XBloomVoltageSensor(_XBloomSensor):
-    """Raw byte 39 of the RD_MachineInfo heartbeat.
+    """Raw byte 39 of the RD_MachineInfo heartbeat, as volts.
 
-    Unscaled — the third-party capture this was cross-referenced against
-    (see _client.py) didn't establish a volts conversion, so this is
-    exposed as a raw diagnostic number rather than with a VOLTAGE device
-    class that would imply a confirmed unit.
+    A single byte, unscaled (max 255) — fits mains voltage directly with
+    no conversion needed. Live-confirmed 2026-07-04: reads 220 on a
+    Korean-mains (220V) unit, a strong-enough signal to label it volts.
     """
 
     _attr_translation_key = "voltage_raw"
     _attr_unique_id = "xbloom_voltage_raw"
+    _attr_device_class = SensorDeviceClass.VOLTAGE
+    _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
