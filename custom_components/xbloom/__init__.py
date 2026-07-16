@@ -54,6 +54,10 @@ from .const import (
     ATTR_SRC,
     ATTR_VARIETAL,
     ATTR_SLOT,
+    ATTR_POUR_RADIUS_LEVEL,
+    ATTR_VIBRATION_AMPLITUDE_LEVEL,
+    ATTR_CALIBRATE_GRINDER,
+    ATTR_DISPLAY_BRIGHTNESS_LEVEL,
     CONF_ACCOUNT_RECIPES_SEEDED,
     CONF_EASY_SLOTS,
     CONF_EMAIL,
@@ -74,6 +78,7 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DEFAULT_WEIGHT_UNIT,
     DOMAIN,
+    SERVICE_ADVANCED_SETTINGS,
     SERVICE_CLOUD_EXPORT_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
@@ -210,6 +215,16 @@ WRITE_RECIPE_TO_EASY_SLOT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_SLOT): vol.All(cv.string, vol.Upper, vol.In(["A", "B", "C"])),
         vol.Optional(ATTR_RECIPE): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+ADVANCED_SETTINGS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_POUR_RADIUS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=4)),
+        vol.Optional(ATTR_VIBRATION_AMPLITUDE_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        vol.Optional(ATTR_DISPLAY_BRIGHTNESS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
+        vol.Optional(ATTR_CALIBRATE_GRINDER, default=False): cv.boolean,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -417,6 +432,28 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
         _handle_write_recipe_to_easy_slot,
         schema=WRITE_RECIPE_TO_EASY_SLOT_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _handle_advanced_settings(call: ServiceCall) -> ServiceResponse:
+        coordinators = _coordinators_for_call(hass, call)
+        if not coordinators:
+            raise HomeAssistantError("No XBloom machine matched the service call.")
+        result = await coordinators[0].async_set_advanced_settings(
+            pour_radius_level=call.data.get(ATTR_POUR_RADIUS_LEVEL),
+            vibration_amplitude_level=call.data.get(ATTR_VIBRATION_AMPLITUDE_LEVEL),
+            display_brightness_level=call.data.get(ATTR_DISPLAY_BRIGHTNESS_LEVEL),
+            calibrate_grinder=call.data.get(ATTR_CALIBRATE_GRINDER, False),
+        )
+        if not result.get("success"):
+            raise HomeAssistantError(result.get("message", "advanced_settings failed"))
+        return result
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADVANCED_SETTINGS,
+        _handle_advanced_settings,
+        schema=ADVANCED_SETTINGS_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
 
@@ -895,6 +932,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_CLOUD_EXPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
                 SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
+                SERVICE_ADVANCED_SETTINGS,
             ):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)

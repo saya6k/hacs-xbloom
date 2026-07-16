@@ -196,6 +196,88 @@ write_recipe_to_easy_slot:
           custom_value: true
           mode: dropdown
 
+advanced_settings:
+  name: Advanced settings
+  description: >-
+    Pour radius, vibration amplitude, and grinder calibration — the same
+    three actions grouped under "Advanced Features" in the official app.
+    Reverse-engineered from the app 2026-07-16; none have been exercised
+    on real hardware yet. At least one field is required.
+  fields:
+    device_id:
+      name: Machine
+      description: >-
+        The XBloom machine to act on. Defaults to the first configured
+        machine.
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: xbloom
+          multiple: true
+    pour_radius_level:
+      name: Pour radius level
+      description: >-
+        L1 (narrowest) to L5 (widest), matching the official app's
+        picker. L3 is the machine's true factory-default center, fetched
+        from your XBloom cloud account — requires an account logged in
+        under Options → Account.
+      required: false
+      selector:
+        select:
+          options:
+            - label: "L1"
+              value: "0"
+            - label: "L2"
+              value: "1"
+            - label: "L3 (center)"
+              value: "2"
+            - label: "L4"
+              value: "3"
+            - label: "L5"
+              value: "4"
+    vibration_amplitude_level:
+      name: Vibration amplitude level
+      description: L1 (min) to L6 (max), matching the official app's picker.
+      required: false
+      selector:
+        select:
+          options:
+            - label: "L1"
+              value: "0"
+            - label: "L2"
+              value: "1"
+            - label: "L3"
+              value: "2"
+            - label: "L4"
+              value: "3"
+            - label: "L5"
+              value: "4"
+            - label: "L6"
+              value: "5"
+    display_brightness_level:
+      name: Display brightness level
+      description: L1 (dimmest) to L3 (brightest), matching the official app's picker.
+      required: false
+      selector:
+        select:
+          options:
+            - label: "L1"
+              value: "1"
+            - label: "L2"
+              value: "2"
+            - label: "L3"
+              value: "3"
+    calibrate_grinder:
+      name: Calibrate grinder
+      description: >-
+        Trigger the ~120 second grinder calibration sweep. The machine
+        runs it autonomously once sent.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 cloud_import_recipe:
   name: Import recipe from XBloom cloud
   description: >-

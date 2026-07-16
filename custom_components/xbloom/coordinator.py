@@ -182,6 +182,26 @@ def _firmware_at_least(version: Optional[str], minimum: str) -> bool:
         return True
     return current >= required
 
+
+# Advanced Features level->raw conversion. Decompiled from the official
+# app 2026-07-16 (MachineSetPourRadiusActivity / MachineSetVibrationAmplitudeActivity)
+# — see AGENTS.md's command-id validation sweep and
+# async_set_advanced_settings's docstring for the pour-radius "center"
+# caveat.
+def _vibration_level_to_raw(level: int) -> int:
+    """L1-L6 (0-5) -> raw device value. Fixed absolute scale, no
+    per-device reference needed."""
+    return 1000 + level * 100
+
+
+def _pour_radius_level_to_raw(level: int, center: int) -> int:
+    """L1-L5 (0-4) -> raw device value, 80 apart, centered on ``center``
+    (level 2 == center). ``center`` should be the machine's own most
+    recently read pour_radius value — see the caller's docstring for why
+    we don't have the official app's true factory-default reference."""
+    return center - (2 - level) * 80
+
+
 # Standard GATT Device Information service characteristic UUIDs.
 # Some XBloom firmwares only populate MachineInfo via these GATT reads
 # rather than the proprietary RD_MachineInfo notification.
@@ -211,6 +231,8 @@ DEFAULT_STATE: Dict[str, Any] = {
     "live_grind_size": None,
     "live_grind_speed": None,
     "voltage": None,
+    "pour_radius": None,
+    "vibration_amplitude": None,
 }
 
 # Water source integer values used in APP_BREWER_START payload.
@@ -463,6 +485,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     "live_grind_size": s.grinder.size or None,
                     "live_grind_speed": s.grinder.speed or None,
                     "voltage": getattr(s, "voltage", None),
+                    # Advanced Features (Pour Radius / Vibration Amplitude) —
+                    # only populated once a GET/SET response has actually
+                    # arrived (client._scan_for_advanced_settings); these
+                    # aren't part of the passive telemetry heartbeat.
+                    "pour_radius": getattr(s, "pour_radius", None),
+                    "vibration_amplitude": getattr(s, "vibration_amplitude", None),
                 }
                 # Mirror the physical temperature/pattern knobs onto the
                 # manual-pour setpoints so number.temperature and
@@ -557,6 +585,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     await self._apply_unit_preferences()
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
+                    if self.hass:
+                        self.hass.async_create_task(self._async_refresh_advanced_settings())
                     return True
 
                 _LOGGER.error("XBloom connect returned False")
@@ -1242,6 +1272,158 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await brewing.async_tare(self.client)
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
+
+    async def _async_refresh_advanced_settings(self) -> None:
+        """Fire-and-forget GET for pour_radius/vibration_amplitude, once
+        per connect. These are request/response (not passive telemetry),
+        so nothing populates the two sensors until this runs — see
+        _client.py's CMD_GET_POUR_RADIUS module comment."""
+        try:
+            await self.client.async_get_pour_radius()
+            await asyncio.sleep(0.3)
+            await self.client.async_get_vibration_amplitude()
+        except Exception as exc:
+            _LOGGER.debug("Advanced settings refresh failed: %s", exc)
+
+    async def async_set_advanced_settings(
+        self,
+        *,
+        pour_radius_level: Optional[int] = None,
+        vibration_amplitude_level: Optional[int] = None,
+        calibrate_grinder: bool = False,
+        display_brightness_level: Optional[int] = None,
+    ) -> dict:
+        """Advanced Features — pour radius / vibration amplitude / grinder
+        calibration / display brightness, grouped into one service
+        (matching the official app's own "Advanced Features" screen)
+        rather than several always-visible entities for settings nobody
+        adjusts often. At least one action must be requested.
+
+        Levels, not raw device values — mirrors the official app's own
+        L1-L5 / L1-L6 / L1-L3 picker UIs (decompiled 2026-07-16, see
+        AGENTS.md) rather than asking users to type an opaque number:
+
+        - ``vibration_amplitude_level`` (0-5, L1-L6): a fixed absolute
+          scale, ``raw = 1000 + level * 100`` — no ambiguity, matches
+          MachineSetVibrationAmplitudeActivity exactly.
+        - ``display_brightness_level`` (1-3, L1-L3): 3 fixed presets,
+          ``raw`` one of 1/8/15 (see ``_client.CMD_SET_DISPLAY_BRIGHTNESS``)
+          — matches MachineDisplayActivity exactly, also no ambiguity (no
+          GET counterpart either — the official app tracks the current
+          value from its own account/device record, not a fresh BLE read,
+          so there's nothing for this integration to poll).
+        - ``pour_radius_level`` (0-4, L1-L5): the official app centers
+          these 5 levels on a **per-device factory value**
+          (``Device.pouringRadiusInit``), fetched from xBloom's cloud
+          account (see ``_cloud_client.get_pour_radius_init_center`` —
+          reverse-engineered 2026-07-16, live-verified the same day
+          against a real account/device, member_id 23237/serial
+          J15A01B4CV030 returned a real 750). **Requires a logged-in
+          cloud account** — rejected up front (``cloud_login_required``)
+          otherwise, rather than silently substituting the current
+          ``pour_radius`` reading as an approximate center; that
+          approximation only holds on a machine nobody has ever changed
+          the level on before, which isn't something this integration can
+          verify, so it's no longer used. Still untested on real
+          hardware — the BLE `SET` side (`11507`) is unverified even
+          though the cloud lookup that feeds it now is.
+        """
+        if (
+            pour_radius_level is None
+            and vibration_amplitude_level is None
+            and display_brightness_level is None
+            and not calibrate_grinder
+        ):
+            return {
+                "success": False,
+                "error": "no_action",
+                "message": "Specify at least one of pour_radius_level, vibration_amplitude_level, display_brightness_level, or calibrate_grinder.",
+            }
+        if pour_radius_level is not None and not 0 <= pour_radius_level <= 4:
+            return {
+                "success": False,
+                "error": "invalid_level",
+                "message": "pour_radius_level must be 0-4 (L1-L5).",
+            }
+        if vibration_amplitude_level is not None and not 0 <= vibration_amplitude_level <= 5:
+            return {
+                "success": False,
+                "error": "invalid_level",
+                "message": "vibration_amplitude_level must be 0-5 (L1-L6).",
+            }
+        if display_brightness_level is not None and not 1 <= display_brightness_level <= 3:
+            return {
+                "success": False,
+                "error": "invalid_level",
+                "message": "display_brightness_level must be 1-3 (L1-L3).",
+            }
+        if pour_radius_level is not None and not self.cloud_client.logged_in:
+            # Required, not opportunistic: without the cloud-fetched real
+            # factory-default center, "level 2" is only an approximation
+            # (the current value at call time) — see
+            # _cloud_client.get_pour_radius_init_center's docstring. Reject
+            # up front rather than silently shipping an unreliable value.
+            return {
+                "success": False,
+                "error": "cloud_login_required",
+                "message": "pour_radius_level requires an XBloom cloud account login (Options → Account) — this integration has no other way to know the machine's factory-default pour-radius center.",
+            }
+        if not self._check_connected():
+            return {
+                "success": False,
+                "error": "not_connected",
+                "message": "The XBloom is not connected over Bluetooth.",
+            }
+        try:
+            if pour_radius_level is not None:
+                current = self.data.get("pour_radius")
+                if current is None:
+                    await self.client.async_get_pour_radius()
+                    await asyncio.sleep(0.5)
+                    current = self.data.get("pour_radius")
+                if current is None:
+                    return {
+                        "success": False,
+                        "error": "pour_radius_unknown",
+                        "message": "Could not read the current pour radius from the machine — try again once connected.",
+                    }
+                serial = self.data.get("serial_number")
+                if not serial:
+                    return {
+                        "success": False,
+                        "error": "serial_unknown",
+                        "message": "The machine's serial number isn't known yet — try again once MachineInfo has been read.",
+                    }
+                center = await self.cloud_client.get_pour_radius_init_center(serial, current)
+                if center is None:
+                    return {
+                        "success": False,
+                        "error": "cloud_center_unavailable",
+                        "message": "Could not fetch the factory-default pour-radius center from XBloom's cloud account — try again later.",
+                    }
+                await self.client.async_set_pour_radius(
+                    _pour_radius_level_to_raw(pour_radius_level, center)
+                )
+                await asyncio.sleep(0.3)
+            if vibration_amplitude_level is not None:
+                await self.client.async_set_vibration_amplitude(
+                    _vibration_level_to_raw(vibration_amplitude_level)
+                )
+                await asyncio.sleep(0.3)
+            if display_brightness_level is not None:
+                await self.client.async_set_display_brightness(display_brightness_level)
+                await asyncio.sleep(0.3)
+            if calibrate_grinder:
+                await self.client.async_calibrate_grinder()
+        except Exception as exc:
+            _LOGGER.error("Advanced settings error: %s", exc, exc_info=True)
+            return {
+                "success": False,
+                "error": "write_failed",
+                "message": f"Advanced settings call failed: {exc}",
+            }
+        await self.async_refresh()
+        return {"success": True}
 
     async def async_write_easy_slot(
         self, slot_letter: str, identifier: Optional[str] = None

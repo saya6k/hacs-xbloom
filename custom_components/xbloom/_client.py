@@ -117,6 +117,48 @@ _RAW_STATE_LABEL_MAP = {
     0x24: "ready",      # brew done (beep), cup still on the scale
 }
 
+# Advanced Features (pour radius / vibration amplitude) — GET/SET pairs,
+# decompiled from the official app 2026-07-16 (MachineSetPourRadiusActivity
+# / MachineSetVibrationAmplitudeActivity / MachineAdvancedFeaturesJ15Activity
+# .java, via jadx). Like the raw status-heartbeat frame above, these never
+# reach _handle_response — 11506/11508 aren't in the vendored XBloomResponse
+# enum, so _parse_response's ``XBloomResponse(cmd)`` raises ValueError and
+# silently drops them before they'd ever get here. The official app itself
+# has no fixed response registry either (confirmed reading AppBleManager's
+# source): it just matches an incoming notification's raw cmd against
+# whatever it most recently sent and invokes that call's own callback — a
+# raw pre-scan here is the equivalent for our push-based coordinator model.
+# Response payload is a little-endian uint32 at offset 0 (confirmed from the
+# app's own parsing: ``it.substring(0,8)`` -> ``reverseHex()`` -> parse as
+# hex int — byte-reversing a big-endian hex dump is the same operation as
+# reading little-endian).
+CMD_GET_POUR_RADIUS = 11506
+CMD_SET_POUR_RADIUS = 11507
+CMD_GET_VIBRATION_AMPLITUDE = 11508
+CMD_SET_VIBRATION_AMPLITUDE = 11509
+
+# Grinder calibration — decompiled from CalibrateGrinderActivity's confirm
+# button (2026-07-16): ``CodeModule(3502, "磨豆档位归0", 1000)``. Single
+# fire-and-forget trigger; the machine runs the ~120s calibration sweep
+# itself (matches the Zendesk Cleaning & Maintenance doc's description).
+# Untested on our own hardware.
+CMD_CALIBRATE_GRINDER = 3502
+_CALIBRATE_GRINDER_PAYLOAD = [1000]
+
+# Display brightness — decompiled from MachineDisplayActivity's save button
+# (2026-07-16): ``CommandParams.RD_LetType`` (a typo/abbreviation for
+# "Light", per the Chinese label "亮度切换" = "brightness switch") = cmd
+# 8103, sitting right between the already-known 8102 (APP_SET_BYPASS) and
+# 8104 (APP_SET_CUP) — a gap in our command table we hadn't identified
+# before finding this. Only 3 fixed levels (L1/L2/L3 in the app's UI), not
+# an arithmetic scale like pour radius/vibration amplitude — payload is one
+# of these three raw ints, nothing else. No GET counterpart: the app reads
+# the *current* value from its own cached account/device record, not a
+# fresh BLE read, so there's nothing for us to poll either. Untested on
+# our own hardware.
+CMD_SET_DISPLAY_BRIGHTNESS = 8103
+_DISPLAY_BRIGHTNESS_RAW = {1: 1, 2: 8, 3: 15}
+
 EventCallback = Callable[[str, str, dict], None]
 
 # 8100 — MTU handshake. Cherry-picked from
@@ -184,6 +226,67 @@ class XBloomClientWithEvents(XBloomClient):
             _LOGGER.warning("Handshake send failed: %s", exc)
             return False
 
+    async def async_get_pour_radius(self) -> None:
+        """Request the current pour (rotation) radius. Populates
+        ``self._status.pour_radius`` once the response arrives — see
+        ``_scan_for_advanced_settings``. Fire-and-forget; no return value
+        since the response is asynchronous."""
+        if self.is_connected:
+            await self._send_command(CMD_GET_POUR_RADIUS)
+
+    async def async_set_pour_radius(self, value: int) -> None:
+        """Set the pour radius to a raw device value (not a 0-4 UI level —
+        see MachineSetPourRadiusActivity's 5-level-to-raw-value mapping in
+        AGENTS.md if a level-based UI is ever added here)."""
+        await self._send_command(CMD_SET_POUR_RADIUS, [int(value)])
+        # Optimistic local update, matching the official app's own
+        # post-success behavior (pouringRadius = setPouringRadius) rather
+        # than waiting on a second round-trip to confirm.
+        self._status.pour_radius = int(value)
+
+    async def async_get_vibration_amplitude(self) -> None:
+        """Request the current vibration amplitude. See
+        ``async_get_pour_radius`` — same request/response shape."""
+        if self.is_connected:
+            await self._send_command(CMD_GET_VIBRATION_AMPLITUDE)
+
+    async def async_set_vibration_amplitude(self, value: int) -> None:
+        """Set the vibration amplitude to a raw device value."""
+        await self._send_command(CMD_SET_VIBRATION_AMPLITUDE, [int(value)])
+        self._status.vibration_amplitude = int(value)
+
+    async def async_calibrate_grinder(self) -> None:
+        """Trigger the ~120s grinder calibration sweep (cmd 3502). The
+        machine runs it autonomously — no further BLE interaction needed
+        once sent. Untested on our own hardware."""
+        await self._send_command(CMD_CALIBRATE_GRINDER, _CALIBRATE_GRINDER_PAYLOAD)
+
+    async def async_set_display_brightness(self, level: int) -> None:
+        """Set the LED display brightness to L1/L2/L3 (cmd 8103). ``level``
+        is 1-3 (matching the official app's L1-L3 labels), mapped to the
+        raw device values 1/8/15 — see CMD_SET_DISPLAY_BRIGHTNESS's module
+        comment. Untested on our own hardware."""
+        await self._send_command(CMD_SET_DISPLAY_BRIGHTNESS, [_DISPLAY_BRIGHTNESS_RAW[level]])
+
+    def _scan_for_advanced_settings(self, raw: bytes) -> None:
+        """Raw pre-scan for cmd 11506/11508 responses — bypasses the
+        vendored XBloomResponse enum entirely since it doesn't know these
+        codes (see the CMD_GET_POUR_RADIUS module comment for why that's
+        the correct fix, not a workaround). Same frame layout every other
+        scan here relies on: cmd at offset 3-4 (LE), payload starting at
+        offset 10, value = payload[0:4] as LE uint32."""
+        if len(raw) < 14 or raw[9] != _NOTIFICATION_MARKER_BYTE:
+            return
+        cmd = int.from_bytes(raw[3:5], "little")
+        if cmd not in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS, CMD_GET_VIBRATION_AMPLITUDE, CMD_SET_VIBRATION_AMPLITUDE):
+            return
+        payload = raw[10:14]
+        value = int.from_bytes(payload, "little")
+        if cmd in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS):
+            self._status.pour_radius = value
+        else:
+            self._status.vibration_amplitude = value
+
     async def _reset_state(self) -> None:
         """Send the 8100 handshake before the upstream cleanup commands.
 
@@ -250,6 +353,7 @@ class XBloomClientWithEvents(XBloomClient):
         if not self._status.serial_number:
             self._scan_for_machine_info(raw)
         self._scan_for_status_frame(raw)
+        self._scan_for_advanced_settings(raw)
         self._split_and_parse(raw)
 
     def _scan_for_status_frame(self, raw: bytes) -> None:
