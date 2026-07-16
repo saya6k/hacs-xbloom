@@ -66,6 +66,13 @@ _CMD_TARE = 8500
 # src/xbloom-ble/PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
 _CMD_EASY_RECIPE_SEND = 11510
 
+# 11512 — Easy Mode slot order. Type-2 packet, hex-string payload.
+# Confirmed as real (not a third-party embellishment) by decompiling the
+# official app 2026-07-16: `com/xbloom/util/BleCodeFactory$Companion
+# .easyModeRecipesOrder(String)` — see AGENTS.md's "full command-id table"
+# entry for the full validation sweep.
+_CMD_EASY_RECIPE_ORDER = 11512
+
 # Easy Mode slot flag byte. Cherry-picked from
 # src/xbloom-ble/python/xbloom.py (slot_flags / SLOT_GRINDER_*).
 # Bit 4 (0x10) = scale ON; lower nibble = grinder (0x02 ON / 0x04 OFF).
@@ -441,6 +448,14 @@ async def async_write_easy_slots(
 
     Payload layout per slot (after the header / type / cmd / len / 0x01
     prefix that build_command_raw applies): ``[slot_index][flags][recipe_hex]``.
+
+    After all three slots, sends cmd 11512 (Easy Mode slot order) once —
+    confirmed as a real official-app call, not a third-party embellishment
+    (decompiled `BleCodeFactory$Companion.easyModeRecipesOrder()` 2026-07-16,
+    see AGENTS.md). Our A/B/C batch write already reaches idle without it
+    (2026-07-15 hardware confirmation, above), so its effect here is
+    untested — sent to match official-app behavior now that it's known to
+    be real, not because we've observed it change anything.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -465,3 +480,13 @@ async def async_write_easy_slots(
             _CMD_EASY_RECIPE_SEND, payload, type_code=2,
         )
         await asyncio.sleep(0.3)
+
+    # [slot_count, then each slot's index in canonical A/B/C order] —
+    # mirrors Mel0day/xbloom-ai-brew's default order payload ('03000102'),
+    # the only concrete value observed for this frame. We always write all
+    # three slots in fixed A/B/C order, so this is constant, not derived
+    # per-call.
+    order_payload = bytes([len(_SLOT_INDEX_BY_LETTER), *_SLOT_INDEX_BY_LETTER.values()])
+    _LOGGER.info("Easy slot order: %s", order_payload.hex())
+    await client._send_command_raw(_CMD_EASY_RECIPE_ORDER, order_payload, type_code=2)
+    await asyncio.sleep(0.3)
