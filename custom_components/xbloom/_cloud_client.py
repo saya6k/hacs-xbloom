@@ -15,10 +15,12 @@ phase) need :meth:`XBloomCloudClient.login` first.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +32,28 @@ _LOGGER = logging.getLogger(__name__)
 
 API_BASE = "https://client-api.xbloom.com"
 SHARE_BASE = "https://share-h5.xbloom.com"
+
+# A THIRD, separate backend from API_BASE/COLLECTIVE_API_BASE below — a
+# newer Retrofit/JSON API (vs. API_BASE's RSA-encrypted .thtml forms),
+# reverse-engineered 2026-07-16 by decompiling the official Android app
+# (`RetrofitManager2`/`ApiDevicePour`/`ServiceConfig` under
+# `com.chisalsoft.andite.http.j15`/`cn.com.library.config`, via jadx).
+# Used for the J15 (Studio) "Advanced Features" per-device settings
+# (pour-radius factory-default center — see coordinator.py's
+# _pour_radius_level_to_raw docstring for why we want this).
+#
+# Auth: every request needs a signed header set — no separate login. The
+# app reuses `projectToken` from the *same* tMemberLogin.thtml response
+# API_BASE's login() already calls (a field our own login() previously
+# ignored, only reading `token`). `APP_ID`/`APP_SECRET` are the app-wide
+# constants baked into every build variant (dev/test/release/China-release
+# in `ServiceConfig.kt` all share the same pair — confirmed identical
+# across all four), used only to prove "this is a request from the app",
+# not to protect any user data (the `projectToken` bearer header is what
+# actually scopes access to the logged-in account's own devices).
+BACKEND_API_BASE = "https://backend-api.xbloom.com"
+_BACKEND_APP_ID = "94a98bca981d11eb9c0824418c29779a"
+_BACKEND_APP_SECRET = "de77d4d97ecf9003eaa5f372fd9a616b"
 
 # A separate, newer public "Coffee Recipe Hub" web frontend
 # (collective.xbloom.com) and its own backend (collective-api.xbloom.com) —
@@ -379,6 +403,17 @@ def _parse_share_id(share_url_or_id: str) -> str:
     return value
 
 
+def _backend_api_sign(nonce: str, ts: str) -> str:
+    """BACKEND_API_BASE's request signature: uppercase-hex
+    MD5(appId,appSecret,nonce,ts). See BACKEND_API_BASE's module-level
+    comment — reverse-engineered from RetrofitManager2's OkHttp
+    interceptor (``bit32()``); live-verified 2026-07-16 (real account,
+    real device, ``get_pour_radius_init_center`` returned a real value)."""
+    return hashlib.md5(
+        f"{_BACKEND_APP_ID},{_BACKEND_APP_SECRET},{nonce},{ts}".encode("utf-8")
+    ).hexdigest().upper()
+
+
 def _parse_latest_firmware_response(resp: dict | None) -> dict | None:
     """Pure parsing half of :meth:`XBloomCloudClient.get_latest_firmware`,
     split out so it's testable without mocking the network call. See that
@@ -421,6 +456,12 @@ class XBloomCloudClient:
         self._session = session
         self.member_id: int | None = None
         self.token: str | None = None
+        # Separate bearer token for BACKEND_API_BASE (see its module-level
+        # comment) — same login response as ``token`` above, different
+        # field (``projectToken``). ``None`` until a successful login;
+        # BACKEND_API_BASE calls simply aren't possible without one, no
+        # separate auth flow to trigger.
+        self.project_token: str | None = None
         # Cached for the lifetime of this client — the collective hub's
         # filter lookup tables (origin/varietal/process/roast/flavor/
         # machine/cupType name<->id maps) change rarely enough that
@@ -470,8 +511,15 @@ class XBloomCloudClient:
         return await self._post(endpoint, _rsa_encrypt(payload))
 
     async def login(self, email: str, password: str) -> bool:
-        """Log in and cache member_id/token. Returns False on any failure
-        (bad credentials, network error) — never raises."""
+        """Log in and cache member_id/token/project_token. Returns False on
+        any failure (bad credentials, network error) — never raises.
+
+        ``project_token`` (JSON field ``projectToken``) is a second bearer
+        token in the same response, for BACKEND_API_BASE — see that
+        constant's module-level comment. Its absence doesn't fail login;
+        it just means BACKEND_API_BASE calls (e.g.
+        get_pour_radius_init_center) won't be possible this session.
+        """
         resp = await self._post_plain(
             "tMemberLogin.thtml",
             {
@@ -493,7 +541,76 @@ class XBloomCloudClient:
             return False
         self.member_id = int(member_id)
         self.token = str(token)
+        project_token = resp.get("projectToken")
+        self.project_token = str(project_token) if project_token else None
         return True
+
+    def _backend_api_headers(self) -> dict[str, str]:
+        """Signed header set for BACKEND_API_BASE — see that constant's
+        module-level comment for the scheme and where the pieces come
+        from. Live-verified 2026-07-16 against a real account."""
+        ts = str(int(time.time()))
+        nonce = uuid.uuid4().hex
+        headers = {
+            "platform": "android",
+            "appid": _BACKEND_APP_ID,
+            "version": "2.2.4",
+            "accept-language": "en",
+            "ts": ts,
+            "nonce": nonce,
+            "sign": _backend_api_sign(nonce, ts),
+        }
+        if self.project_token:
+            headers["Authorization"] = f"token {self.project_token}"
+        return headers
+
+    async def get_pour_radius_init_center(
+        self, serial_number: str, pouring_radius: int
+    ) -> int | None:
+        """Fetch the true factory-default pour-radius center for a
+        specific paired machine — ``GET
+        /app/device/getInitPouringRadius?serialNumber=...&pouringRadius=...``
+        on BACKEND_API_BASE (reverse-engineered 2026-07-16 from
+        ``ApiDevicePour``/``DevicePourRep``, see the module-level comment
+        by BACKEND_API_BASE). Requires a prior successful :meth:`login`
+        (needs ``project_token``) — returns ``None`` without one, or on
+        any network/parse failure, never raises.
+
+        ``pouring_radius`` is the machine's current live value (from
+        ``_client.py``'s ``async_get_pour_radius``/the ``pour_radius``
+        sensor) — the API takes it as a query param for reasons unclear
+        from the decompiled code (perhaps server-side reconciliation);
+        it's passed through unchanged, not derived from it.
+
+        Live-verified 2026-07-16 against a real account/device (member_id
+        23237, serial J15A01B4CV030) — returned a real
+        ``initPouringRadius`` (750), confirming the request shape,
+        ``projectToken`` reuse, and signing scheme are all correct, not
+        just plausible-looking reverse-engineering.
+        """
+        if not self.project_token:
+            return None
+        try:
+            async with self._session.get(
+                f"{BACKEND_API_BASE}/app/device/getInitPouringRadius",
+                params={"serialNumber": serial_number, "pouringRadius": pouring_radius},
+                headers=self._backend_api_headers(),
+                timeout=_TIMEOUT,
+            ) as resp:
+                body = await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            _LOGGER.warning("BACKEND_API_BASE getInitPouringRadius call failed: %s", exc)
+            return None
+        # cn.com.library.bean.BaseResp.convert() (what DevicePourRep.kt
+        # actually calls) only treats code == 0 as success, despite
+        # isSuccess() elsewhere in the same class accepting 0 or 200.
+        if not isinstance(body, dict) or body.get("code") != 0:
+            return None
+        data = body.get("data")
+        if not isinstance(data, dict):
+            return None
+        center = data.get("initPouringRadius")
+        return int(center) if center is not None else None
 
     async def _resolve_collective_link(self, community_recipe_id: str) -> str | None:
         """Resolve a collective.xbloom.com/recipe/{id} link to its

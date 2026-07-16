@@ -78,6 +78,12 @@ SERVICE_DELETE_RECIPE = "delete_recipe"
 SERVICE_WRITE_RECIPE_TO_EASY_SLOT = "write_recipe_to_easy_slot"
 ATTR_SLOT = "slot"
 
+SERVICE_ADVANCED_SETTINGS = "advanced_settings"
+ATTR_POUR_RADIUS_LEVEL = "pour_radius_level"
+ATTR_VIBRATION_AMPLITUDE_LEVEL = "vibration_amplitude_level"
+ATTR_DISPLAY_BRIGHTNESS_LEVEL = "display_brightness_level"
+ATTR_CALIBRATE_GRINDER = "calibrate_grinder"
+
 # Cloud boundary services (cloud_ prefix = the network is involved).
 SERVICE_CLOUD_IMPORT_RECIPE = "cloud_import_recipe"
 ATTR_SHARE_URL = "share_url"

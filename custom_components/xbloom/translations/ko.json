@@ -225,6 +225,12 @@
       },
       "voltage_raw": {
         "name": "전압"
+      },
+      "pour_radius": {
+        "name": "물줄기 회전반경"
+      },
+      "vibration_amplitude": {
+        "name": "진동 강도"
       }
     },
     "select": {
@@ -357,6 +363,28 @@
         "recipe": {
           "name": "레시피",
           "description": "저장할 레시피 — 로컬 uid, 클라우드 테이블 ID, 공유 URL/ID, 또는 정확한 레시피 이름. 생략하면 현재 선택된 레시피를 저장합니다."
+        }
+      }
+    },
+    "advanced_settings": {
+      "name": "고급 설정",
+      "description": "물줄기 회전반경, 진동 강도, 그라인더 보정 — 공식 앱의 Advanced Features 화면과 동일하게 묶었습니다. 최소 한 개 필드는 입력해야 합니다.",
+      "fields": {
+        "pour_radius_level": {
+          "name": "물줄기 회전반경 단계",
+          "description": "L1(가장 좁음)~L5(가장 넓음), 공식 앱 선택 UI와 동일. L3은 XBloom 클라우드 계정에서 가져온 진짜 공장 기본값입니다 — 옵션 → 계정에서 로그인이 필요합니다."
+        },
+        "vibration_amplitude_level": {
+          "name": "진동 강도 단계",
+          "description": "L1(최소)~L6(최대), 공식 앱 선택 UI와 동일."
+        },
+        "display_brightness_level": {
+          "name": "디스플레이 밝기 단계",
+          "description": "L1(가장 어두움)~L3(가장 밝음), 공식 앱 선택 UI와 동일."
+        },
+        "calibrate_grinder": {
+          "name": "그라인더 보정",
+          "description": "약 120초 소요되는 그라인더 보정을 시작합니다."
         }
       }
     },
