@@ -1312,11 +1312,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         gated on the same signal (see ``async_connect``/
         ``_machine_info_retry_loop``, both of which now only call this
         once serial_number is confirmed non-empty).
+
+        The two GETs need at least ~0.5s between them — hardware-confirmed
+        2026-07-17 (four repeated trials on a real machine): a 0.3s gap
+        made the vibration_amplitude GET consistently get no response at
+        all (pour_radius always succeeded; the machine appears to still be
+        busy replying to the first request when the second arrives, and
+        silently drops it rather than queuing it), while 0.6s/1.0s/1.5s
+        gaps all succeeded consistently. 0.8s below is used for margin.
         """
         _LOGGER.info("Requesting pour_radius / vibration_amplitude (cmd 11506/11508)…")
         try:
             await self.client.async_get_pour_radius()
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.8)
             await self.client.async_get_vibration_amplitude()
             _LOGGER.info("Advanced settings GET sent (pour_radius/vibration_amplitude)")
         except Exception as exc:
