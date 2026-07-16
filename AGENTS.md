@@ -45,7 +45,13 @@ ha_xbloom/
 - **Tea recipes use the dedicated `4513`/`4512` path — NOT `8004`.** A PacketLogger HCI capture of the official iOS app (2026-05-28, CRC-verified) confirmed `8104` (set_cup) → `4513` (`APP_TEA_RECIP_CODE`) → `4512` (`APP_TEA_RECIP_MAKE`); `8004` with tea cup bounds was tested locally and the firmware did NOT enter tea mode (no tea UI, no siphon). Lives in `brewing.py` (`_async_brew_tea`/`_build_tea_payload`); do not patch the vendored library. Multi-steep separation, real soak, and tea→coffee grinding were all fixed 2026-05-29 (pattern=1 substep byte + siphon-cap top-up trick + dropping a QUIT prelude that was killing the grinder) — see `docs/en/brewing-notes.md` for the byte-level history.
 - **MachineInfo string fields are 0xFF-padded, not NUL-padded.** The `theModel` slice of the `RD_MachineInfo` (40521) payload is filled with `0xFF` on machines that don't populate it. A naive `decode('utf-8', errors='ignore')` lets some `0xFF` runs through whenever they form valid UTF-8 sequences with neighboring bytes — produces garbage in the Model sensor. Always run MachineInfo / GATT 180A bytes through `_client.strict_ascii()` (printable 0x20–0x7E only), cherry-picked from `src/xbloom-ble/python/xbloom.py:_handshake_notify._hex_ascii`.
 - **Easy Mode slot writes (cmd 11510) are type-2 packets** — the type byte at packet offset 2 is `0x02`, not the usual `0x01`. Use `client._send_command_raw(11510, payload, type_code=2)`. Payload prefix is `[slot_index][flags]` followed by the same recipe blob `build_recipe_payload` produces for 8001/8004 brews.
+- **Easy Mode slots must be written as a full A/B/C batch, with no commit frame, and PRO mode first.** Hardware-confirmed 2026-07-15: writing a single slot hangs the machine at status `0x43` ("saving", RETRY) — completing all three back-to-back unsticks it (`0x43`→`0xf8`→`0x25`→idle). Writing from Easy/Auto mode is also refused (stays at `0x41`/RETRY) — the machine must be switched to PRO first. `coordinator.async_write_easy_slot()` handles both: it resolves the other two slots' current contents before writing, force-switches to PRO if needed (restoring the prior mode after), and `brewing.async_write_easy_slots()` always sends all three frames in one call — there is no single-slot write path.
+- **No-grind coffee recipes need a real, nonzero dose sent to `8102` — `dose=0` silently hangs the arm.** Hardware-confirmed 2026-07-15: even with a healthy 8004 footer ratio byte, `client.set_bypass(vol, temp, dose=0)` makes the machine never reach `armed` (`0x1f`) — no refusal notification, just permanent silence. This is unrelated to whether the grinder actually runs (opcode 8001 vs 8004 already governs that) — `dose` must track `recipe.bean_weight` whenever it's `>0`, never zeroed just because `grinding` is `False`. See `brewing.py`'s `_async_brew_coffee`.
+- **The raw status-heartbeat frame (not the cmd-tagged `RD_*` responses) is the only reliable way to track `starting`/`brewing`/`ready`.** Hardware-confirmed 2026-07-16 (a real ~11 s grind): `RD_GRINDER_BEGIN` never fired at all, `RD_BREWER_BEGIN` fired immediately after commit (long before pouring actually starts), and `RD_Grinder_Stop` flips vendored `DeviceState` to `IDLE` the instant grinding *ends* — moments before real pouring begins. `_client.py`'s `_scan_for_status_frame`/`_RAW_STATE_LABEL_MAP` reads the raw frame directly (header(0x58|0x02) | dev_id | `0x57` | ... | `0xc1` marker | state_byte | ...; state byte is the first byte after the same 10-byte preamble the cmd-tagged frames use) for `0x22`(starting)/`0x10`,`0x23`,`0x3B`(brewing)/`0x24`(ready), overriding the vendored value only for those codes — `coordinator._async_update_data`'s state priority is `no_beans → water_shortage → raw_label → vendored s.state.value`.
+- **cmd `40518` is not "start" — sending it into an already-progressing brew resets it back to `armed`.** Hardware-confirmed 2026-07-15/16 across two live grind-path brews: one where it was sent after only a 3 s stall at `awaiting_confirm` (the brew reset to `armed` and never resumed on its own, needing a manual `stop_recipe()`), and one where it was never sent at all (the brew completed naturally in ~65 s — a ~9 s `awaiting_confirm` delay before `starting` is apparently normal for a real grind, not a hang). A third-party capture (Janczykkkko/xbloom-ble) claims 40518 is the post-commit "go"; another (brAzzi64) names it `CMD_BREW_PAUSE`. Neither claim is fully confirmed, but the disruptive-reset behavior observed here is closer to the latter. Do not send it speculatively.
+- **cmd `8104`'s payload semantics are unresolved — treated as cup weight bounds here, but this is unconfirmed.** Our shipped code (`brewing.py`, `src/xbloom/core/client.py:set_cup`) sends two floats as `(max, min)` cup-weight bounds; a third-party capture (Janczykkkko/xbloom-ble) reads the identical payload shape as two preheat "stage temps". `RD_BREWER_TEMPERATURE` (8108) has never fired once across 4 separate hardware tests this session (no-grind load-only, no-grind real brews ×2, one real grind+brew) regardless of the 8104 value sent, so neither theory can be confirmed or refuted via BLE telemetry on the tested unit. The shipped values already brew correctly in practice, so this was deliberately left as-is rather than "fixed" toward an unverified theory — see the comment at `brewing.py`'s 8104 call site for the two other refuted claims (an 18g dose cap, cmd 40518 = "start") from the same third-party source that argue against trusting it on cross-claim credibility alone.
 - **Tea steeps end on `RD_TEA_RECIP_PAUSE` (40515) → "paused"** or `RD_ENJOY` (40512) → "recipe_complete". The firmware fires these between steeps inside one `8004` recipe — entities can listen via the event bus rather than orchestrating per-steep.
+- **A second, independent notification-framing check: every real response frame carries a constant marker byte (`0xc1`) right after the length field.** `_client.py`'s `_split_and_parse` requires it alongside the existing `_MAX_PACKET_LEN` bound, making a coincidental false-positive header match (right length *and* right marker, purely by chance, inside the noisy weight/water-volume telemetry stream) even less likely. Confirmed on every captured `RD_MachineInfo` frame this session.
 
 ## BLE protocol primer
 
@@ -55,10 +61,47 @@ Helpful constants live in `src/xbloom/protocol/constants.py`; the most thoroughl
 
 ## BLE connection management
 
-- **Connects through HA's Bluetooth integration, not a bare `BleakClient`.** The vendored `src/xbloom/connection/bleak_impl.py` opens `BleakClient(mac_address)` directly — no HA proxy routing, no `bleak-retry-connector` retry/cache-clear handling. `_client.HABleakConnection` (injected via the vendored `XBloomClient(connection=...)` constructor param, never by editing the vendored file) resolves the address through `bluetooth.async_ble_device_from_address` and connects via `bleak_retry_connector.establish_connection` instead. `manifest.json` depends on the `bluetooth` integration and requires `bleak-retry-connector` for this.
+- **Connects through HA's Bluetooth integration, not a bare `BleakClient`.** The vendored `src/xbloom/connection/bleak_impl.py` opens `BleakClient(mac_address)` directly — no HA proxy routing, no `bleak-retry-connector` retry/cache-clear handling. `_client.HABleakConnection` (injected via the vendored `XBloomClient(connection=...)` constructor param, never by editing the vendored file) resolves the address through `bluetooth.async_ble_device_from_address` and connects via `bleak_retry_connector.establish_connection` instead. `manifest.json` depends on the `bluetooth` integration and requires `bleak-retry-connector` for this. **Every** BLE connection this integration makes must use `HABleakConnection` + `XBloomClientWithEvents` (from `_client.py`) — `config_flow.py`'s discovery-confirm and manual-MAC-entry connect-tests used the bare vendored `XBloomClient()` with no `connection=` arg until 2026-07-15, which bypassed both this and the notification-framing fixes below; confirmed live via the exact "Partial packet received" / "connect() called without bleak-retry-connector" warnings those fixes exist to prevent.
 - **Auto-reconnects on an unexpected BLE drop.** Before 2026-07-04 nothing ever called `coordinator.async_connect()` again after an unrequested disconnect — only the connection switch's `async_turn_on` did — so any drop left the switch stuck "off" until manually flipped. `HABleakConnection`'s `disconnected_callback` now calls `coordinator._handle_unexpected_disconnect()`, which reconnects unless the drop was caused by `async_disconnect()` itself (tracked via `_manual_disconnect`, so turning the switch off on purpose doesn't immediately reconnect).
 - **A stray header byte inside telemetry can produce a garbage frame length.** The vendored framing loop (`src/xbloom/core/client.py:_on_notification`) scans raw notification bytes for a header byte (`0x58`/`0x02`) and reads the next 4 bytes as the packet length with no bounds check — a false match inside the weight/water-volume telemetry stream (which floods at multi-Hz) can read garbage (e.g. `0xc2000001` = 3254779905) and, in the vendored code, discards the rest of the buffer with a misleading "Partial packet received" warning. `_client.py`'s `_on_notification` override replaces the framing loop (`_split_and_parse`) with the same logic plus a `_MAX_PACKET_LEN` (256) sanity bound: anything larger is a false-positive header byte, skipped instead of aborting the buffer.
 - **Changing the mode-select entity must not reload the config entry.** `coordinator.async_set_mode()` persists the preference via `hass.config_entries.async_update_entry()`, which fires `__init__.py`'s `_async_update_listener`. `CONF_MODE` is in `_NO_RELOAD_OPTION_KEYS` (alongside the recipe-store keys) specifically so this doesn't trigger `hass.config_entries.async_reload()` — a reload's `async_unload_entry` calls `coordinator.async_disconnect()`, and nothing in `async_setup_entry` reconnects automatically, so every mode switch used to drop the connection and leave it dropped (confirmed live 2026-07-04, and easy to mistake for a firmware quirk — it wasn't).
+
+## Device registry (4-device split)
+
+Each config entry has **4 device-registry entries**, not 1: the main
+device plus Grinder/Scale/Brewer child devices, linked via `via_device`
+(`coordinator.grinder_device_info` / `scale_device_info` /
+`brewer_device_info`, both backed by `_sub_device_info()`). `unique_id`s
+are untouched — this is a pure device-page regrouping, no
+entity_id/automation breakage. Deliberately not HA's "config subentries"
+feature (that's for dynamically add/removable child items — wrong fit for
+fixed sub-components of one physical machine).
+
+Two things `via_device` does **not** give you for free, both
+hardware-confirmed 2026-07-15/16:
+
+- **Translation.** A literal `name=` on child `DeviceInfo` ships
+  English-only device names regardless of the user's HA UI language. Use
+  `translation_key` + a top-level `device.<key>.name` block in
+  `strings.json`/`translations/*.json` (a device-level analogue of the
+  entity translation flow below) instead.
+- **Area assignment.** Setting the main device's area does not propagate
+  to its `via_device`-linked children — each device's `area_id` is
+  independent. `_sub_device_info()` passes `suggested_area` (the main
+  device's *current* area, looked up via `device_registry`/`area_registry`)
+  so newly-created sub-devices default into the same area, without forcing
+  ongoing sync — a later manual change on either device is left alone.
+
+**The main device must be registered before any platform is set up**,
+not left to whichever platform's entities happen to register first.
+`async_forward_entry_setups` fans platforms out concurrently, so entity
+registration order isn't fixed — if a platform whose entities all point
+at a sub-device (e.g. `binary_sensor.py`, all of whose entities are now
+Grinder/Brewer/Scale) happens to register before any main-device entity
+does, HA logs a "non existing via_device" warning (confirmed live). Fixed
+by `__init__.py`'s `async_setup_entry` calling
+`device_registry.async_get_or_create()` for the main device explicitly,
+before `async_forward_entry_setups`.
 
 ## XBloom cloud API
 
@@ -191,9 +234,20 @@ then backgrounds `coordinator.async_seed_recipes()` via
 task fetches the account's own recipes if a login is configured (flag
 `CONF_ACCOUNT_RECIPES_SEEDED` — linking an account later seeds once more)
 or XBloom's official public recipes otherwise (flag `CONF_RECIPES_SEEDED`,
-capped at `_OFFICIAL_RECIPE_SYNC_LIMIT`); names already present locally —
+capped at `_OFFICIAL_RECIPE_SYNC_LIMIT`, `cup_type=["Omni"]` only — the
+collective hub's similarly-named "Omni Brewer" cup type is the tea
+accessory, not a coffee one; excluding it avoids duplicating what the
+tea seed below already covers); names already present locally —
 tombstones and YAML names included — are skipped, and a failed fetch
 leaves its flag unset for the next HA start to retry.
+
+`default_recipes.py`'s **coffee** section is intentionally empty
+(2026-07-16) — it held 6 hand-authored, non-official recipes until the
+async official-recipe seed above became the sole coffee source, so the
+dropdown isn't empty on a fresh install but is never a stale hardcoded
+snapshot either. Its **tea** section stays static (4 entries, sourced
+from real xBloom/Passenger Coffee & Tea product pages) since the async
+seed's `cup_type=["Omni"]` filter deliberately excludes tea.
 
 `coordinator._rebuild_recipes()` merges two layers only: YAML
 (`hass.data[DOMAIN]["yaml_recipes"]`) < the local store, where a `None`
@@ -216,6 +270,20 @@ HA looks up `entity.<platform>.<key>.name` from `translations/<ha_ui_lang>.json`
 
 For state-enum sensors, also populate `entity.<platform>.<key>.state.<value>`.
 For event entities with attribute enums, populate `entity.<platform>.<key>.state_attributes.event_type.state.<value>`.
+For a `select` with a fixed, non-recipe-derived fallback option (e.g. "No
+recipes configured"), also populate `entity.select.<key>.state.<value>` —
+easy to miss since most `select`/`sensor` options here are dynamic
+(recipe names), not translatable strings.
+
+**Devices get the same treatment, one level up**: `translation_key` (not
+a literal `name`) on `DeviceInfo` + a top-level `device.<key>.name` block
+— see the Device registry section below. A property/method that returns
+a fixed placeholder string as if it were a real value (`"none"`,
+`"unknown"`, `"No recipes configured"`) instead of Python `None` is a
+recurring bug shape in this codebase — HA already localizes `None`/the
+generic Unknown state; a raw literal string bypasses that and ships
+untranslated (fixed in `sensor.py` for `easy_slot`/`last_error`
+2026-07-15/16 — check new sensors/selects for the same pattern).
 
 ## Testing
 
@@ -234,6 +302,16 @@ BLE-facing is still validated manually:
 2. Adding the integration via Settings → Devices & Services with a real BLE MAC.
 3. Driving each entity (pour / grind / recipe / cancel) and watching `home-assistant.log` for the `SEND CMD` / `RECV CMD` lines emitted by the vendored client.
 
+**The devcontainer host needs real Bluetooth hardware reachable from its
+Docker daemon** — confirmed 2026-07-15 that it does *not* on a Mac running
+the devcontainer via Apple's `container` CLI virtualization (checked:
+`/sys/class/bluetooth`, D-Bus, BlueZ all absent in that VM; Apple's
+Containerization framework has no USB/device-passthrough flag as of
+`container` 1.1.0). Every BLE-dependent config-flow step fails identically
+in that setup (`cannot_connect`) — not a MAC/config problem, and not fixable
+by Docker flags. Step 2 above needs a devcontainer host with an actual
+Bluetooth adapter (a native Linux box, or a Pi) to ever succeed.
+
 ## Release workflow
 
 This repo (and other `ha-*` HACS components, excluding `ha-app*`) ships on a
@@ -248,9 +326,29 @@ continuously as PRs merge to `main`.
 3. After the prerelease has been exercised with no issues, promote/publish
    the corresponding `stable` draft.
 
+**`legacy/1.4.x` is a separate, temporary branch** (created 2026-07-15) for
+users whose HA can't yet meet the `v1.5.0` line's `2026.8.0.dev*` floor
+(the LLM tools platform's HA-version requirement — see that section
+below). Branched from the commit right before the LLM-platform merge
+(floor `2026.4.0` there), it cherry-picks only the non-LLM fixes/features
+from `main` (never the LLM-platform commits themselves, which don't
+apply cleanly to that base anyway) and ships its own `v1.4.1-rc.N`
+prereleases via `gh release create --target legacy/1.4.x` (release-drafter
+only watches `main`, so these are cut manually). Not an ongoing parallel
+release line — no new work is developed there, only backports of
+already-`main`'d fixes for real-hardware testing before the 2026.8 beta
+ships; once it does, `legacy/1.4.x` users switch to tracking `main`'s
+`v1.5.0`+ releases and the branch can be retired.
+
 ## When in doubt
 
 - Localization broken? Check (2) above before anything else.
 - Sensor stuck `unknown`? Check the firmware-quirks section.
+- Sensor shows a raw untranslated word (`"none"`, `"unknown"`, an English
+  literal) instead of localized Unknown? A property is almost certainly
+  returning that literal string instead of Python `None` — see the Entity
+  translation flow section's note on this recurring bug shape.
 - Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. See the firmware-quirks entry.
+- `sensor.state` looks wrong specifically during/right after a real grind (stuck on a stale value, or briefly flips to `idle` mid-brew)? The cmd-tagged `RD_*` path is known-unreliable for the grinding→brewing transition — check `_RAW_STATE_LABEL_MAP` in the firmware-quirks section before assuming a new bug.
 - Adding a new entity? Update `strings.json` AND every file under `translations/`. Add an `icons.json` entry. Don't set `_attr_name` or `_attr_icon` on the class.
+- Adding a new **device** (not entity)? Same idea, one level up — see the Device registry section.
