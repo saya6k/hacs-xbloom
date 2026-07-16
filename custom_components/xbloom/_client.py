@@ -269,23 +269,50 @@ class XBloomClientWithEvents(XBloomClient):
         await self._send_command(CMD_SET_DISPLAY_BRIGHTNESS, [_DISPLAY_BRIGHTNESS_RAW[level]])
 
     def _scan_for_advanced_settings(self, raw: bytes) -> None:
-        """Raw pre-scan for cmd 11506/11508 responses — bypasses the
-        vendored XBloomResponse enum entirely since it doesn't know these
-        codes (see the CMD_GET_POUR_RADIUS module comment for why that's
-        the correct fix, not a workaround). Same frame layout every other
-        scan here relies on: cmd at offset 3-4 (LE), payload starting at
-        offset 10, value = payload[0:4] as LE uint32."""
-        if len(raw) < 14 or raw[9] != _NOTIFICATION_MARKER_BYTE:
-            return
-        cmd = int.from_bytes(raw[3:5], "little")
-        if cmd not in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS, CMD_GET_VIBRATION_AMPLITUDE, CMD_SET_VIBRATION_AMPLITUDE):
-            return
-        payload = raw[10:14]
-        value = int.from_bytes(payload, "little")
-        if cmd in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS):
-            self._status.pour_radius = value
-        else:
-            self._status.vibration_amplitude = value
+        """Raw pre-scan for cmd 11506/11507/11508/11509 responses —
+        bypasses the vendored XBloomResponse enum entirely since it
+        doesn't know these codes (see the CMD_GET_POUR_RADIUS module
+        comment for why that's the correct fix, not a workaround).
+
+        Walks the whole buffer for a header match, exactly like
+        ``_split_and_parse`` does — a single BLE notification can carry
+        more than one frame, or a leading partial/unrelated frame, so the
+        target frame is not guaranteed to start at offset 0. An earlier
+        version assumed offset 0 and silently missed the response
+        whenever it wasn't first in the buffer (hardware-observed
+        2026-07-17: pour_radius/vibration_amplitude sensors stuck
+        `unknown` after connect, matching this exact failure mode).
+        """
+        offset = 0
+        n = len(raw)
+        while offset < n:
+            if raw[offset] not in (0x58, 0x02):
+                offset += 1
+                continue
+            if n - offset < 14:
+                break
+            total_len = int.from_bytes(raw[offset + 5 : offset + 9], "little")
+            if total_len > _MAX_PACKET_LEN:
+                offset += 1
+                continue
+            if raw[offset + 9] != _NOTIFICATION_MARKER_BYTE:
+                offset += 1
+                continue
+            cmd = int.from_bytes(raw[offset + 3 : offset + 5], "little")
+            if cmd in (
+                CMD_GET_POUR_RADIUS,
+                CMD_SET_POUR_RADIUS,
+                CMD_GET_VIBRATION_AMPLITUDE,
+                CMD_SET_VIBRATION_AMPLITUDE,
+            ):
+                value = int.from_bytes(raw[offset + 10 : offset + 14], "little")
+                if cmd in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS):
+                    self._status.pour_radius = value
+                else:
+                    self._status.vibration_amplitude = value
+            if offset + total_len > n or total_len <= 0:
+                break
+            offset += total_len
 
     async def _reset_state(self) -> None:
         """Send the 8100 handshake before the upstream cleanup commands.
