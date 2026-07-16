@@ -26,8 +26,6 @@ async def async_setup_entry(
             XBloomWeightSensor(coordinator, entry),
             XBloomBrewerTempSensor(coordinator, entry),
             XBloomFlowRateSensor(coordinator, entry),
-            XBloomErrorSensor(coordinator, entry),
-            XBloomFirmwareVersionSensor(coordinator, entry),
             XBloomSerialNumberSensor(coordinator, entry),
             *(XBloomEasySlotSensor(coordinator, entry, slot) for slot in ("A", "B", "C")),
             XBloomLiveGrindSizeSensor(coordinator, entry),
@@ -116,30 +114,6 @@ class XBloomFlowRateSensor(_XBloomSensor):
     @property
     def native_value(self) -> float:
         return float(self.coordinator.flow_rate)
-
-
-class XBloomErrorSensor(_XBloomSensor):
-    _attr_translation_key = "last_error"
-    _attr_unique_id = "xbloom_error"
-
-    @property
-    def native_value(self) -> str | None:
-        return self.coordinator.data.get("error") or None
-
-    @property
-    def icon(self) -> str:
-        # Dynamic — error string state is open-ended, so handle in code.
-        return "mdi:check-circle" if self.native_value is None else "mdi:alert-circle"
-
-
-class XBloomFirmwareVersionSensor(_XBloomSensor):
-    _attr_translation_key = "firmware_version"
-    _attr_unique_id = "xbloom_firmware_version"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def native_value(self) -> str:
-        return self.coordinator.data.get("version") or "unknown"
 
 
 class XBloomSerialNumberSensor(_XBloomSensor):
