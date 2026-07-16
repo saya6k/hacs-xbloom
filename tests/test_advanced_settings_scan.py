@@ -10,7 +10,12 @@ from __future__ import annotations
 
 from custom_components.xbloom._client import XBloomClientWithEvents
 
-_MARKER = 0xC1
+# These are type-2 commands (like the 11510 Easy Slot family) — their
+# response frames carry marker byte 0xC2, not the 0xC1 every type-1
+# response uses. Hardware-confirmed 2026-07-17 by connecting directly to a
+# real machine: sending the GET with the default type_code=1 got no
+# response at all; type_code=2 got an immediate reply with this marker.
+_MARKER = 0xC2
 
 
 def _client() -> XBloomClientWithEvents:
@@ -66,6 +71,20 @@ def test_missing_marker_byte_ignored():
     client = _client()
     frame = bytearray(_frame(11506, 840))
     frame[9] = 0x00  # corrupt the marker byte
+    client._scan_for_advanced_settings(bytes(frame))
+    assert getattr(client._status, "pour_radius", None) is None
+
+
+def test_type1_marker_rejected():
+    """A type-1 response (marker 0xC1) must not match — these commands are
+    exclusively type-2. Regression test for the original bug: the scan used
+    to hardcode 0xC1 (the marker every other command in this file uses),
+    which meant the real type-2 responses these commands actually send were
+    silently rejected, leaving pour_radius/vibration_amplitude permanently
+    unknown even after the offset-scanning fix landed."""
+    client = _client()
+    frame = bytearray(_frame(11506, 840))
+    frame[9] = 0xC1
     client._scan_for_advanced_settings(bytes(frame))
     assert getattr(client._status, "pour_radius", None) is None
 
