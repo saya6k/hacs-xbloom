@@ -130,8 +130,10 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
-# extra=ALLOW_EXTRA lets HA's target selector pass device_id / entity_id /
-# area_id through alongside the typed fields.
+# extra=ALLOW_EXTRA lets config_entry_id (a custom field, not HA's
+# built-in target: mechanism — see _coordinators_for_call) pass through
+# alongside the typed fields below without being explicitly declared in
+# every one of these schemas.
 EXECUTE_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_RECIPE): cv.string,
@@ -259,27 +261,29 @@ CLOUD_SEARCH_COLLECTIVE_RECIPES_SCHEMA = vol.Schema(
 def _coordinators_for_call(hass: HomeAssistant, call: ServiceCall) -> list:
     """Resolve which machine coordinators a service call targets.
 
-    With no device target, applies to all configured machines (there is
-    usually exactly one). With device targets, resolves each device to
-    its config entry's coordinator.
+    With no config_entry target, applies to all configured machines
+    (there is usually exactly one). A ``config_entry`` selector (not
+    ``device``) is used so the picker offers exactly one item per
+    physical XBloom machine — a device selector would also list the
+    Grinder/Scale/Brewer child devices (see the device-registry section
+    in AGENTS.md), and there's no way to filter those out of a plain
+    fields-level device selector (hassfest rejects an ``entity:`` filter
+    key there; that's only valid inside a ``target:`` block, which these
+    services don't use). Each config entry maps 1:1 to a coordinator
+    already, so no device-registry lookup is needed at all.
     """
     all_coords = {
         eid: data[DATA_COORDINATOR]
         for eid, data in hass.data.get(DOMAIN, {}).items()
         if isinstance(data, dict) and DATA_COORDINATOR in data
     }
-    device_ids = call.data.get("device_id") or []
-    if not device_ids:
+    entry_ids = call.data.get("config_entry_id") or []
+    if not entry_ids:
         return list(all_coords.values())
-    dev_reg = dr.async_get(hass)
     selected = []
-    for did in device_ids:
-        device = dev_reg.async_get(did)
-        if not device:
-            continue
-        for eid in device.config_entries:
-            if eid in all_coords and all_coords[eid] not in selected:
-                selected.append(all_coords[eid])
+    for eid in entry_ids:
+        if eid in all_coords and all_coords[eid] not in selected:
+            selected.append(all_coords[eid])
     return selected
 
 
