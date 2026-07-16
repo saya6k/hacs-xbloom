@@ -340,6 +340,12 @@ class XBloomClientWithEvents(XBloomClient):
                 CMD_SET_VIBRATION_AMPLITUDE,
             ):
                 value = int.from_bytes(raw[offset + 10 : offset + 14], "little")
+                # Logged at INFO on our own logger, not the vendored
+                # xbloom.core.client one the RECV CMD lines use — see
+                # _async_refresh_advanced_settings' docstring for why.
+                _LOGGER.info(
+                    "Advanced settings response: cmd=%s value=%s", cmd, value
+                )
                 if cmd in (CMD_GET_POUR_RADIUS, CMD_SET_POUR_RADIUS):
                     self._status.pour_radius = value
                 else:
