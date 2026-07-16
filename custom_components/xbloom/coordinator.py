@@ -1435,10 +1435,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Recipe ``select`` entity) is written — that's what the slot
         button entities do. A share URL/id not present locally is
         auto-imported first (clone + uid), so "write this shared recipe
-        to slot B" is one call. On success the slot → recipe mapping is
-        persisted in ``entry.options["easy_slots"]`` so the slot text
-        entities can show (and restore) what HA last wrote; the machine
-        itself never reports slot contents.
+        to slot B" is one call. On success **only the target letter's**
+        slot → recipe mapping is persisted in ``entry.options["easy_slots"]``
+        so the slot text entities can show (and restore) what HA last
+        *intentionally* wrote; the machine itself never reports slot
+        contents.
 
         Live-verified 2026-07-15 (cross-referenced against
         Janczykkkko/xbloom-ble's independent capture): the machine only
@@ -1449,7 +1450,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         the target recipe for a slot HA has never written — the machine
         has no readback, so there's nothing else to preserve it with),
         force-switches to Pro Mode if needed, writes all three, then
-        restores whatever mode the machine was in before.
+        restores whatever mode the machine was in before. That fallback
+        recipe *is* sent to the machine for an unwritten slot (there's no
+        other valid payload to send), but it is deliberately **not**
+        recorded as that slot's own assignment — otherwise the first
+        write to any slot would make every other never-configured slot's
+        sensor falsely flip from unknown to "registered" too (hardware-
+        confirmed 2026-07-17: writing only slot A with B/C both unknown
+        made all three sensors show as registered).
         """
         if identifier:
             resolved = find_recipe(self.recipes or {}, identifier)
@@ -1574,10 +1582,15 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is not None:
             slots = dict(entry.options.get(CONF_EASY_SLOTS) or {})
-            for letter in ("A", "B", "C"):
-                slots[letter] = {
-                    "uid": slot_raws[letter].get("uid"), "name": slot_names[letter],
-                }
+            # Only the target letter was actually requested by the user —
+            # the other two were mirrored purely to satisfy the hardware's
+            # all-three-at-once write requirement above. Recording them
+            # here too would make untouched slots' sensors falsely show as
+            # "registered" the first time any slot is written.
+            slots[target_letter] = {
+                "uid": slot_raws[target_letter].get("uid"),
+                "name": slot_names[target_letter],
+            }
             new_options = dict(entry.options)
             new_options[CONF_EASY_SLOTS] = slots
             self.hass.config_entries.async_update_entry(entry, options=new_options)
