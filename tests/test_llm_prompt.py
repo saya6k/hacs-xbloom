@@ -26,8 +26,6 @@ REGISTERED_TOOLS = (
     "import_xbloom_cloud_recipe",
     "search_xbloom_collective_recipes",
     "export_xbloom_recipe",
-    "search_xbloom_my_recipes",
-    "import_xbloom_my_recipe",
 )
 
 REMOVED_TOOLS = (
