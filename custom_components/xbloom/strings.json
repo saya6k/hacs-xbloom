@@ -199,9 +199,6 @@
       "flow_rate": {
         "name": "Flow Rate"
       },
-      "last_error": {
-        "name": "Last Error"
-      },
       "serial_number": {
         "name": "Serial Number"
       },

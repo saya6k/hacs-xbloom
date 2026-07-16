@@ -87,9 +87,6 @@
       "flow_rate": {
         "default": "mdi:waves-arrow-right"
       },
-      "last_error": {
-        "default": "mdi:alert-circle-outline"
-      },
       "serial_number": {
         "default": "mdi:identifier"
       },
