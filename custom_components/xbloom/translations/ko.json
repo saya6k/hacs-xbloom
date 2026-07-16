@@ -202,9 +202,6 @@
       "last_error": {
         "name": "마지막 오류"
       },
-      "firmware_version": {
-        "name": "펌웨어 버전"
-      },
       "serial_number": {
         "name": "시리얼 번호"
       },

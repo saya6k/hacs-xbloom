@@ -202,9 +202,6 @@
       "last_error": {
         "name": "Last Error"
       },
-      "firmware_version": {
-        "name": "Firmware Version"
-      },
       "serial_number": {
         "name": "Serial Number"
       },

@@ -90,9 +90,6 @@
       "last_error": {
         "default": "mdi:alert-circle-outline"
       },
-      "firmware_version": {
-        "default": "mdi:chip"
-      },
       "serial_number": {
         "default": "mdi:identifier"
       },
