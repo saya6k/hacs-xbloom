@@ -1277,13 +1277,24 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),
         so nothing populates the two sensors until this runs — see
-        _client.py's CMD_GET_POUR_RADIUS module comment."""
+        _client.py's CMD_GET_POUR_RADIUS module comment.
+
+        Logged at INFO on our own logger (not the vendored xbloom.core.client
+        one the SEND/RECV CMD lines use) — hardware debugging 2026-07-17
+        found a real user setup where xbloom.core.client's output was
+        entirely suppressed (a per-logger level override silencing that
+        specific noisy namespace, common for the multi-Hz telemetry it
+        logs) while custom_components.xbloom.* stayed visible, making the
+        whole GET/response cycle unobservable without this.
+        """
+        _LOGGER.info("Requesting pour_radius / vibration_amplitude (cmd 11506/11508)…")
         try:
             await self.client.async_get_pour_radius()
             await asyncio.sleep(0.3)
             await self.client.async_get_vibration_amplitude()
+            _LOGGER.info("Advanced settings GET sent (pour_radius/vibration_amplitude)")
         except Exception as exc:
-            _LOGGER.debug("Advanced settings refresh failed: %s", exc)
+            _LOGGER.warning("Advanced settings refresh failed: %s", exc)
 
     async def async_set_advanced_settings(
         self,
