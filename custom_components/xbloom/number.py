@@ -1,8 +1,9 @@
 """Number (slider) entities for XBloom."""
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -88,10 +89,11 @@ class XBloomTemperatureNumber(_XBloomNumber):
 
     _attr_translation_key = "temperature"
     _attr_unique_id = "xbloom_temperature"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_min_value = 40
     _attr_native_max_value = 100
     _attr_native_step = 1
-    _attr_native_unit_of_measurement = "°C"
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     @property
     def device_info(self):
@@ -109,10 +111,11 @@ class XBloomTemperatureNumber(_XBloomNumber):
 class XBloomVolumeNumber(_XBloomNumber):
     _attr_translation_key = "volume"
     _attr_unique_id = "xbloom_volume"
+    _attr_device_class = NumberDeviceClass.VOLUME
     _attr_native_min_value = 30
     _attr_native_max_value = 500
     _attr_native_step = 10
-    _attr_native_unit_of_measurement = "mL"
+    _attr_native_unit_of_measurement = UnitOfVolume.MILLILITERS
 
     @property
     def device_info(self):
