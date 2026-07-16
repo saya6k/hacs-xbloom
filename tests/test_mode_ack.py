@@ -56,3 +56,21 @@ def test_mode_switch_ack_overrides_stale_machine_info():
 
     client._handle_response(XBloomResponse.RD_EASYMODE_TYPE, _PRO_ACK)
     assert client._machine_mode() == "pro"
+
+
+def test_mode_ack_reaches_status_through_the_real_notification_pipeline():
+    """Regression test for a real bug found via live-hardware testing
+    2026-07-17: the tests above all call _handle_response directly,
+    bypassing _split_and_parse's marker-byte gate entirely -- which is
+    exactly why this bug went undetected. cmd 11511 is sent with
+    type_code=2, so its ACK carries marker 0xC2, but _split_and_parse
+    originally only accepted 0xC1 (_NOTIFICATION_MARKER_BYTE), silently
+    dropping the frame before _handle_response ever saw it. Going through
+    _on_notification (the real entry point for a BLE notification) is
+    what actually exercises that gate."""
+    client = _client()
+    assert client._machine_mode() == "pro"
+    client._on_notification(char="fake", data=bytearray(_EASY_ACK))
+    assert client._machine_mode() == "easy"
+    client._on_notification(char="fake", data=bytearray(_PRO_ACK))
+    assert client._machine_mode() == "pro"
