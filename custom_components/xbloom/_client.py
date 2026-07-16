@@ -58,8 +58,24 @@ _MAX_PACKET_LEN = 256
 # after the length field (offset+9) — a second, independent sanity check
 # _split_and_parse uses alongside _MAX_PACKET_LEN. Confirmed on our own
 # hardware (every captured RD_MachineInfo frame) and matches
-# Janczykkkko/xbloom-ble's independent capture.
+# Janczykkkko/xbloom-ble's independent capture. This is the marker for a
+# response to a type_code=1 outbound command specifically — see
+# _TYPE2_MARKER_BYTE below for type_code=2's marker.
 _NOTIFICATION_MARKER_BYTE = 0xC1
+
+# Marker byte for a response to a type_code=2 outbound command (mode
+# switch 11511, Easy Slot writes 11510/11512, pour_radius/vibration_
+# amplitude 11506-11509) — 0xC2, not 0xC1. Hardware-confirmed 2026-07-17:
+# the marker is apparently 0xC0 | type_code, not a single fixed constant.
+# _split_and_parse originally only accepted 0xC1, silently dropping every
+# type-2 response before it could reach _handle_response — this broke
+# _mode_ack_hex (the mode-switch ACK, cmd 11511, IS in the vendored
+# XBloomResponse enum and would otherwise flow through the normal path)
+# even though the frame was arriving correctly on the wire. Confirmed
+# live: a real mode-switch response captured as
+# ``580207f72c10000000c2913278569080`` — marker 0xc2, payload matching
+# the "easy" mode code — while _mode_ack_hex stayed None the whole time.
+_TYPE2_MARKER_BYTE = 0xC2
 
 # MachineInfo payload byte offsets (from PROTOCOL.md field map).
 # Mode is a 4-byte hex string at payload offset 51–54:
@@ -153,7 +169,6 @@ CMD_SET_POUR_RADIUS = 11507
 CMD_GET_VIBRATION_AMPLITUDE = 11508
 CMD_SET_VIBRATION_AMPLITUDE = 11509
 _ADVANCED_SETTINGS_TYPE_CODE = 2
-_ADVANCED_SETTINGS_MARKER_BYTE = 0xC2
 
 # Grinder calibration — decompiled from CalibrateGrinderActivity's confirm
 # button (2026-07-16): ``CodeModule(3502, "磨豆档位归0", 1000)``. Single
@@ -311,8 +326,8 @@ class XBloomClientWithEvents(XBloomClient):
         2026-07-17: pour_radius/vibration_amplitude sensors stuck
         `unknown` after connect, matching this exact failure mode).
 
-        Marker byte is ``_ADVANCED_SETTINGS_MARKER_BYTE`` (0xC2) here, not
-        the usual 0xC1 — these are type-2 commands/responses (see
+        Marker byte is ``_TYPE2_MARKER_BYTE`` (0xC2) here, not the usual
+        0xC1 — these are type-2 commands/responses (see
         CMD_GET_POUR_RADIUS's module comment), and the marker apparently
         encodes the packet's own type_code rather than being a fixed
         constant across the whole protocol. Hardware-confirmed 2026-07-17.
@@ -329,7 +344,7 @@ class XBloomClientWithEvents(XBloomClient):
             if total_len > _MAX_PACKET_LEN:
                 offset += 1
                 continue
-            if raw[offset + 9] != _ADVANCED_SETTINGS_MARKER_BYTE:
+            if raw[offset + 9] != _TYPE2_MARKER_BYTE:
                 offset += 1
                 continue
             cmd = int.from_bytes(raw[offset + 3 : offset + 5], "little")
@@ -456,12 +471,22 @@ class XBloomClientWithEvents(XBloomClient):
         instead of bailing out on the whole notification.
 
         Second, independent check: real notification frames carry a
-        constant marker byte (``_NOTIFICATION_MARKER_BYTE``) right after the
-        length field — confirmed on our own hardware (every captured
-        RD_MachineInfo frame has ``0xc1`` at that exact offset) and matches
-        Janczykkkko/xbloom-ble's independent capture. Requiring it too makes
-        a false-positive header match (right length *and* right marker byte,
-        purely by chance) even less likely.
+        constant marker byte right after the length field — confirmed on
+        our own hardware (every captured RD_MachineInfo frame has ``0xc1``
+        at that exact offset) and matches Janczykkkko/xbloom-ble's
+        independent capture. Requiring it too makes a false-positive
+        header match (right length *and* right marker byte, purely by
+        chance) even less likely.
+
+        Accepts both ``_NOTIFICATION_MARKER_BYTE`` (0xC1, type-1 responses)
+        and ``_TYPE2_MARKER_BYTE`` (0xC2, type-2 responses) — originally
+        only 0xC1 was accepted, which silently dropped every type-2
+        response before it could reach ``_handle_response``. Hardware-
+        confirmed 2026-07-17: this broke ``_mode_ack_hex`` (the mode-switch
+        ACK, cmd 11511 / ``RD_EASYMODE_TYPE``, is in the vendored
+        ``XBloomResponse`` enum and should flow through this exact path) —
+        the ACK frame was arriving on the wire the whole time, just always
+        discarded here.
         """
         offset = 0
         n = len(raw_data)
@@ -475,7 +500,7 @@ class XBloomClientWithEvents(XBloomClient):
             if total_len > _MAX_PACKET_LEN:
                 offset += 1
                 continue
-            if raw_data[offset + 9] != _NOTIFICATION_MARKER_BYTE:
+            if raw_data[offset + 9] not in (_NOTIFICATION_MARKER_BYTE, _TYPE2_MARKER_BYTE):
                 offset += 1
                 continue
             if offset + total_len > n:
