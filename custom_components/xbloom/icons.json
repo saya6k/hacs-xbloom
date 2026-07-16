@@ -145,6 +145,11 @@
         }
       }
     },
+    "update": {
+      "firmware": {
+        "default": "mdi:chip"
+      }
+    },
     "event": {
       "error_event": {
         "default": "mdi:alert-circle"

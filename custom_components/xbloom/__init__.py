@@ -106,6 +106,7 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.UPDATE,
 ]
 
 # YAML / options recipe schemas live in ``schema.py`` so the OptionsFlow

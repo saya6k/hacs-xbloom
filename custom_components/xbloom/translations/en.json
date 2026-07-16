@@ -259,6 +259,11 @@
         "name": "Connection"
       }
     },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
+      }
+    },
     "event": {
       "error_event": {
         "name": "Error",

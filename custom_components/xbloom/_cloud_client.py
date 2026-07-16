@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 import aiohttp
@@ -378,6 +379,35 @@ def _parse_share_id(share_url_or_id: str) -> str:
     return value
 
 
+def _parse_latest_firmware_response(resp: dict | None) -> dict | None:
+    """Pure parsing half of :meth:`XBloomCloudClient.get_latest_firmware`,
+    split out so it's testable without mocking the network call. See that
+    method's docstring for the endpoint and field provenance."""
+    if not resp or resp.get("result") != "success":
+        return None
+    try:
+        payload = json.loads(resp.get("data") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    version = payload.get("version_string")
+    if not version:
+        return None
+    published_ms = payload.get("publishTimestamp")
+    published = (
+        datetime.fromtimestamp(published_ms / 1000, tz=timezone.utc)
+        if isinstance(published_ms, (int, float))
+        else None
+    )
+    return {
+        "version": version,
+        "release_notes": (payload.get("content") or "").replace("<br/>", "\n").strip(),
+        "md5": payload.get("md5_string") or "",
+        "download_url": payload.get("link_url") or "",
+        "published": published,
+        "force_upgrade": str(payload.get("is_force_upgrade", "N")).upper() == "Y",
+    }
+
+
 class XBloomCloudClient:
     """Thin async wrapper around the XBloom cloud recipe-sync API.
 
@@ -634,6 +664,35 @@ class XBloomCloudClient:
         if not resp or resp.get("result") != "success":
             return None
         return cloud_recipe_to_local(resp.get("recipeVo") or {})
+
+    async def get_latest_firmware(self) -> dict | None:
+        """Query xBloom's live "is there a newer firmware" endpoint. No
+        login required (same public-endpoint class as
+        :meth:`fetch_shared_recipe`) — verified live 2026-07-16.
+
+        Reverse-engineered from the official Android app's ``classes*.dex``
+        (endpoint literal ``tUpToDateFirmwareVersion.thtml``; Kotlin classes
+        ``UpToDateFirmwareVersionForm``/``...Transfer``/``...Response``).
+        Live-called the same day: returned ``V12.0D.500`` with a 5-line
+        English changelog and an MD5 (``5E351B943FA5DA82BA40DE4ADF740259``)
+        that matched `cryptofishbug/xbloom-recipe-cli`'s bundled ``.500``
+        firmware file byte-for-byte — independent confirmation that
+        third-party dump was a genuine, unmodified official release.
+
+        Callers must poll this rarely (this integration checks at most
+        once per day, in ``update.py``) — it's xBloom's production API,
+        not a dedicated CDN/status endpoint, and there's no published rate
+        limit to stay safely under.
+
+        Returns ``{"version": str, "release_notes": str, "md5": str,
+        "download_url": str, "published": datetime | None, "force_upgrade":
+        bool}``, or ``None`` on any network/parse failure — never raises.
+        """
+        resp = await self._post_plain(
+            "tUpToDateFirmwareVersion.thtml",
+            {"interfaceVersion": 19700101, "skey": "testskey"},
+        )
+        return _parse_latest_firmware_response(resp)
 
     async def list_recipes(self) -> list[dict] | None:
         """List every recipe on the logged-in account.
