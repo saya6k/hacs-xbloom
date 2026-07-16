@@ -257,6 +257,19 @@ WATER_SOURCE_OPTIONS = {
 WEIGHT_UNIT_OPTIONS = {"g": 0, "oz": 1, "ml": 2}
 TEMP_UNIT_OPTIONS = {"c": 0, "f": 1}
 
+# Mode-switch (cmd 11511) hex codes and retry spec. Matches the official
+# app's own AppBleManager.sendMessage retry logic, decompiled 2026-07-17
+# (com/chisalsoft/andite/manager/AppBleManager.java): 1.5s ACK timeout,
+# retry while retryCount < 3 — i.e. up to 4 total sends (1 initial + 3
+# retries) before giving up. Confirming the ACK requires _client.py's
+# _split_and_parse marker-byte fix (same date) — cmd 11511's response is
+# a type-2 frame (marker 0xC2) that was previously silently dropped
+# before ever reaching _mode_ack_hex, so this retry loop would otherwise
+# always exhaust every attempt for nothing.
+_MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
+_MODE_SWITCH_ACK_TIMEOUT_S = 1.5
+_MODE_SWITCH_MAX_ATTEMPTS = 4
+
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and
 # PourPattern (0=center, 1=circular, 2=spiral).
@@ -1172,12 +1185,47 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.warning("Failed to apply display unit preferences: %s", exc)
 
+    async def _async_switch_mode_with_retry(self, mode: str) -> bool:
+        """Send the mode-switch command (11511) and confirm it landed via
+        its ACK (``_mode_ack_hex``), retrying on timeout.
+
+        Matches the official app's own retry spec (see
+        ``_MODE_SWITCH_ACK_TIMEOUT_S``/``_MODE_SWITCH_MAX_ATTEMPTS``'s
+        module comment) rather than a blind fixed delay — the previous
+        ``await asyncio.sleep(0.5)`` before every mode-switch call site
+        had no way to tell whether the switch actually took effect.
+        Returns ``True`` once the ACK confirms the target mode, ``False``
+        if every attempt timed out (the command was still sent each
+        time — this only affects whether we know it worked).
+        """
+        target_hex = _MODE_SWITCH_HEX[mode]
+        mode_bytes = bytes.fromhex(target_hex)
+        for attempt in range(1, _MODE_SWITCH_MAX_ATTEMPTS + 1):
+            await self.client._send_command_raw(11511, mode_bytes, type_code=2)
+            for _ in range(int(_MODE_SWITCH_ACK_TIMEOUT_S / 0.1)):
+                await asyncio.sleep(0.1)
+                if getattr(self.client.status, "_mode_ack_hex", None) == target_hex:
+                    _LOGGER.info(
+                        "Mode switch to %s confirmed (attempt %d/%d)",
+                        mode, attempt, _MODE_SWITCH_MAX_ATTEMPTS,
+                    )
+                    return True
+            _LOGGER.info(
+                "Mode switch to %s: no ACK after %.1fs (attempt %d/%d)",
+                mode, _MODE_SWITCH_ACK_TIMEOUT_S, attempt, _MODE_SWITCH_MAX_ATTEMPTS,
+            )
+        _LOGGER.warning(
+            "Mode switch to %s: no ACK after %d attempts — proceeding without confirmation",
+            mode, _MODE_SWITCH_MAX_ATTEMPTS,
+        )
+        return False
+
     async def async_set_mode(self, mode: str) -> None:
         """Switch the machine's operating mode.
 
         ``mode`` must be ``pro`` or ``easy``.  Sends command 11511 with the
-        appropriate mode code (type-2 packet).  The next MachineInfo
-        notification will reflect the new mode.
+        appropriate mode code (type-2 packet) and waits for its ACK,
+        retrying on timeout — see ``_async_switch_mode_with_retry``.
 
         The choice is persisted in ``entry.options`` so it survives HA
         restarts and is reapplied on the next connection.
@@ -1188,23 +1236,17 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if mode not in ("pro", "easy"):
             raise ValueError(f"mode must be 'pro' or 'easy', got {mode!r}")
         try:
-            mode_code = (
-                "00000000" if mode == "pro"
-                else "91327856"
-            )
-            mode_bytes = bytes.fromhex(mode_code)
-            # Mode switch is a type-2 packet (cmd 11511).
-            await self.client._send_command_raw(11511, mode_bytes, type_code=2)
-            _LOGGER.info("Mode switch requested: %s", mode)
-            # Persist so the choice survives HA restarts.
+            confirmed = await self._async_switch_mode_with_retry(mode)
+            _LOGGER.info("Mode switch requested: %s (confirmed=%s)", mode, confirmed)
+            # Persist so the choice survives HA restarts, even if we
+            # couldn't confirm the switch — this is the user's stated
+            # preference regardless of whether we could verify it landed.
             self._mode = mode
             from .const import CONF_MODE
             entry = self.hass.config_entries.async_get_entry(self.entry_id)
             if entry is not None:
                 new_options = {**entry.options, CONF_MODE: mode}
                 self.hass.config_entries.async_update_entry(entry, options=new_options)
-            # The next MachineInfo notification will update coordinator data.
-            await asyncio.sleep(0.5)
             await self.async_refresh()
         except Exception as exc:
             _LOGGER.error("Mode switch error (%s): %s", mode, exc)
@@ -1233,11 +1275,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return
         _LOGGER.info("Restoring Easy Mode after %s", trigger)
         try:
-            await self.client._send_command_raw(
-                11511, bytes.fromhex("91327856"), type_code=2,
-            )
+            await self._async_switch_mode_with_retry("easy")
             self._auto_switched_to_pro = False
-            await asyncio.sleep(0.5)
             await self.async_refresh()
         except Exception as exc:
             _LOGGER.warning("Easy Mode restore failed: %s", exc)
@@ -1259,11 +1298,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if current == "easy":
             _LOGGER.info("Machine is in Easy Mode — switching to Pro for HA operation")
             try:
-                await self.client._send_command_raw(
-                    11511, bytes.fromhex("00000000"), type_code=2,
-                )
+                await self._async_switch_mode_with_retry("pro")
                 self._auto_switched_to_pro = True
-                await asyncio.sleep(0.5)
                 await self.async_refresh()
             except Exception as exc:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
@@ -1602,11 +1638,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         switched_to_pro = False
         try:
             if (self.data or {}).get("mode", "pro") == "easy":
-                await self.client._send_command_raw(
-                    11511, bytes.fromhex("00000000"), type_code=2,
-                )
+                await self._async_switch_mode_with_retry("pro")
                 switched_to_pro = True
-                await asyncio.sleep(0.5)
 
             await brewing.async_write_easy_slots(self.client, slot_recipes)
         except Exception as exc:
@@ -1621,10 +1654,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         finally:
             if switched_to_pro:
                 try:
-                    await asyncio.sleep(0.5)
-                    await self.client._send_command_raw(
-                        11511, bytes.fromhex("91327856"), type_code=2,
-                    )
+                    await self._async_switch_mode_with_retry("easy")
                     await self.async_refresh()
                 except Exception as exc:
                     _LOGGER.warning("Restoring Easy Mode after slot write failed: %s", exc)
