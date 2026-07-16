@@ -1732,6 +1732,22 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     "or the XBloom cloud API may be unreachable."
                 ),
             }
+        # Remember where it came from so find_recipe can resolve the same
+        # share URL/id back to this local copy later.
+        if "://" not in share_url_or_id:
+            share_url = f"https://share-h5.xbloom.com/?id={share_url_or_id.strip()}"
+        else:
+            share_url = share_url_or_id.strip()
+        return self._save_imported_recipe(local_raw, share_url)
+
+    def _save_imported_recipe(self, local_raw: dict, share_url: Optional[str]) -> dict:
+        """Validate a cloud-shape-converted recipe and save it as a new
+        local recipe (uid/source assigned here, name deduped). Shared tail
+        of :meth:`async_import_cloud_recipe` (public share link) and
+        :meth:`async_import_my_cloud_recipe` (account's Product/Shared
+        tabs) — the only difference between the two is how ``local_raw``
+        and ``share_url`` were obtained.
+        """
         try:
             validated = RECIPE_SCHEMA(local_raw)
         except vol.Invalid as exc:
@@ -1756,15 +1772,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         validated["name"] = name
         validated["uid"] = new_recipe_uid()
         validated["source"] = "import"
-        # Remember where it came from so find_recipe can resolve the same
-        # share URL/id back to this local copy later.
-        if "://" not in share_url_or_id:
-            validated.setdefault(
-                "share_url",
-                f"https://share-h5.xbloom.com/?id={share_url_or_id.strip()}",
-            )
-        else:
-            validated.setdefault("share_url", share_url_or_id.strip())
+        if share_url:
+            validated.setdefault("share_url", share_url)
 
         options_recipes = dict(entry.options.get(CONF_RECIPES) or {})
         options_recipes[name] = validated
@@ -2185,6 +2194,101 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "message": "Could not search the XBloom collective recipe hub.",
             }
         return {"success": True, **result}
+
+    async def _async_ensure_cloud_login_for_call(self) -> Optional[dict]:
+        """Shared login gate for the account-private My Recipes calls
+        below. Returns an error dict to short-circuit the caller, or
+        ``None`` if a login is configured and now active."""
+        if not self.cloud_login_configured:
+            return {
+                "success": False,
+                "error": "cloud_login_required",
+                "message": (
+                    "This recipe source requires a logged-in XBloom cloud "
+                    "account — set one up under Settings > Devices & "
+                    "Services > XBloom > Configure."
+                ),
+            }
+        if not await self.async_ensure_cloud_login():
+            return {
+                "success": False,
+                "error": "login_failed",
+                "message": (
+                    "Could not log in to the XBloom cloud account — check "
+                    "the configured email/password."
+                ),
+            }
+        return None
+
+    def _cloud_raw_to_summary(self, raw: dict) -> dict:
+        local = cloud_recipe_to_local(raw)
+        if raw.get("tableId") is not None:
+            local["cloud_table_id"] = raw["tableId"]
+        if raw.get("shareRecipeLink"):
+            local["share_url"] = raw["shareRecipeLink"]
+        return self._summarize_local_recipe(local.get("name") or "", local)
+
+    async def async_search_my_recipes(
+        self, recipe_type: str, keyword: Optional[str] = None
+    ) -> dict:
+        """Browse the logged-in account's own Product or Shared recipe
+        tab (the official app's ``MyRecipeType.PRODUCT``/``SHARED`` — see
+        AGENTS.md's Cloud API section). Unlike
+        :meth:`async_search_collective_recipes`, this is account-private
+        and requires a configured cloud login.
+
+        Read-only: results are summaries (same shape as
+        :meth:`list_local_recipes`, plus ``cloud_table_id`` when present)
+        for browsing only — a result is not directly runnable. Pass its
+        ``cloud_table_id`` to :meth:`async_import_my_cloud_recipe` first
+        to save it as an ordinary local recipe, then run it like any
+        other local recipe.
+        """
+        login_error = await self._async_ensure_cloud_login_for_call()
+        if login_error is not None:
+            return login_error
+        list_fn = (
+            self.cloud_client.list_shared_recipes
+            if recipe_type == "shared"
+            else self.cloud_client.list_product_recipes
+        )
+        raw_list = await list_fn(keyword)
+        if raw_list is None:
+            return {
+                "success": False,
+                "error": "search_failed",
+                "message": f"Could not fetch the account's {recipe_type} recipes.",
+            }
+        return {"success": True, "recipes": [self._cloud_raw_to_summary(r) for r in raw_list]}
+
+    async def async_import_my_cloud_recipe(self, recipe_type: str, table_id: int) -> dict:
+        """Import one recipe from the account's Product or Shared tab
+        (see :meth:`async_search_my_recipes`) into the local recipe store
+        by its cloud ``tableId``. Unlike :meth:`async_import_cloud_recipe`
+        (a public share link, no login needed), this fetches through the
+        authenticated My Recipes list — these tabs have no public share
+        endpoint of their own.
+        """
+        login_error = await self._async_ensure_cloud_login_for_call()
+        if login_error is not None:
+            return login_error
+        getter = (
+            self.cloud_client.get_shared_recipe
+            if recipe_type == "shared"
+            else self.cloud_client.get_product_recipe
+        )
+        raw = await getter(table_id)
+        if raw is None:
+            return {
+                "success": False,
+                "error": "fetch_failed",
+                "message": (
+                    f"No {recipe_type} recipe with cloud id {table_id} was "
+                    "found on this account."
+                ),
+            }
+        local_raw = cloud_recipe_to_local(raw)
+        return self._save_imported_recipe(local_raw, raw.get("shareRecipeLink") or None)
 
     async def async_export_recipe(self, identifier: str) -> dict:
         """Export a local recipe to the XBloom cloud account.

@@ -506,6 +506,34 @@
           "description": "asc or desc. Defaults to desc."
         }
       }
+    },
+    "cloud_search_my_recipes": {
+      "name": "Search my XBloom cloud recipes",
+      "description": "Browse the logged-in XBloom cloud account's own Product tab (recipes bundled with a purchased pod) or Shared tab (recipes another user pushed to this account) — account-private, unlike cloud_search_collective_recipes. Requires a cloud account configured on this integration. Results are not directly runnable — import one with cloud_import_my_recipe first.",
+      "fields": {
+        "recipe_type": {
+          "name": "Recipe tab",
+          "description": "Which account tab to browse."
+        },
+        "keyword": {
+          "name": "Keyword",
+          "description": "Free-text search across recipe names."
+        }
+      }
+    },
+    "cloud_import_my_recipe": {
+      "name": "Import recipe from my XBloom cloud tab",
+      "description": "Import one recipe from the logged-in account's Product or Shared tab (see cloud_search_my_recipes) into the local recipe store by its cloud table id. Requires a cloud account configured on this integration — unlike cloud_import_recipe, these tabs have no public share link.",
+      "fields": {
+        "recipe_type": {
+          "name": "Recipe tab",
+          "description": "Which account tab the table id came from."
+        },
+        "table_id": {
+          "name": "Table ID",
+          "description": "The recipe's cloud table id, from cloud_search_my_recipes."
+        }
+      }
     }
   },
   "selector": {
