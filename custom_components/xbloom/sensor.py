@@ -33,6 +33,8 @@ async def async_setup_entry(
             XBloomLiveGrindSizeSensor(coordinator, entry),
             XBloomLiveGrindSpeedSensor(coordinator, entry),
             XBloomVoltageSensor(coordinator, entry),
+            XBloomPourRadiusSensor(coordinator, entry),
+            XBloomVibrationAmplitudeSensor(coordinator, entry),
         ]
     )
 
@@ -205,6 +207,33 @@ class XBloomVoltageSensor(_XBloomSensor):
     @property
     def native_value(self) -> int | None:
         return self.coordinator.data.get("voltage")
+
+
+class XBloomPourRadiusSensor(_XBloomSensor):
+    """Current pour (rotation) radius — raw device value, not the 0-4 UI
+    level the official app shows. Read-only; set via the
+    ``advanced_settings`` service (see coordinator.async_set_advanced_settings)."""
+
+    _attr_translation_key = "pour_radius"
+    _attr_unique_id = "xbloom_pour_radius"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("pour_radius")
+
+
+class XBloomVibrationAmplitudeSensor(_XBloomSensor):
+    """Current vibration amplitude — raw device value. Read-only; set via
+    the ``advanced_settings`` service."""
+
+    _attr_translation_key = "vibration_amplitude"
+    _attr_unique_id = "xbloom_vibration_amplitude"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("vibration_amplitude")
 
 
 class XBloomEasySlotSensor(_XBloomSensor):

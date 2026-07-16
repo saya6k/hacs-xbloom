@@ -113,6 +113,12 @@
       },
       "voltage_raw": {
         "default": "mdi:flash-outline"
+      },
+      "pour_radius": {
+        "default": "mdi:rotate-orbit"
+      },
+      "vibration_amplitude": {
+        "default": "mdi:vibrate"
       }
     },
     "select": {
@@ -145,6 +151,11 @@
         }
       }
     },
+    "update": {
+      "firmware": {
+        "default": "mdi:chip"
+      }
+    },
     "event": {
       "error_event": {
         "default": "mdi:alert-circle"
@@ -175,6 +186,9 @@
     },
     "write_recipe_to_easy_slot": {
       "service": "mdi:content-save-outline"
+    },
+    "advanced_settings": {
+      "service": "mdi:tune"
     },
     "cloud_import_recipe": {
       "service": "mdi:cloud-download-outline"

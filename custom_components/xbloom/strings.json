@@ -225,6 +225,12 @@
       },
       "voltage_raw": {
         "name": "Voltage"
+      },
+      "pour_radius": {
+        "name": "Pour Radius"
+      },
+      "vibration_amplitude": {
+        "name": "Vibration Amplitude"
       }
     },
     "select": {
@@ -260,6 +266,11 @@
     "switch": {
       "connection": {
         "name": "Connection"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
       }
     },
     "event": {
@@ -355,6 +366,28 @@
         "recipe": {
           "name": "Recipe",
           "description": "Which recipe to store — a local uid, a cloud table id, a share URL/id, or the exact recipe name. Defaults to the currently selected recipe."
+        }
+      }
+    },
+    "advanced_settings": {
+      "name": "Advanced settings",
+      "description": "Pour radius, vibration amplitude, and grinder calibration — grouped like the official app's Advanced Features screen. At least one field is required.",
+      "fields": {
+        "pour_radius_level": {
+          "name": "Pour radius level",
+          "description": "L1 (narrowest) to L5 (widest), matching the official app's picker. L3 is the true factory-default center, fetched from your XBloom cloud account — requires an account logged in under Options → Account."
+        },
+        "vibration_amplitude_level": {
+          "name": "Vibration amplitude level",
+          "description": "L1 (min) to L6 (max), matching the official app's picker."
+        },
+        "display_brightness_level": {
+          "name": "Display brightness level",
+          "description": "L1 (dimmest) to L3 (brightest), matching the official app's picker."
+        },
+        "calibrate_grinder": {
+          "name": "Calibrate grinder",
+          "description": "Trigger the ~120 second grinder calibration sweep."
         }
       }
     },
