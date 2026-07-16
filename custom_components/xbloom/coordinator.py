@@ -585,7 +585,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     await self._apply_unit_preferences()
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
-                    if self.hass:
+                    # Only fire the advanced-settings GET once the machine is
+                    # confirmed awake (serial_number populated means
+                    # RD_MachineInfo already arrived, i.e. the 8100 handshake
+                    # actually landed) — see the docstring on
+                    # _async_refresh_advanced_settings for why firing it
+                    # unconditionally here silently loses the response on
+                    # firmwares that need a handshake retry (hardware-
+                    # confirmed 2026-07-17). If MachineInfo hasn't arrived
+                    # yet, _machine_info_retry_loop fires this once it does.
+                    if self.hass and self.client.status.serial_number:
                         self.hass.async_create_task(self._async_refresh_advanced_settings())
                     return True
 
@@ -670,6 +679,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     self.client.status.version,
                 )
                 await self.async_refresh()
+                if self.hass:
+                    self.hass.async_create_task(self._async_refresh_advanced_settings())
                 return
 
             _LOGGER.info(
@@ -690,6 +701,8 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     self.client.status.version,
                 )
                 await self.async_refresh()
+                if self.hass:
+                    self.hass.async_create_task(self._async_refresh_advanced_settings())
                 return
 
             # Re-send the 8100 MTU handshake — per src/xbloom-ble/PROTOCOL.md
@@ -1286,6 +1299,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         specific noisy namespace, common for the multi-Hz telemetry it
         logs) while custom_components.xbloom.* stayed visible, making the
         whole GET/response cycle unobservable without this.
+
+        Callers must only invoke this once ``self.client.status.serial_number``
+        is populated (RD_MachineInfo has actually arrived) — hardware-
+        confirmed 2026-07-17 on the exact same user setup: firing this
+        unconditionally right after ``client.connect()`` returns can lose
+        the response entirely on a firmware that needs a *second* 8100
+        handshake before MachineInfo shows up (the same "machine isn't
+        really awake yet" quirk documented for the initial connect
+        handshake — see AGENTS.md). This request/response command is just
+        as vulnerable to that dead window as MachineInfo itself, so it's
+        gated on the same signal (see ``async_connect``/
+        ``_machine_info_retry_loop``, both of which now only call this
+        once serial_number is confirmed non-empty).
         """
         _LOGGER.info("Requesting pour_radius / vibration_amplitude (cmd 11506/11508)…")
         try:
