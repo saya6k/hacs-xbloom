@@ -259,6 +259,11 @@
         "name": "연결"
       }
     },
+    "update": {
+      "firmware": {
+        "name": "펌웨어"
+      }
+    },
     "event": {
       "error_event": {
         "name": "오류 이벤트",

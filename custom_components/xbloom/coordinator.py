@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import re
 import struct
 from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
@@ -134,6 +135,52 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     )
 
 _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
+
+# Firmware version gates for BLE features that don't exist on older
+# firmware — the machine silently ignores commands it doesn't understand
+# rather than refusing cleanly, so we check first and give a clear error.
+# This integration never flashes firmware itself; that's a much
+# higher-risk operation (bricking a real device with no rollback we
+# control) — see update.py's XBloomFirmwareUpdateEntity, which only reads
+# xBloom's own live "latest version" API for an informational comparison.
+#
+# Source: xBloom's own support docs (Zendesk "xBloom Studio Firmware Update
+# Summary" section, https://tbdxsupport.zendesk.com/hc/en-us/sections/25914689676443,
+# fetched 2026-07-16): V12.0D.122 (2024-07-12) -> V12.0D.210 (2024-12-24,
+# introduces Auto/Easy Mode — cmd 11510/11511/11512 don't exist before this)
+# -> V12.0D.300 (2025-03-20, introduces tea recipes — cmd 4512/4513 don't
+# exist before this) -> V12.0D.400 (2025-07-02, extends tea steep to 360s +
+# multi-temperature brewing). These two thresholds are historical facts
+# that never change, unlike "the latest version" — that's fetched live,
+# not hardcoded (see update.py).
+MIN_FIRMWARE_EASY_MODE = "V12.0D.210"
+MIN_FIRMWARE_TEA = "V12.0D.300"
+
+_FIRMWARE_BUILD_RE = re.compile(r"^V12\.0D\.(\d+)$")
+
+
+def _firmware_build(version: Optional[str]) -> Optional[int]:
+    """Parse the trailing build number out of a ``V12.0D.NNN`` firmware
+    string (the only scheme xBloom has used so far). Returns ``None`` for
+    blank/unrecognized strings — MachineInfo hasn't arrived yet, or a
+    future version scheme this doesn't understand — callers must treat
+    that as "can't tell", not "outdated"."""
+    if not version:
+        return None
+    m = _FIRMWARE_BUILD_RE.match(version.strip())
+    return int(m.group(1)) if m else None
+
+
+def _firmware_at_least(version: Optional[str], minimum: str) -> bool:
+    """True if ``version`` is parseable and >= ``minimum``. An unparseable
+    or unknown current version fails open (returns True) — we'd rather let
+    a firmware-gated brew attempt hit the machine's own silent refusal than
+    block a real feature on a version string we can't read."""
+    current = _firmware_build(version)
+    required = _firmware_build(minimum)
+    if current is None or required is None:
+        return True
+    return current >= required
 
 # Standard GATT Device Information service characteristic UUIDs.
 # Some XBloom firmwares only populate MachineInfo via these GATT reads
@@ -942,6 +989,20 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if not self.selected_recipe or self.selected_recipe not in self.recipes:
             _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
             return
+        # Tea (cmd 4512/4513) doesn't exist on firmware older than
+        # V12.0D.300 — the machine would silently ignore it rather than
+        # refuse cleanly, so check before touching the machine at all
+        # (mode switch included). See MIN_FIRMWARE_TEA's docstring above.
+        raw_cup_type = self.recipes[self.selected_recipe].get("cup_type")
+        if overrides and "cup_type" in overrides:
+            raw_cup_type = overrides["cup_type"]
+        if str(raw_cup_type).lower() == "tea" and not _firmware_at_least(
+            self.data.get("version"), MIN_FIRMWARE_TEA
+        ):
+            raise HomeAssistantError(
+                f"Tea recipes require XBloom firmware {MIN_FIRMWARE_TEA} or newer "
+                f"(current: {self.data.get('version') or 'unknown'})."
+            )
         try:
             # ── Auto-switch to PRO mode if the machine is in Easy mode ──
             # Easy Mode silences or misinterprets the 8001/8004/8002 Pro-mode
@@ -1240,6 +1301,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "success": False,
                 "error": "not_connected",
                 "message": "The XBloom is not connected over Bluetooth.",
+            }
+
+        # Auto/Easy Mode (cmd 11510/11511/11512) doesn't exist on firmware
+        # older than V12.0D.210 — check before any mode-switch/slot-write
+        # BLE traffic. See MIN_FIRMWARE_EASY_MODE's docstring above.
+        if not _firmware_at_least(self.data.get("version"), MIN_FIRMWARE_EASY_MODE):
+            return {
+                "success": False,
+                "error": "firmware_too_old",
+                "message": (
+                    f"Easy Mode requires XBloom firmware {MIN_FIRMWARE_EASY_MODE} "
+                    f"or newer (current: {self.data.get('version') or 'unknown'})."
+                ),
             }
 
         target_letter = slot_letter.strip().upper()
