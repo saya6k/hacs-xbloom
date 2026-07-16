@@ -132,10 +132,28 @@ _RAW_STATE_LABEL_MAP = {
 # app's own parsing: ``it.substring(0,8)`` -> ``reverseHex()`` -> parse as
 # hex int — byte-reversing a big-endian hex dump is the same operation as
 # reading little-endian).
+#
+# All four are type-2 packets, like the 11510 Easy Slot family —
+# hardware-confirmed 2026-07-17 via a standalone script connecting directly
+# to a real machine (bypassing HA entirely): sent with the default
+# type_code=1, the machine never responds at all (confirmed by capturing
+# every notification for several seconds after the GET — zero matches).
+# Resent with type_code=2, both GET and SET get an immediate response.
+# Response frames for a type-2 command carry marker byte 0xC2 at offset+9,
+# not the 0xC1 every type-1 response uses — the marker is apparently
+# ``0xC0 | type_code``, not the fixed constant this file assumed everywhere
+# else (every other command this integration sends is type-1, so this
+# never surfaced before). See _scan_for_advanced_settings's marker check.
+# Live values read back matched independent verification: pour_radius=750
+# (== the cloud API's initPouringRadius for this same serial, confirmed
+# live 2026-07-16), vibration_amplitude=1000 (== _vibration_level_to_raw's
+# level-0 raw value).
 CMD_GET_POUR_RADIUS = 11506
 CMD_SET_POUR_RADIUS = 11507
 CMD_GET_VIBRATION_AMPLITUDE = 11508
 CMD_SET_VIBRATION_AMPLITUDE = 11509
+_ADVANCED_SETTINGS_TYPE_CODE = 2
+_ADVANCED_SETTINGS_MARKER_BYTE = 0xC2
 
 # Grinder calibration — decompiled from CalibrateGrinderActivity's confirm
 # button (2026-07-16): ``CodeModule(3502, "磨豆档位归0", 1000)``. Single
@@ -230,15 +248,20 @@ class XBloomClientWithEvents(XBloomClient):
         """Request the current pour (rotation) radius. Populates
         ``self._status.pour_radius`` once the response arrives — see
         ``_scan_for_advanced_settings``. Fire-and-forget; no return value
-        since the response is asynchronous."""
+        since the response is asynchronous. Type-2 packet — see
+        ``_ADVANCED_SETTINGS_TYPE_CODE``'s module comment."""
         if self.is_connected:
-            await self._send_command(CMD_GET_POUR_RADIUS)
+            await self._send_command(
+                CMD_GET_POUR_RADIUS, type_code=_ADVANCED_SETTINGS_TYPE_CODE
+            )
 
     async def async_set_pour_radius(self, value: int) -> None:
         """Set the pour radius to a raw device value (not a 0-4 UI level —
         see MachineSetPourRadiusActivity's 5-level-to-raw-value mapping in
-        AGENTS.md if a level-based UI is ever added here)."""
-        await self._send_command(CMD_SET_POUR_RADIUS, [int(value)])
+        AGENTS.md if a level-based UI is ever added here). Type-2 packet."""
+        await self._send_command(
+            CMD_SET_POUR_RADIUS, [int(value)], type_code=_ADVANCED_SETTINGS_TYPE_CODE
+        )
         # Optimistic local update, matching the official app's own
         # post-success behavior (pouringRadius = setPouringRadius) rather
         # than waiting on a second round-trip to confirm.
@@ -246,13 +269,18 @@ class XBloomClientWithEvents(XBloomClient):
 
     async def async_get_vibration_amplitude(self) -> None:
         """Request the current vibration amplitude. See
-        ``async_get_pour_radius`` — same request/response shape."""
+        ``async_get_pour_radius`` — same request/response shape, type-2."""
         if self.is_connected:
-            await self._send_command(CMD_GET_VIBRATION_AMPLITUDE)
+            await self._send_command(
+                CMD_GET_VIBRATION_AMPLITUDE, type_code=_ADVANCED_SETTINGS_TYPE_CODE
+            )
 
     async def async_set_vibration_amplitude(self, value: int) -> None:
-        """Set the vibration amplitude to a raw device value."""
-        await self._send_command(CMD_SET_VIBRATION_AMPLITUDE, [int(value)])
+        """Set the vibration amplitude to a raw device value. Type-2 packet."""
+        await self._send_command(
+            CMD_SET_VIBRATION_AMPLITUDE, [int(value)],
+            type_code=_ADVANCED_SETTINGS_TYPE_CODE,
+        )
         self._status.vibration_amplitude = int(value)
 
     async def async_calibrate_grinder(self) -> None:
@@ -282,6 +310,12 @@ class XBloomClientWithEvents(XBloomClient):
         whenever it wasn't first in the buffer (hardware-observed
         2026-07-17: pour_radius/vibration_amplitude sensors stuck
         `unknown` after connect, matching this exact failure mode).
+
+        Marker byte is ``_ADVANCED_SETTINGS_MARKER_BYTE`` (0xC2) here, not
+        the usual 0xC1 — these are type-2 commands/responses (see
+        CMD_GET_POUR_RADIUS's module comment), and the marker apparently
+        encodes the packet's own type_code rather than being a fixed
+        constant across the whole protocol. Hardware-confirmed 2026-07-17.
         """
         offset = 0
         n = len(raw)
@@ -295,7 +329,7 @@ class XBloomClientWithEvents(XBloomClient):
             if total_len > _MAX_PACKET_LEN:
                 offset += 1
                 continue
-            if raw[offset + 9] != _NOTIFICATION_MARKER_BYTE:
+            if raw[offset + 9] != _ADVANCED_SETTINGS_MARKER_BYTE:
                 offset += 1
                 continue
             cmd = int.from_bytes(raw[offset + 3 : offset + 5], "little")
