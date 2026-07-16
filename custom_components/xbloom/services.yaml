@@ -17,8 +17,6 @@ execute_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe:
       name: Recipe
@@ -139,8 +137,6 @@ execute_tea_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe:
       name: Recipe
@@ -175,8 +171,6 @@ write_recipe_to_easy_slot:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     slot:
       name: Slot
@@ -220,8 +214,6 @@ advanced_settings:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     pour_radius_level:
       name: Pour radius level
@@ -304,8 +296,6 @@ cloud_import_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     share_url:
       name: Share URL
@@ -346,8 +336,6 @@ cloud_export_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe:
       name: Recipe
@@ -380,8 +368,6 @@ list_recipes:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     query:
       name: Query
@@ -412,8 +398,6 @@ cloud_search_collective_recipes:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     keyword:
       name: Keyword
@@ -753,8 +737,6 @@ create_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe_yaml:
       name: Recipe (YAML)
@@ -786,8 +768,6 @@ edit_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe:
       name: Recipe
@@ -830,8 +810,6 @@ delete_recipe:
         device:
           filter:
             - integration: xbloom
-              entity:
-                domain: update
           multiple: true
     recipe:
       name: Recipe
