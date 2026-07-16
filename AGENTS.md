@@ -189,6 +189,20 @@ Original limitation above), this hasn't mattered in practice, but the
 account recipe seed and `cloud_export_recipe` are both unverified for
 whatever `adaptedModel` value Original uses.
 
+**The official app's Product/Shared account recipe tabs (`MyRecipeType.PRODUCT`/`SHARED`
+— see the app's `tuMyRecipeProduct.tuhtml`/`tuMyRecipeShared.tuhtml`) were
+implemented (`cloud_search_my_recipes`/`cloud_import_my_recipe` services + LLM
+tools, 2026-07-17) and reverted same day.** Decompile-driven completeness ("the
+app has it, we don't") wasn't backed by an actual use case: Product recipes
+(bundled with a purchased pod) are a narrow audience for a BLE-first
+integration, Shared recipes (account-to-account push via the app's own Share
+button) are a rare path next to the public share_url links
+`cloud_import_recipe` already covers, the feature required a cloud login for
+what's designed to work fully over Bluetooth without one, and none of it was
+ever verified against a live account. If this gap resurfaces from a future
+decompile diff, that's not new information — don't re-implement without a
+concrete use case first.
+
 **Four wire-API requirements that aren't obvious from the reference source and were
 only found by live-testing against a real account** — get any of these wrong and the
 API returns a generic non-actionable "abnormal pour data" (or similar) error with no
