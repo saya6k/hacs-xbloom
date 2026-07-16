@@ -1449,12 +1449,17 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 await self.client.async_set_pour_radius(
                     _pour_radius_level_to_raw(pour_radius_level, center)
                 )
-                await asyncio.sleep(0.3)
+                # 0.8s, not 0.3s -- hardware-confirmed 2026-07-17 (same
+                # finding as the pour_radius/vibration_amplitude GET pair
+                # in _async_refresh_advanced_settings): a 0.3s gap between
+                # two back-to-back type-2 commands consistently drops the
+                # second one's ACK; 0.8s consistently succeeds.
+                await asyncio.sleep(0.8)
             if vibration_amplitude_level is not None:
                 await self.client.async_set_vibration_amplitude(
                     _vibration_level_to_raw(vibration_amplitude_level)
                 )
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.8)
             if display_brightness_level is not None:
                 await self.client.async_set_display_brightness(display_brightness_level)
                 await asyncio.sleep(0.3)

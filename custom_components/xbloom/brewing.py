@@ -479,7 +479,17 @@ async def async_write_easy_slots(
         await client._send_command_raw(
             _CMD_EASY_RECIPE_SEND, payload, type_code=2,
         )
-        await asyncio.sleep(0.3)
+        # 0.8s, not 0.3s -- hardware-confirmed 2026-07-17 on the
+        # pour_radius/vibration_amplitude GET *and* SET pairs (same 115xx
+        # type-2 command family as 11510/11512 here): a 0.3s gap between
+        # two back-to-back type-2 commands consistently drops the second
+        # one's ACK; 0.8s consistently succeeds. Not independently
+        # verified against 11510 itself (that would mean overwriting a
+        # real Easy Mode slot to test), but the mechanism -- the machine
+        # still busy replying to the previous type-2 command -- is a
+        # transport-layer property of the command family, not specific to
+        # which command it is.
+        await asyncio.sleep(0.8)
 
     # [slot_count, then each slot's index in canonical A/B/C order] —
     # mirrors Mel0day/xbloom-ai-brew's default order payload ('03000102'),
@@ -489,4 +499,4 @@ async def async_write_easy_slots(
     order_payload = bytes([len(_SLOT_INDEX_BY_LETTER), *_SLOT_INDEX_BY_LETTER.values()])
     _LOGGER.info("Easy slot order: %s", order_payload.hex())
     await client._send_command_raw(_CMD_EASY_RECIPE_ORDER, order_payload, type_code=2)
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.8)
