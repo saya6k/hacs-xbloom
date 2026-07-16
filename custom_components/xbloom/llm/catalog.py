@@ -17,9 +17,7 @@ from .base import XBloomBaseTool
 from .cloud_recipe import (
     XBloomExportRecipeTool,
     XBloomImportCloudRecipeTool,
-    XBloomImportMyRecipeTool,
     XBloomSearchCollectiveRecipesTool,
-    XBloomSearchMyRecipesTool,
 )
 from .local_recipe import (
     XBloomCreateRecipeTool,
@@ -55,6 +53,4 @@ def build_tools(
         XBloomImportCloudRecipeTool(coordinator, hass),
         XBloomSearchCollectiveRecipesTool(coordinator, hass),
         XBloomExportRecipeTool(coordinator, hass),
-        XBloomSearchMyRecipesTool(coordinator, hass),
-        XBloomImportMyRecipeTool(coordinator, hass),
     ]

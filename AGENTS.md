@@ -187,55 +187,7 @@ login and the public share fetch are plaintext.
 parameterized. Since this integration only supports Studio (see the
 Original limitation above), this hasn't mattered in practice, but the
 account recipe seed and `cloud_export_recipe` are both unverified for
-whatever `adaptedModel` value Original uses. **Cross-checked against the
-official app 2026-07-17** (`androguard`/`jadx` decompile of
-`xbloom_coffee_release.apk`): the app itself doesn't hardcode this value
-either — it reads `DeviceSp.readDeviceType()` (the currently-paired
-device's stored type) — but `DeviceType.kt` defines `DeviceJ15 = 1` *and*
-`DeviceDefault = 1`, so for a Studio-only integration the app's dynamic
-value and our hardcoded `1` are always identical. Not a bug, just a
-different mechanism reaching the same number.
-
-**Two account-private recipe tabs beyond Created exist: Product and
-Shared — reverse-engineered 2026-07-17, implemented the same day.** The
-official app's `MyRecipeType` enum (`com.xbloom.view.viewmodel`) has
-three values dispatched by `MyRecipeSearchTransfer.initRequestUrl()`:
-`CREATED` → `tuMyTeaRecipeCreated.tuhtml` (what `list_recipes()` already
-wrapped), `PRODUCT` → `tuMyRecipeProduct.tuhtml` (recipes bundled with a
-purchased pod), `SHARED` → `tuMyRecipeShared.tuhtml` (recipes another
-user pushed to this account via the app's Share flow —
-`RecipeShareDialog`/`MyRecipeSharedMemberForm`/`tuyRecipeSharedMember.tuhtml`
-member-picker). All three share one request shape (`adaptedModel` +
-optional `keyword`) and one response shape (`{"list": [Recipe, ...]}`,
-same `Recipe` model as Created) — Product/Shared's own decompiled form
-classes have no pagination fields, unlike Created's
-`pageNumber`/`countPerPage` (kept only where already live-verified, not
-added speculatively). **Shared is a one-way push of an independent
-`Recipe` copy, not a live-synced list** — there is no ongoing link back
-to the sharer's original, and the decompiled `ResourceRecipeVo` side
-table (`recipeTableId`/`resourceRegion`/`resourceTableId`) carries no
-visible attribution (no member name/avatar) to show who shared it.
-Implemented as `_cloud_client.list_product_recipes`/`list_shared_recipes`
-(+ `get_product_recipe`/`get_shared_recipe` for by-id fetch, mirroring
-`get_recipe`'s existing list-then-match approach since neither tab has a
-single-recipe fetch either) and `coordinator.async_search_my_recipes`/
-`async_import_my_cloud_recipe` (new `cloud_search_my_recipes`/
-`cloud_import_my_recipe` services + `search_xbloom_my_recipes`/
-`import_xbloom_my_recipe` LLM tools) — both require a configured cloud
-login (`cloud_login_required` otherwise), unlike the public collective
-hub search. Browsing is read-only and doesn't touch the local store —
-same "browse now, import-by-id later" split as
-`search_xbloom_collective_recipes`/`import_xbloom_cloud_recipe` — since a
-Product/Shared result isn't guaranteed to carry a public
-`shareRecipeLink`, import goes through the authenticated
-get_product_recipe/get_shared_recipe fetch rather than the public
-`RecipeDetail.html` path. `async_import_cloud_recipe`'s save/validate/
-dedupe tail was factored out into `coordinator._save_imported_recipe` so
-both import paths share it. **Not verified against a live account** — no
-test account with Product-tab or Shared-tab recipes was available this
-session; the request/response shapes come entirely from the decompile
-cross-checked against `list_recipes()`'s already-live-verified shape, not
-from a captured live response for these two specific endpoints.
+whatever `adaptedModel` value Original uses.
 
 **Four wire-API requirements that aren't obvious from the reference source and were
 only found by live-testing against a real account** — get any of these wrong and the

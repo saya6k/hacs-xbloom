@@ -52,9 +52,7 @@ from .const import (
     ATTR_SORT,
     ATTR_SORT_DIRECTION,
     ATTR_SRC,
-    ATTR_TABLE_ID,
     ATTR_VARIETAL,
-    ATTR_RECIPE_TYPE,
     ATTR_SLOT,
     ATTR_POUR_RADIUS_LEVEL,
     ATTR_VIBRATION_AMPLITUDE_LEVEL,
@@ -82,10 +80,8 @@ from .const import (
     DOMAIN,
     SERVICE_ADVANCED_SETTINGS,
     SERVICE_CLOUD_EXPORT_RECIPE,
-    SERVICE_CLOUD_IMPORT_MY_RECIPE,
     SERVICE_CLOUD_IMPORT_RECIPE,
     SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
-    SERVICE_CLOUD_SEARCH_MY_RECIPES,
     SERVICE_CREATE_RECIPE,
     SERVICE_DELETE_RECIPE,
     SERVICE_EDIT_RECIPE,
@@ -256,22 +252,6 @@ CLOUD_SEARCH_COLLECTIVE_RECIPES_SCHEMA = vol.Schema(
         vol.Optional(ATTR_FLAVOR): _FACET_LIST,
         vol.Optional(ATTR_SORT, default="likes"): vol.In(["date", "likes", "downloads"]),
         vol.Optional(ATTR_SORT_DIRECTION, default="desc"): vol.In(["asc", "desc"]),
-    },
-    extra=vol.ALLOW_EXTRA,
-)
-
-CLOUD_SEARCH_MY_RECIPES_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_RECIPE_TYPE): vol.In(["product", "shared"]),
-        vol.Optional(ATTR_KEYWORD): cv.string,
-    },
-    extra=vol.ALLOW_EXTRA,
-)
-
-CLOUD_IMPORT_MY_RECIPE_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_RECIPE_TYPE): vol.In(["product", "shared"]),
-        vol.Required(ATTR_TABLE_ID): vol.Coerce(int),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -631,63 +611,6 @@ def _register_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.ONLY,
     )
 
-    async def _handle_cloud_search_my_recipes(call: ServiceCall) -> ServiceResponse:
-        coordinators = _coordinators_for_call(hass, call)
-        if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
-        # Cloud accounts are per-machine credentials — browse from the
-        # first targeted machine's account, same convention as
-        # cloud_export_recipe.
-        result = await coordinators[0].async_search_my_recipes(
-            call.data[ATTR_RECIPE_TYPE], keyword=call.data.get(ATTR_KEYWORD)
-        )
-        if not result.get("success"):
-            raise HomeAssistantError(
-                result.get("message", "cloud_search_my_recipes failed")
-            )
-        return {"recipes": result["recipes"]}
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_CLOUD_SEARCH_MY_RECIPES,
-        _handle_cloud_search_my_recipes,
-        schema=CLOUD_SEARCH_MY_RECIPES_SCHEMA,
-        supports_response=SupportsResponse.ONLY,
-    )
-
-    async def _handle_cloud_import_my_recipe(call: ServiceCall) -> ServiceResponse:
-        coordinators = _coordinators_for_call(hass, call)
-        if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
-        first: ServiceResponse = None
-        for coord in coordinators:
-            result = await coord.async_import_my_cloud_recipe(
-                call.data[ATTR_RECIPE_TYPE], call.data[ATTR_TABLE_ID]
-            )
-            if not result.get("success"):
-                _LOGGER.warning(
-                    "cloud_import_my_recipe failed for %s: %s",
-                    coord.mac_address, result.get("message", result.get("error")),
-                )
-                continue
-            if first is None:
-                first = {
-                    "uid": result["uid"],
-                    "name": result["name"],
-                    "recipe": result["recipe"],
-                }
-        if first is None:
-            raise HomeAssistantError("cloud_import_my_recipe failed on every machine.")
-        return first
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_CLOUD_IMPORT_MY_RECIPE,
-        _handle_cloud_import_my_recipe,
-        schema=CLOUD_IMPORT_MY_RECIPE_SCHEMA,
-        supports_response=SupportsResponse.OPTIONAL,
-    )
-
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -1012,8 +935,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_CLOUD_IMPORT_RECIPE,
                 SERVICE_CLOUD_EXPORT_RECIPE,
                 SERVICE_CLOUD_SEARCH_COLLECTIVE_RECIPES,
-                SERVICE_CLOUD_SEARCH_MY_RECIPES,
-                SERVICE_CLOUD_IMPORT_MY_RECIPE,
                 SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
                 SERVICE_ADVANCED_SETTINGS,
             ):

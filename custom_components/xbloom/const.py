@@ -108,17 +108,6 @@ ATTR_FLAVOR = "flavor"
 ATTR_SORT = "sort"
 ATTR_SORT_DIRECTION = "sort_direction"
 
-# The logged-in account's own Product/Shared recipe tabs — private, unlike
-# COLLECTIVE_API_BASE above (login required; see _cloud_client.py's
-# list_product_recipes/list_shared_recipes). Recipes bundled with a
-# purchased pod (Product) or pushed to this account by another user's
-# Share action (Shared) — independent copies, not a live-synced list.
-SERVICE_CLOUD_SEARCH_MY_RECIPES = "cloud_search_my_recipes"
-ATTR_RECIPE_TYPE = "recipe_type"
-
-SERVICE_CLOUD_IMPORT_MY_RECIPE = "cloud_import_my_recipe"
-ATTR_TABLE_ID = "table_id"
-
 # LLM API identifiers
 XBLOOM_LLM_API_ID = "xbloom_coffee"
 XBLOOM_LLM_API_NAME = "XBloom Coffee Machine"
@@ -196,13 +185,5 @@ XBLOOM_LLM_PROMPT = (
     "users (by keyword, coffee/tea category, origin, roast, flavor notes, "
     "etc.) rather than manage their own saved recipes. Results include a "
     "share_url — pass that to import_xbloom_cloud_recipe to save one "
-    "locally. "
-    "search_xbloom_my_recipes browses the logged-in XBloom account's own "
-    "Product tab (recipes bundled with a purchased pod) or Shared tab "
-    "(recipes another user pushed to this account) — requires a "
-    "configured cloud account, unlike the collective hub. Each is an "
-    "independent copy, not a live-synced list, and results are NOT "
-    "directly runnable — pass a result's table_id to "
-    "import_xbloom_my_recipe first to save it locally, then run it via "
-    "execute_xbloom_recipe like any other local recipe."
+    "locally."
 )

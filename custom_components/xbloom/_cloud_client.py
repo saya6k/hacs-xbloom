@@ -811,46 +811,8 @@ class XBloomCloudClient:
         )
         return _parse_latest_firmware_response(resp)
 
-    # The official app's own MyRecipeType enum (decompiled 2026-07-17 from
-    # xbloom_coffee_release.apk's MyRecipeSearchTransfer.initRequestUrl):
-    # CREATED (this account's own recipes), PRODUCT (bundled with a
-    # purchased pod), SHARED (pushed to this account by another user's
-    # Share action). All three take the same request shape — adaptedModel
-    # + an optional keyword — and return {"list": [Recipe, ...]}; CREATED
-    # additionally takes pageNumber/countPerPage (matched from the
-    # existing, live-verified list_recipes() call below — PRODUCT/SHARED's
-    # own decompiled form classes have no pagination fields, so those
-    # aren't added speculatively).
-    _MY_RECIPE_PRODUCT_ENDPOINT = "tuMyRecipeProduct.tuhtml"
-    _MY_RECIPE_SHARED_ENDPOINT = "tuMyRecipeShared.tuhtml"
-
-    async def _list_my_recipes(
-        self, endpoint: str, keyword: str | None = None, paginated: bool = False
-    ) -> list[dict] | None:
-        if not self.logged_in:
-            return None
-        payload = {**_auth_base(self.member_id, self.token), "adaptedModel": 1}
-        if paginated:
-            payload["pageNumber"] = 1
-            payload["countPerPage"] = 100
-        if keyword:
-            payload["keyword"] = keyword
-        resp = await self._post_encrypted(endpoint, payload)
-        if not resp or resp.get("result") != "success":
-            return None
-        return resp.get("list") or []
-
-    @staticmethod
-    def _match_table_id(recipes: list[dict] | None, table_id: int) -> dict | None:
-        if recipes is None:
-            return None
-        for r in recipes:
-            if r.get("tableId") == table_id:
-                return r
-        return None
-
-    async def list_recipes(self, keyword: str | None = None) -> list[dict] | None:
-        """List every recipe on the logged-in account's Created tab.
+    async def list_recipes(self) -> list[dict] | None:
+        """List every recipe on the logged-in account.
 
         Wraps ``tuMyTeaRecipeCreated.tuhtml`` (the literal endpoint name
         used for listing *all* recipe types, not just tea — see
@@ -860,25 +822,18 @@ class XBloomCloudClient:
         (``tableId``, ``theName``, ``dose``, ``grandWater``,
         ``grinderSize``, ``rpm``, ``shareRecipeLink``, ``pourList``, ...).
         """
-        return await self._list_my_recipes(
-            "tuMyTeaRecipeCreated.tuhtml", keyword=keyword, paginated=True
-        )
-
-    async def list_product_recipes(self, keyword: str | None = None) -> list[dict] | None:
-        """List recipes bundled with the account's purchased pods (the
-        official app's "Product" recipe tab). See :meth:`list_recipes`
-        for the shared request/response shape and error contract."""
-        return await self._list_my_recipes(self._MY_RECIPE_PRODUCT_ENDPOINT, keyword=keyword)
-
-    async def list_shared_recipes(self, keyword: str | None = None) -> list[dict] | None:
-        """List recipes another user has pushed to this account (the
-        official app's "Shared" recipe tab) — each is an independent
-        ``Recipe`` copy at share time, not a live-synced list; the wire
-        response carries no visible "shared by" attribution (checked the
-        decompiled ``ResourceRecipeVo`` side-table: just linking ids, no
-        member name/avatar). See :meth:`list_recipes` for the shared
-        request/response shape and error contract."""
-        return await self._list_my_recipes(self._MY_RECIPE_SHARED_ENDPOINT, keyword=keyword)
+        if not self.logged_in:
+            return None
+        payload = {
+            **_auth_base(self.member_id, self.token),
+            "pageNumber": 1,
+            "countPerPage": 100,
+            "adaptedModel": 1,
+        }
+        resp = await self._post_encrypted("tuMyTeaRecipeCreated.tuhtml", payload)
+        if not resp or resp.get("result") != "success":
+            return None
+        return resp.get("list") or []
 
     async def create_recipe(self, local_recipe: dict) -> dict | None:
         """Create a new recipe on the logged-in account.
@@ -931,17 +886,13 @@ class XBloomCloudClient:
         implementation uses before an edit. Returns ``None`` if not
         logged in, the call fails, or no recipe matches.
         """
-        return self._match_table_id(await self.list_recipes(), table_id)
-
-    async def get_product_recipe(self, table_id: int) -> dict | None:
-        """Same as :meth:`get_recipe` but against the Product tab
-        (:meth:`list_product_recipes`)."""
-        return self._match_table_id(await self.list_product_recipes(), table_id)
-
-    async def get_shared_recipe(self, table_id: int) -> dict | None:
-        """Same as :meth:`get_recipe` but against the Shared tab
-        (:meth:`list_shared_recipes`)."""
-        return self._match_table_id(await self.list_shared_recipes(), table_id)
+        recipes = await self.list_recipes()
+        if recipes is None:
+            return None
+        for r in recipes:
+            if r.get("tableId") == table_id:
+                return r
+        return None
 
     async def update_recipe(self, table_id: int, cloud_fields: dict) -> bool:
         """Send a full-replace update for an existing recipe.
