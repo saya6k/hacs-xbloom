@@ -29,14 +29,17 @@ from .const import (
     CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
     CONF_TEMP_UNIT,
+    CONF_WATER_SOURCE,
     CONF_WEIGHT_UNIT,
     DATA_COORDINATOR,
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_SESSION_TIMEOUT,
     DEFAULT_TEMP_UNIT,
+    DEFAULT_WATER_SOURCE,
     DEFAULT_WEIGHT_UNIT,
     DOMAIN,
 )
+from .coordinator import WATER_SOURCE_OPTIONS
 from .schema import (
     RECIPE_PROTECTED_FIELDS,
     RECIPE_SCHEMA,
@@ -391,16 +394,33 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    # ── Settings (telemetry + session timeout) ───────────────────────
+    # ── Settings (telemetry + session timeout + display units + water source) ──
 
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
+            settings = dict(user_input)
+            water_source_name = settings.pop(CONF_WATER_SOURCE, "tank")
+            settings[CONF_WATER_SOURCE] = WATER_SOURCE_OPTIONS.get(
+                water_source_name, DEFAULT_WATER_SOURCE
+            )
             return self.async_create_entry(
                 title="",
-                data=_save_options(self._entry, settings=user_input),
+                data=_save_options(self._entry, settings=settings),
             )
+
+        current_water_source = self._entry.options.get(
+            CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE
+        )
+        water_source_name = next(
+            (
+                name
+                for name, value in WATER_SOURCE_OPTIONS.items()
+                if value == current_water_source
+            ),
+            "tank",
+        )
 
         return self.async_show_form(
             step_id="settings",
@@ -446,6 +466,15 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                             options=["c", "f"],
                             mode=SelectSelectorMode.DROPDOWN,
                             translation_key="temp_unit",
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_WATER_SOURCE, default=water_source_name
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(WATER_SOURCE_OPTIONS.keys()),
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="water_source",
                         )
                     ),
                 }
