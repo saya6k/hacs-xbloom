@@ -36,9 +36,6 @@
       "pause": {
         "default": "mdi:pause-circle"
       },
-      "vibrate_scale": {
-        "default": "mdi:vibrate"
-      },
       "tare_scale": {
         "default": "mdi:scale-balance"
       },
