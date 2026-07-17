@@ -26,11 +26,22 @@ called from button.calibrate_grinder — briefly folded into
 async_set_advanced_settings's calibrate_grinder field the same day, then
 split back out to its own button after a separate hardware report showed
 targeted advanced_settings calls were broken for an unrelated reason, see
-AGENTS.md) instead of waiting for 50038, and adding RD_Grinder_Stop as a
-second, hardware-confirmed-reliable completion signal alongside the raw==85
-check. Also fixed while
-investigating: RD_Grinder_Stop now zeroes live_grind_speed (0 RPM is a
-real reading when the grinder isn't spinning, not "unknown").
+AGENTS.md) instead of waiting for 50038.
+
+A same-day follow-up fix (also treating RD_Grinder_Stop as a completion
+signal) turned out to be wrong: a second, longer hardware test showed
+RD_Grinder_Stop fires within ~5s of send, as part of the calibration
+sequence's own startup/homing move — a full minute before the real
+RD_CurrentGrinder==85 reading arrives (confirmed by live_grind_size
+telemetry still moving, settling at 55 == 85-30 about a minute later).
+Treating RD_Grinder_Stop as "done" closed the is_calibrating_grinder gate
+before the real signal ever fired. Decompiling CalibrateGrinderActivity's
+own onEventBusEvent confirmed the official app only ever checks
+CurrentGrinderBleModel.value == 85 — never RD_Grinder_Stop — alongside a
+180s client-side timeout (see coordinator._async_calibration_timeout_
+fallback), which this integration now mirrors. RD_Grinder_Stop still
+zeroes live_grind_speed (0 RPM is a real reading when the grinder isn't
+spinning, not "unknown") — that part was correct and unrelated.
 """
 from __future__ import annotations
 
@@ -175,24 +186,29 @@ def test_grinder_stop_zeroes_live_speed():
     assert client._status.grinder.speed == 0
 
 
-def test_grinder_calibration_completes_via_grinder_stop_fallback():
-    # Hardware-confirmed 2026-07-17: on at least one real unit, neither
-    # 50038/50039 nor a RD_CurrentGrinder==85 ever arrived during a real
-    # ~120s calibration run — only an entirely ordinary RD_Grinder_Stop at
-    # the end. That must still resolve the calibration rather than leaving
-    # is_calibrating_grinder stuck True (and the state sensor stuck on
-    # "calibrating") forever.
+def test_grinder_stop_does_not_end_calibration():
+    # Hardware-confirmed 2026-07-17 (second, longer test): RD_Grinder_Stop
+    # fires early — part of the calibration sequence's own startup/homing
+    # move, not its end — while the real completion signal
+    # (RD_CurrentGrinder == 85) doesn't arrive until roughly a minute
+    # later. is_calibrating_grinder must survive an RD_Grinder_Stop that
+    # happens mid-calibration; only the real 85 reading (or the
+    # coordinator's own 180s timeout fallback) may clear it.
     client, events = _client_with_events()
     client._status.is_calibrating_grinder = True
 
     client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
 
-    assert client._status.is_calibrating_grinder is False
+    assert client._status.is_calibrating_grinder is True
     assert client._status.grinder.speed == 0
-    assert events == [
-        ("notification", "grinder_calibration_complete", {}),
-        ("notification", "grinding_complete", {}),
-    ]
+    assert events == [("notification", "grinding_complete", {})]
+
+    # The real signal, arriving afterward, still resolves it correctly.
+    client._handle_response(
+        XBloomResponse.RD_CurrentGrinder, _frame((85).to_bytes(4, "little"))
+    )
+    assert client._status.is_calibrating_grinder is False
+    assert events[-1] == ("notification", "grinder_calibration_complete", {})
 
 
 def test_grinder_stop_outside_calibration_does_not_fire_complete():

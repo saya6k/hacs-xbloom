@@ -1696,9 +1696,22 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         hardware-confirmed 2026-07-17 that 50038 never arrived at all
         during a real calibration run on at least one unit, which would
         otherwise leave the whole calibration flow (state, events,
-        completion detection) silently inert. See _client.py's
-        RD_Grinder_Stop/RD_CurrentGrinder handling for how completion is
-        detected without relying on 50038/50039 either.
+        completion detection) silently inert.
+
+        Completion is ``RD_CurrentGrinder`` (40526) reporting exactly 85
+        (see _client.py) — the *only* signal the official app's own
+        ``CalibrateGrinderActivity.onEventBusEvent`` checks (decompiled
+        2026-07-17). Also schedules ``_async_calibration_timeout_fallback``,
+        mirroring the same activity's own 180s client-side timeout
+        (``Observable.just(0).delay(180000, MILLISECONDS)``) so a lost or
+        delayed 85 reading doesn't leave ``is_calibrating_grinder`` (and
+        ``sensor.state == "calibrating"``) stuck forever. ``RD_Grinder_Stop``
+        is deliberately *not* a completion signal — an earlier version of
+        this fix treated it as one, but hardware-confirmed 2026-07-17 (a
+        second, longer test) that it fires within ~5s of send as part of
+        the calibration sequence's own startup/homing move, a full minute
+        before the real 85 reading arrives; treating it as "done" closed
+        the gate early and made the genuine completion event unreachable.
         """
         if not self._check_connected():
             return
@@ -1707,8 +1720,23 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self.client.status.is_calibrating_grinder = True
             self.client._fire_event("notification", "grinder_calibration_started")
             await self.async_refresh()
+            self.hass.async_create_task(self._async_calibration_timeout_fallback())
         except Exception as exc:
             _LOGGER.error("Calibrate grinder error: %s", exc)
+
+    async def _async_calibration_timeout_fallback(self) -> None:
+        """Mirror CalibrateGrinderActivity's own 180s client-side timeout:
+        if the real completion signal (RD_CurrentGrinder == 85) hasn't
+        arrived within 180s of send, declare it done anyway rather than
+        leaving ``is_calibrating_grinder``/``sensor.state == "calibrating"``
+        stuck indefinitely. A no-op if the real signal already cleared the
+        flag (the common case) before this fires.
+        """
+        await asyncio.sleep(180)
+        if self.client.is_calibrating_grinder():
+            self.client.status.is_calibrating_grinder = False
+            self.client._fire_event("notification", "grinder_calibration_complete")
+            await self.async_refresh()
 
     async def _async_refresh_advanced_settings(self) -> None:
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
