@@ -759,15 +759,31 @@ class XBloomCloudClient:
 
     async def fetch_shared_recipe(self, share_url_or_id: str) -> dict | None:
         """Fetch a recipe by share URL, collective.xbloom.com/recipe/{id}
-        URL, or bare share id. No login required.
+        URL, bare community recipe id, or bare share id. No login required.
 
         Returns a dict shaped for ``schema.RECIPE_SCHEMA``, or ``None`` if
         the id can't be parsed or the API call fails/returns not-found.
+
+        A *bare* community recipe id (just the digits, no
+        ``collective.xbloom.com/recipe/`` prefix) used to fall through to
+        being treated as a share-h5 share id — hardware-reported
+        2026-07-18: import silently failed for exactly this input shape.
+        collective.xbloom.com/recipe/{id} uses a different identifier
+        space than share-h5.xbloom.com (a plain numeric
+        ``communityRecipeId``, not an opaque base64-ish share id — see
+        AGENTS.md/project memory xbloom-collective-hub-and-backend-api),
+        so a purely-numeric bare string is unambiguous: a real share-h5
+        share id is never plain decimal digits only.
         """
         value = share_url_or_id.strip()
         collective_match = _COLLECTIVE_RECIPE_URL_RE.search(value)
-        if collective_match:
-            resolved = await self._resolve_collective_link(collective_match.group(1))
+        community_recipe_id = (
+            collective_match.group(1) if collective_match
+            else value if value.isdigit()
+            else None
+        )
+        if community_recipe_id:
+            resolved = await self._resolve_collective_link(community_recipe_id)
             if not resolved:
                 return None
             value = resolved
