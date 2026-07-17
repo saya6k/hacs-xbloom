@@ -185,7 +185,7 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 
 ## 개발
 
-이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조.
+이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조. 패킷 프레이밍과 명령 id 전체 레퍼런스는 [`protocol.md`](./protocol.md) 참조. BLE 클라이언트가 왜 벤더-패치 방식이 아닌 클린룸 네이티브 구현인지는 [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고.
 
 실제 Home Assistant 설치에 대해 통합을 테스트하기 위한 devcontainer가 제공됩니다. 베이스 이미지는 공식 HA **dev 나이틀리** Docker 이미지(`.devcontainer/devcontainer.json`에 `hacs.json` 플로어와 같은 버전으로 고정)라 HA core와 모든 런타임 의존성이 내장돼 있고, `scripts/setup`은 개발 도구만 설치합니다. VS Code에서 Dev Containers 확장으로 폴더를 열고 실행:
 

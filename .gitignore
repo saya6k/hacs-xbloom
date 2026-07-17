@@ -7,6 +7,7 @@
 !/.github/
 !/.devcontainer/
 !/.agents/
+!/adr/
 !/custom_components/
 !/docs/
 !/scripts/
