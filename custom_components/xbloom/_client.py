@@ -214,6 +214,24 @@ _CALIBRATE_GRINDER_PAYLOAD = [1000]
 CMD_SET_DISPLAY_BRIGHTNESS = 8103
 _DISPLAY_BRIGHTNESS_RAW = {1: 1, 2: 8, 3: 15}
 
+# Machine sleep-state notifications — decompiled 2026-07-17 (jadx) from
+# com/chisalsoft/andite/manager/AppDeviceManager.java (static isSleeping
+# flag) and its three BaseBleModel.create() dispatch targets:
+# MachineSleepingModel (cmd 8009 -> setSleeping(true)),
+# MachineNotSleepingModel (cmd 8011 -> setSleeping(false)), and
+# MachineActivityModel (cmd 8023 -> setSleeping(false) unconditionally;
+# the model also parses a payload[0:4] LE "index" field and posts an RxBus
+# event only when index==1, but that's a separate UI-only signal with no
+# analog here — the sleeping flag itself doesn't depend on it). All three
+# codes are already valid XBloomResponse enum members (see
+# src/xbloom/protocol/constants.py), so they reach _handle_response via
+# the normal type-1 path — no raw pre-scan needed, unlike the advanced-
+# settings commands above.
+#
+# The flag exists so mode-switch retries can match the official app's own
+# gating: AppBleManager.createDisposable's ACK-timeout handler only
+# retries "while isSleeping()" — see coordinator.py's
+# _async_switch_mode_with_retry and its module comment.
 EventCallback = Callable[[str, str, dict], None]
 
 # 8100 — MTU handshake. Cherry-picked from
@@ -289,6 +307,15 @@ class XBloomClientWithEvents(XBloomClient):
         to force a reconnect rather than trusting ``is_connected`` alone.
         """
         return time.monotonic() - self._last_notification_monotonic
+
+    def is_sleeping(self) -> bool:
+        """Whether the machine last reported itself asleep (cmd 8009/8011/8023).
+
+        Defaults to ``False`` (matching the official app's static
+        ``isSleeping`` field, which starts unset/false) until the first
+        sleep-state notification arrives.
+        """
+        return getattr(self._status, "is_sleeping", False)
 
     async def async_send_handshake(self) -> bool:
         """Send the 8100 MTU handshake the firmware needs to wake up.
@@ -648,6 +675,12 @@ class XBloomClientWithEvents(XBloomClient):
             payload = data[10:-2] if len(data) > 12 else b""
             if len(payload) >= 4:
                 self._status.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+        elif response == XBloomResponse.RD_MachineSleeping:
+            self._status.is_sleeping = True
+            _LOGGER.debug("Machine sleep state: sleeping")
+        elif response in (XBloomResponse.RD_MachineNotSleeping, XBloomResponse.RD_MachineActivity):
+            self._status.is_sleeping = False
+            _LOGGER.debug("Machine sleep state: awake")
         elif response == XBloomResponse.RD_BREWER_MODE:
             # Live pour-pattern knob turn. Stored as the same raw int
             # coordinator.POUR_PATTERN_OPTIONS uses (0=center/1=circular/
