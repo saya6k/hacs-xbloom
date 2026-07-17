@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 from typing import Callable, List, Optional
 
 from bleak import BleakClient
@@ -227,7 +228,12 @@ _NOTIFICATION_MAP = {
 
 _ERROR_MAP = {
     XBloomResponse.RD_ErrorIdling: "no_beans",
-    XBloomResponse.RD_ErrorLackOfWater: "water_shortage",
+    # RD_ErrorLackOfWater (40522) is handled separately in _handle_response —
+    # it is NOT a one-way error: the payload carries a value (0 = tank
+    # empty, 1 = water restored), and the firmware sends it again with
+    # value=1 when the tank is refilled. Treating every 40522 as a
+    # shortage (as this map used to) turns the firmware's own "refilled"
+    # notification into a re-trigger of the shortage flag.
     XBloomResponse.RD_AbnormalDoseOrWater: "abnormal_dose_or_water",
     XBloomResponse.RD_AbnormalGearPosition: "abnormal_gear_position",
 }
@@ -239,9 +245,25 @@ class XBloomClientWithEvents(XBloomClient):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._event_callbacks: List[EventCallback] = []
+        # Freshly "seen" at construction time (i.e. right at connect) so the
+        # silence watchdog below doesn't false-positive before the first
+        # real notification has had a chance to arrive.
+        self._last_notification_monotonic: float = time.monotonic()
 
     def on_event(self, callback: EventCallback) -> None:
         self._event_callbacks.append(callback)
+
+    def seconds_since_last_notification(self) -> float:
+        """Seconds since the last raw BLE notification of any kind.
+
+        Mirrors the official Android app's connection watchdog
+        (``AppDeviceManager.initHeartCheck``/``removeHeartCheck``, see
+        AGENTS.md): the telemetry stream floods at multi-Hz under normal
+        operation, so a large gap here means the GATT link is still
+        "connected" but has gone silent/stale — the coordinator uses this
+        to force a reconnect rather than trusting ``is_connected`` alone.
+        """
+        return time.monotonic() - self._last_notification_monotonic
 
     async def async_send_handshake(self) -> bool:
         """Send the 8100 MTU handshake the firmware needs to wake up.
@@ -420,6 +442,7 @@ class XBloomClientWithEvents(XBloomClient):
         return "easy" if mode_slice.hex() == _MACHINE_INFO_MODE_EASY_HEX else "pro"
 
     def _on_notification(self, char, data: bytearray) -> None:
+        self._last_notification_monotonic = time.monotonic()
         raw = bytes(data)
         char_uuid = str(getattr(char, "uuid", char))
         # DEBUG, not INFO — the firmware floods weight/water-volume frames
@@ -633,6 +656,28 @@ class XBloomClientWithEvents(XBloomClient):
                 if len(payload) >= 4:
                     attrs["pour_index"] = struct.unpack_from("<I", payload, 0)[0]
             self._fire_event("notification", event_type, attrs)
+        elif response == XBloomResponse.RD_ErrorLackOfWater:
+            # Cmd 40522 is a bidirectional water-tank state notification,
+            # not a one-shot error — decompiled from the official app
+            # (ErrorLackOfWaterBleModel parses payload[0:4] LE as a value;
+            # HomeActivity dismisses the water-scarcity warning on
+            # value == 1 and shows it on value == 0). The firmware sends
+            # value=1 again when the tank is refilled, so both directions
+            # are observable live. Mirror it onto water_level_ok too — the
+            # vendored client only ever sets that flag from the one-shot
+            # connect-time RD_MachineInfo snapshot, which goes stale the
+            # moment the tank state changes.
+            payload = data[10:-2] if len(data) > 12 else b""
+            value = (
+                struct.unpack_from("<I", payload, 0)[0] if len(payload) >= 4 else 0
+            )
+            self._status.water_level_ok = value == 1
+            _LOGGER.info("RD_ErrorLackOfWater: value=%d (%s)",
+                         value, "restored" if value == 1 else "shortage")
+            if value == 1:
+                self._fire_event("notification", "water_refilled")
+            else:
+                self._fire_event("error", "water_shortage")
         elif response in _ERROR_MAP:
             self._fire_event("error", _ERROR_MAP[response])
 
