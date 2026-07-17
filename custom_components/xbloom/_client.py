@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 from typing import Callable, List, Optional
 
 from bleak import BleakClient
@@ -239,9 +240,25 @@ class XBloomClientWithEvents(XBloomClient):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._event_callbacks: List[EventCallback] = []
+        # Freshly "seen" at construction time (i.e. right at connect) so the
+        # silence watchdog below doesn't false-positive before the first
+        # real notification has had a chance to arrive.
+        self._last_notification_monotonic: float = time.monotonic()
 
     def on_event(self, callback: EventCallback) -> None:
         self._event_callbacks.append(callback)
+
+    def seconds_since_last_notification(self) -> float:
+        """Seconds since the last raw BLE notification of any kind.
+
+        Mirrors the official Android app's connection watchdog
+        (``AppDeviceManager.initHeartCheck``/``removeHeartCheck``, see
+        AGENTS.md): the telemetry stream floods at multi-Hz under normal
+        operation, so a large gap here means the GATT link is still
+        "connected" but has gone silent/stale — the coordinator uses this
+        to force a reconnect rather than trusting ``is_connected`` alone.
+        """
+        return time.monotonic() - self._last_notification_monotonic
 
     async def async_send_handshake(self) -> bool:
         """Send the 8100 MTU handshake the firmware needs to wake up.
@@ -420,6 +437,7 @@ class XBloomClientWithEvents(XBloomClient):
         return "easy" if mode_slice.hex() == _MACHINE_INFO_MODE_EASY_HEX else "pro"
 
     def _on_notification(self, char, data: bytearray) -> None:
+        self._last_notification_monotonic = time.monotonic()
         raw = bytes(data)
         char_uuid = str(getattr(char, "uuid", char))
         # DEBUG, not INFO — the firmware floods weight/water-volume frames
