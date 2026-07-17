@@ -14,11 +14,13 @@ from homeassistant.core import HomeAssistant
 
 from ..coordinator import XBloomCoordinator
 from .base import XBloomBaseTool
+from .calibrate import XBloomCalibrateGrinderTool
 from .cloud_recipe import (
     XBloomExportRecipeTool,
     XBloomImportCloudRecipeTool,
     XBloomSearchCollectiveRecipesTool,
 )
+from .grind import XBloomGrindTool
 from .local_recipe import (
     XBloomCreateRecipeTool,
     XBloomDeleteRecipeTool,
@@ -47,9 +49,11 @@ def build_tools(
         XBloomEditRecipeTool(coordinator, hass),
         XBloomDeleteRecipeTool(coordinator, hass),
         XBloomPourTool(coordinator, hass),
+        XBloomGrindTool(coordinator, hass),
         XBloomExecuteRecipeTool(coordinator, hass),
         XBloomWriteEasySlotTool(coordinator, hass),
         XBloomTareScaleTool(coordinator, hass),
+        XBloomCalibrateGrinderTool(coordinator, hass),
         XBloomImportCloudRecipeTool(coordinator, hass),
         XBloomSearchCollectiveRecipesTool(coordinator, hass),
         XBloomExportRecipeTool(coordinator, hass),

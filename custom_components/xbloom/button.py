@@ -27,8 +27,6 @@ async def async_setup_entry(
             XBloomPauseButton(coordinator, entry),
             XBloomCancelButton(coordinator, entry),
             XBloomTareButton(coordinator, entry),
-            XBloomDismissPodButton(coordinator, entry),
-            XBloomCalibrateGrinderButton(coordinator, entry),
             XBloomWriteSlotAButton(coordinator, entry),
             XBloomWriteSlotBButton(coordinator, entry),
             XBloomWriteSlotCButton(coordinator, entry),
@@ -116,26 +114,6 @@ class XBloomTareButton(_XBloomButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_tare_scale()
-
-
-class XBloomDismissPodButton(_XBloomButton):
-    _attr_translation_key = "dismiss_pod"
-    _attr_unique_id = "xbloom_dismiss_pod"
-
-    async def async_press(self) -> None:
-        await self.coordinator.async_dismiss_pod_prompt()
-
-
-class XBloomCalibrateGrinderButton(_XBloomButton):
-    _attr_translation_key = "calibrate_grinder"
-    _attr_unique_id = "xbloom_calibrate_grinder"
-
-    @property
-    def device_info(self):
-        return self.coordinator.grinder_device_info
-
-    async def async_press(self) -> None:
-        await self.coordinator.async_calibrate_grinder()
 
 
 class _XBloomWriteSlotButton(_XBloomButton):

@@ -15,6 +15,21 @@ from command names — see AGENTS.md's firmware-quirks section.
   signal (raw == 85) while a calibration (cmd 3502) is in progress.
 - RD_CalibrateStart/RD_Calibrating (50038/50039): grinder calibration
   sweep start/progress pulses, no payload.
+
+Hardware feedback the same day found the calibration flow above didn't
+actually surface anything on a real unit: 50038/50039 never arrived
+during a real ~120s calibration run, so the whole started/progress/
+complete flow was silently inert (is_calibrating_grinder never got set,
+so even the RD_CurrentGrinder==85 completion check could never fire).
+Fixed by moving "started" to send time
+(coordinator.async_set_advanced_settings(calibrate_grinder=True), which
+already existed pre-dating this session — the trigger itself was never
+new, only the missing started/progress/complete tracking around it)
+instead of waiting for 50038, and adding RD_Grinder_Stop as a second,
+hardware-confirmed-reliable completion signal alongside the raw==85
+check. Also fixed while
+investigating: RD_Grinder_Stop now zeroes live_grind_speed (0 RPM is a
+real reading when the grinder isn't spinning, not "unknown").
 """
 from __future__ import annotations
 
@@ -104,11 +119,21 @@ def test_current_grinder_40526_parses_into_grinder_size():
     assert client._status.grinder.size == 30  # 60 - _GRIND_SIZE_RAW_OFFSET(30)
 
 
-def test_grinder_calibration_flow_fires_start_progress_and_complete():
+def test_calibrate_start_sets_flag_without_firing_its_own_event():
+    # 50038 is a best-effort safety net only, not the primary trigger —
+    # hardware-confirmed 2026-07-17 that at least one real unit never sends
+    # it during a real calibration run.
+    # coordinator.async_set_advanced_settings(calibrate_grinder=True) fires
+    # "grinder_calibration_started" itself at send time instead.
     client, events = _client_with_events()
-
     client._handle_response(XBloomResponse.RD_CalibrateStart, _frame(b""))
     assert client._status.is_calibrating_grinder is True
+    assert events == []
+
+
+def test_grinder_calibration_completes_via_current_grinder_85():
+    client, events = _client_with_events()
+    client._status.is_calibrating_grinder = True
 
     client._handle_response(XBloomResponse.RD_Calibrating, _frame(b""))
 
@@ -125,7 +150,6 @@ def test_grinder_calibration_flow_fires_start_progress_and_complete():
     assert client._status.is_calibrating_grinder is False
 
     assert events == [
-        ("notification", "grinder_calibration_started", {}),
         ("notification", "grinder_calibration_progress", {}),
         ("notification", "grinder_calibration_complete", {}),
     ]
@@ -138,3 +162,48 @@ def test_current_grinder_85_outside_calibration_does_not_fire_complete():
     )
     assert client._status.grinder.size == 55
     assert events == []
+
+
+def test_grinder_stop_zeroes_live_speed():
+    # Hardware-confirmed 2026-07-17: the live RPM sensor stayed at its last
+    # nonzero value (or Unknown) after grinding ended instead of reflecting
+    # that the grinder isn't spinning — 0 is a real reading here, not a
+    # missing one.
+    client, _events = _client_with_events()
+    client._status.grinder.speed = 1200
+    client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
+    assert client._status.grinder.speed == 0
+
+
+def test_grinder_calibration_completes_via_grinder_stop_fallback():
+    # Hardware-confirmed 2026-07-17: on at least one real unit, neither
+    # 50038/50039 nor a RD_CurrentGrinder==85 ever arrived during a real
+    # ~120s calibration run — only an entirely ordinary RD_Grinder_Stop at
+    # the end. That must still resolve the calibration rather than leaving
+    # is_calibrating_grinder stuck True (and the state sensor stuck on
+    # "calibrating") forever.
+    client, events = _client_with_events()
+    client._status.is_calibrating_grinder = True
+
+    client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
+
+    assert client._status.is_calibrating_grinder is False
+    assert client._status.grinder.speed == 0
+    assert events == [
+        ("notification", "grinder_calibration_complete", {}),
+        ("notification", "grinding_complete", {}),
+    ]
+
+
+def test_grinder_stop_outside_calibration_does_not_fire_complete():
+    client, events = _client_with_events()
+    client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
+    assert client.is_calibrating_grinder() is False
+    assert events == [("notification", "grinding_complete", {})]
+
+
+def test_is_calibrating_grinder_accessor():
+    client, _events = _client_with_events()
+    assert client.is_calibrating_grinder() is False
+    client._handle_response(XBloomResponse.RD_CalibrateStart, _frame(b""))
+    assert client.is_calibrating_grinder() is True

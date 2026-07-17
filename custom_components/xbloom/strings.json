@@ -146,12 +146,6 @@
       "tare_scale": {
         "name": "Tare Scale"
       },
-      "dismiss_pod": {
-        "name": "Dismiss Pod Prompt"
-      },
-      "calibrate_grinder": {
-        "name": "Calibrate Grinder"
-      },
       "write_slot_a": {
         "name": "Write to Easy Slot A"
       },
@@ -190,7 +184,8 @@
           "no_beans": "No Beans",
           "water_shortage": "Water Shortage",
           "ready": "Ready",
-          "starting": "Starting"
+          "starting": "Starting",
+          "calibrating": "Calibrating"
         }
       },
       "weight": {
