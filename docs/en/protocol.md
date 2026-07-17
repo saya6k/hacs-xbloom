@@ -122,6 +122,7 @@ from the name alone.
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | live pour-pattern knob |
 | 8108 | `RD_BREWER_TEMPERATURE` | LE u32 | Telemetry | live brewer temperature |
 | 8111 | `RD_EASYMODE_BEGIN` | LE u32, 0–2 | Active | Easy Mode brew started from the machine's own dial; maps to slot A/B/C |
+| 8113 | `RD_TEA_RECIP_CHANGE_SOAK_TIME` | — | Active | mapped to `"tea_soak_time_changed"` notification |
 | 8203 | `RD_AbnormalGearPosition` | — | Active | error event |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | error event |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | enter-mode acks, no handler in this integration |
