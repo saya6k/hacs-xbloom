@@ -35,6 +35,11 @@ NOTIFICATION_EVENT_TYPES = [
     "tea_soak_time_changed",
     "tea_resumed",
     "water_refilled",
+    "pod_detected",
+    "easy_slot_started",
+    "grinder_calibration_started",
+    "grinder_calibration_progress",
+    "grinder_calibration_complete",
 ]
 
 
