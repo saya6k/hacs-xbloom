@@ -35,10 +35,39 @@ def _coerce_pour_pattern(value):
     raise vol.Invalid(f"pattern must be a string or int (got {type(value).__name__})")
 
 
+# RT (Room Temperature) / BP (Boiling Point) — the official app's own pour-
+# temperature slider snaps to these exact literal values at its min/max
+# (decompiled 2026-07-17, TemperatureConstant.RT/BP — see AGENTS.md). Not
+# protocol-level sentinels: a recipe already using 20/98 directly behaves
+# identically, this just accepts the app's own names for them too.
+_TEMPERATURE_NAME_TO_C = {"rt": 20, "bp": 98}
+
+
+def _coerce_temperature_c(value):
+    """Accept either a positive int (literal °C) or the name (RT/BP)."""
+    if isinstance(value, bool):
+        raise vol.Invalid(f"temperature_c must be a string or int (got {value!r})")
+    if isinstance(value, int):
+        if value > 0:
+            return value
+        raise vol.Invalid(f"temperature_c must be positive (got {value})")
+    if isinstance(value, str):
+        key = value.strip().lower()
+        if key in _TEMPERATURE_NAME_TO_C:
+            return _TEMPERATURE_NAME_TO_C[key]
+        raise vol.Invalid(
+            f"temperature_c must be a positive int or one of "
+            f"{list(_TEMPERATURE_NAME_TO_C)} (got {value!r})"
+        )
+    raise vol.Invalid(
+        f"temperature_c must be a string or int (got {type(value).__name__})"
+    )
+
+
 POUR_SCHEMA = vol.Schema(
     {
         vol.Required("volume_ml"): cv.positive_int,
-        vol.Required("temperature_c"): cv.positive_int,
+        vol.Required("temperature_c"): _coerce_temperature_c,
         vol.Optional("flow_rate", default=3.0): vol.Coerce(float),
         vol.Optional("pause_seconds", default=0): vol.Coerce(int),
         vol.Optional("pattern", default=2): _coerce_pour_pattern,
