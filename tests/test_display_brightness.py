@@ -1,21 +1,24 @@
-"""Tests for _client.XBloomClientWithEvents.async_set_display_brightness —
+"""Tests for ble.client.XBloomClient.async_set_display_brightness —
 cmd 8103 (RD_LetType), decompiled from the official app's
-MachineDisplayActivity 2026-07-16 (see AGENTS.md). Untested on real
-hardware; this only checks the level->raw mapping and that the right
-command/payload gets sent.
+MachineDisplayActivity 2026-07-16 (see project memory
+xbloom-advanced-features-jadx-findings). Untested on real hardware; this
+only checks the level->raw mapping and that the right command/payload
+gets sent.
 """
 from __future__ import annotations
 
 import asyncio
 
-from custom_components.xbloom._client import (
-    CMD_SET_DISPLAY_BRIGHTNESS,
-    XBloomClientWithEvents,
-)
+from custom_components.xbloom.ble.client import XBloomClient
+from custom_components.xbloom.ble.constants import Command
 
 
-def _client() -> XBloomClientWithEvents:
-    return XBloomClientWithEvents(mac_address="AA:BB:CC:DD:EE:FF")
+class _FakeConnection:
+    is_connected = False
+
+
+def _client() -> XBloomClient:
+    return XBloomClient(mac_address="AA:BB:CC:DD:EE:FF", connection=_FakeConnection())
 
 
 def test_level_1_2_3_map_to_raw_1_8_15():
@@ -33,7 +36,7 @@ def test_level_1_2_3_map_to_raw_1_8_15():
     asyncio.run(client.async_set_display_brightness(3))
 
     assert calls == [
-        (CMD_SET_DISPLAY_BRIGHTNESS, [1]),
-        (CMD_SET_DISPLAY_BRIGHTNESS, [8]),
-        (CMD_SET_DISPLAY_BRIGHTNESS, [15]),
+        (Command.SET_DISPLAY_BRIGHTNESS, [1]),
+        (Command.SET_DISPLAY_BRIGHTNESS, [8]),
+        (Command.SET_DISPLAY_BRIGHTNESS, [15]),
     ]

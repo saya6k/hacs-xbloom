@@ -4,10 +4,10 @@
 
 [XBloom Studio](https://xbloom.com/) 커피머신을 Home Assistant에서 로컬 블루투스로 제어. 추출, 그라인딩, 저장된 레시피 실행, Assist(LLM) 노출 — 모두 클라우드 없이.
 
-리버스 엔지니어링된 두 개의 BLE upstream을 vendor한 위에서 구축:
+두 개의 리버스 엔지니어링된 BLE upstream이 밝혀낸 프로토콜 작업 위에서 구축 — 저장소에는 수정하지 않은 레퍼런스/저작권 표시용 사본으로만 남아 있음([ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고 — BLE 클라이언트 자체는 둘 중 어느 쪽에도 런타임 의존하지 않는 클린룸 네이티브 구현):
 
-- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) — `custom_components/xbloom/src/xbloom/`. 연결·상태·그라인더/브루어/저울 컴포넌트와 커피 추출 플로를 구동하는 클래스 기반 클라이언트 라이브러리.
-- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) — `custom_components/xbloom/src/xbloom-ble/`. `brewing.py`의 차(tea) 레시피 플로가 가져다 쓰는 HCI 스눕 검증 프로토콜 디코딩(`PROTOCOL.md`).
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) — `custom_components/xbloom/src/xbloom/`.
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) — `custom_components/xbloom/src/xbloom-ble/`.
 
 이 통합을 가능하게 한 프로토콜 작업에 Frederic, PyBloom 기여자들, Bruno Azzinnari에게 큰 감사를.
 

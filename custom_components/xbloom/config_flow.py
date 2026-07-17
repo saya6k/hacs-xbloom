@@ -104,9 +104,10 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                from ._client import HABleakConnection, XBloomClientWithEvents
+                from .ble.client import XBloomClient
+                from .ble.connection import HABleakConnection
 
-                client = XBloomClientWithEvents(
+                client = XBloomClient(
                     mac_address=mac, connection=HABleakConnection(self.hass)
                 )
                 ok = await client.connect(timeout=15.0)
@@ -147,9 +148,10 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # Quick connection test
                 try:
-                    from ._client import HABleakConnection, XBloomClientWithEvents
+                    from .ble.client import XBloomClient
+                    from .ble.connection import HABleakConnection
 
-                    client = XBloomClientWithEvents(
+                    client = XBloomClient(
                         mac_address=mac, connection=HABleakConnection(self.hass)
                     )
                     ok = await client.connect(timeout=15.0)
@@ -175,7 +177,7 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Show form — optionally pre-fill with discovered device
         discovered_mac = ""
         try:
-            from xbloom.scanner import discover_devices
+            from .ble.scanner import discover_devices
 
             _LOGGER.debug("Scanning for XBloom devices…")
             devices = await discover_devices(timeout=5.0)

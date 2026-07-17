@@ -577,7 +577,7 @@ class XBloomCloudClient:
         any network/parse failure, never raises.
 
         ``pouring_radius`` is the machine's current live value (from
-        ``_client.py``'s ``async_get_pour_radius``/the ``pour_radius``
+        ``ble/client.py``'s ``async_get_pour_radius``/the ``pour_radius``
         sensor) — the API takes it as a query param for reasons unclear
         from the decompiled code (perhaps server-side reconciliation);
         it's passed through unchanged, not derived from it.

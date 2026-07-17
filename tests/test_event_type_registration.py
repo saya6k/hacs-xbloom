@@ -1,8 +1,8 @@
 """Every event type the client can fire must be registered on its event entity.
 
 HA's EventEntity._trigger_event raises ValueError for an event_type not in
-_attr_event_types — so a map entry in _client.py without a matching entry
-in event.py's type lists is a runtime error the first time that
+_attr_event_types — so a map entry in ble/client.py without a matching
+entry in event.py's type lists is a runtime error the first time that
 notification arrives (this actually happened: "tea_soak_time_changed" was
 in _NOTIFICATION_MAP but missing from NOTIFICATION_EVENT_TYPES, so cmd
 8113 during a tea brew raised in the event listener).
@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("homeassistant.components.event")
 
-from custom_components.xbloom._client import _ERROR_MAP, _NOTIFICATION_MAP
+from custom_components.xbloom.ble.client import _ERROR_MAP, _NOTIFICATION_MAP
 from custom_components.xbloom.event import ERROR_EVENT_TYPES, NOTIFICATION_EVENT_TYPES
 
 

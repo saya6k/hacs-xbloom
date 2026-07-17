@@ -38,9 +38,8 @@ import asyncio
 import logging
 import struct
 
-from xbloom.models.recipes import build_recipe_payload
-from xbloom.models.types import CupType, XBloomRecipe
-from xbloom.protocol.constants import XBloomCommand
+from .ble.models import CupType, XBloomRecipe, build_recipe_payload
+from .ble.constants import Command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -347,8 +346,8 @@ async def _async_brew_coffee(
     # (APP_RECIPE_SEND_MANUAL, no grinding).
     payload = _build_coffee_recipe_payload(recipe)
     recipe_cmd = (
-        XBloomCommand.APP_RECIPE_SEND_AUTO if grinding
-        else XBloomCommand.APP_RECIPE_SEND_MANUAL
+        Command.RECIPE_SEND_AUTO if grinding
+        else Command.RECIPE_SEND_MANUAL
     )
     await client._send_command_raw(recipe_cmd, payload)
     await asyncio.sleep(_STEP_DELAY)
@@ -403,15 +402,14 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
     # handling; see its docstring for the current (pattern=1) encoding.
     payload = _build_tea_payload(recipe)
     await client._send_command_raw(
-        XBloomCommand.APP_TEA_RECIP_CODE, payload,
+        Command.TEA_RECIPE_CODE, payload,
     )
     await asyncio.sleep(_STEP_DELAY)
 
-    # 4512 — APP_TEA_RECIP_MAKE. Execute. The vendored
-    # ``XBloomClient.execute_recipe`` re-sends the payload here rather
-    # than an empty execute; we mirror that.
+    # 4512 — APP_TEA_RECIP_MAKE. Execute. Re-sends the payload here rather
+    # than an empty execute (matches the firmware's expected sequence).
     await client._send_command_raw(
-        XBloomCommand.APP_TEA_RECIP_MAKE, payload,
+        Command.TEA_RECIPE_MAKE, payload,
     )
 
 
@@ -431,16 +429,16 @@ async def async_dismiss_pod_prompt(client) -> None:
 
     Decompiled 2026-07-17: ``PodsDetailActivity``/``RecipeDetailActivity``'s
     ``showStartDialog()`` dismiss handler sends ``quitRecipeStart()`` (8017,
-    already ``XBloomCommand.APP_RECIPE_START_QUIT`` in the vendored enum)
-    before any BLE brew commands are sent — the machine shows its own local
-    "ready to brew this pod" state the moment it reads the NFC tag (see
-    ``RD_Pods``/40501, fired as the ``pod_detected`` event), independent of
-    whether the app/HA has armed anything. No payload.
+    ``Command.RECIPE_START_QUIT``) before any BLE brew commands are sent —
+    the machine shows its own local "ready to brew this pod" state the
+    moment it reads the NFC tag (see ``RD_Pods``/40501, fired as the
+    ``pod_detected`` event), independent of whether the app/HA has armed
+    anything. No payload.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
     _LOGGER.info("Dismiss pod start prompt")
-    await client._send_command(XBloomCommand.APP_RECIPE_START_QUIT)
+    await client._send_command(Command.RECIPE_START_QUIT)
 
 
 async def async_write_easy_slots(
