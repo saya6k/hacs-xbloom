@@ -32,7 +32,8 @@ from .const import (
     DEFAULT_WATER_SOURCE,
     DEFAULT_WEIGHT_UNIT,
 )
-from ._client import HABleakConnection, XBloomClientWithEvents as XBloomClient, strict_ascii
+from .ble.client import XBloomClient, strict_ascii
+from .ble.connection import HABleakConnection
 from ._cloud_client import (
     XBloomCloudClient,
     cloud_recipe_to_local,
@@ -49,7 +50,7 @@ from .schema import (
     scale_pours_to_total,
     strip_protected_recipe_fields,
 )
-from xbloom.models.types import (
+from .ble.models import (
     CupType,
     PourPattern,
     PourStep,
@@ -304,14 +305,14 @@ _CMD_RECIPE_RESTART = 40524
 # app's own AppBleManager.sendMessage retry logic, decompiled 2026-07-17
 # (com/chisalsoft/andite/manager/AppBleManager.java): 1.5s ACK timeout,
 # retry while retryCount < 3 — i.e. up to 4 total sends (1 initial + 3
-# retries) before giving up. Confirming the ACK requires _client.py's
+# retries) before giving up. Confirming the ACK requires ble/client.py's
 # _split_and_parse marker-byte fix (same date) — cmd 11511's response is
 # a type-2 frame (marker 0xC2) that was previously silently dropped
 # before ever reaching _mode_ack_hex, so this retry loop would otherwise
 # always exhaust every attempt for nothing.
 #
 # The retry itself is further gated on AppDeviceManager.isSleeping()
-# (decompiled 2026-07-17, see _client.py's sleep-state-tracking comment):
+# (decompiled 2026-07-17, see ble/client.py's sleep-state-tracking comment):
 # createDisposable's ACK-timeout handler only retries while the machine
 # last reported itself asleep (cmd 8009/8011/8023) — if it's awake, a
 # missed ACK fails immediately on the first timeout, no retry at all.
@@ -423,7 +424,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # setpoint — recipes vary it per pour (see default_recipes.py).
         # Populated by async_execute_recipe(); advanced live by each
         # RD_BLOOM ("bloom") notification's pour_index (see
-        # _client.py/_dispatch_event below). Cleared on recipe completion
+        # ble/client.py/_dispatch_event below). Cleared on recipe completion
         # or cancel, at which point self.flow_rate reverts to being the
         # manual-pour setpoint again.
         self._executing_recipe: bool = False
@@ -553,10 +554,10 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 # immediately after commit (well before real pouring
                 # starts), and RD_Grinder_Stop flips vendored state to IDLE
                 # right as grinding *ends*, moments before pouring begins.
-                # See _client.py's _scan_for_status_frame /
+                # See ble/client.py's _scan_for_status_frame /
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
-                raw_label = getattr(s, "_raw_state_label", None)
+                raw_label = s.raw_state_label
                 if self.client.is_calibrating_grinder():
                     # Highest priority — a deliberate, HA-triggered action
                     # (see async_calibrate_grinder()) we know is actually
@@ -605,14 +606,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     "mode": self.client._machine_mode() if s.serial_number else self._mode,
                     "error": None,
                     # Live readings from the machine's own knobs/heartbeat —
-                    # see _client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
+                    # see ble/client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
                     # RD_MachineInfo handling. live_grind_size: None until
                     # first observed — 0 (the dataclass default) is never a
                     # real grind size, so it means "not yet seen".
                     "live_grind_size": s.grinder.size or None,
                     # live_grind_speed: 0 IS a real, meaningful reading
                     # (the grinder isn't currently spinning) — unlike grind
-                    # size, don't coerce it to None/Unknown. _client.py's
+                    # size, don't coerce it to None/Unknown. ble/client.py's
                     # RD_Grinder_Stop handling explicitly zeroes this on
                     # stop so it doesn't linger at a stale nonzero RPM.
                     "live_grind_speed": s.grinder.speed,
@@ -1064,7 +1065,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self._no_beans = True
         elif category == "notification" and event_type == "water_refilled":
             # The firmware's own "tank refilled" notification (cmd 40522
-            # with value=1 — see _client.py). Without this, the only clear
+            # with value=1 — see ble/client.py). Without this, the only clear
             # path was a successful brew, which async_execute_recipe's own
             # low-water gate blocks — a deadlock the user could only escape
             # by reconnecting (real-hardware report 2026-07-17).
@@ -1098,7 +1099,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         # ── Track the active pour during recipe execution ──
         # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a
-        # 0-based pour_index (see _client.py). Only meaningful while a
+        # 0-based pour_index (see ble/client.py). Only meaningful while a
         # recipe execute is in flight (async_execute_recipe snapshots
         # _active_recipe_pours) — a manual pour's single bloom event is
         # ignored here since there's no recipe pour list to look up.
@@ -1573,7 +1574,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_switch_mode_with_retry(self, mode: str) -> bool:
         """Send the mode-switch command (11511) and confirm it landed via
-        its ACK (``_mode_ack_hex``), retrying on timeout.
+        its ACK (``mode_ack_hex``), retrying on timeout.
 
         Matches the official app's own retry spec (see
         ``_MODE_SWITCH_ACK_TIMEOUT_S``/``_MODE_SWITCH_MAX_ATTEMPTS``'s
@@ -1594,7 +1595,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await self.client._send_command_raw(11511, mode_bytes, type_code=2)
             for _ in range(int(_MODE_SWITCH_ACK_TIMEOUT_S / 0.1)):
                 await asyncio.sleep(0.1)
-                if getattr(self.client.status, "_mode_ack_hex", None) == target_hex:
+                if self.client.status.mode_ack_hex == target_hex:
                     _LOGGER.info(
                         "Mode switch to %s confirmed (attempt %d/%d)",
                         mode, attempt, _MODE_SWITCH_MAX_ATTEMPTS,
@@ -1731,7 +1732,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         completion detection) silently inert.
 
         Completion is ``RD_CurrentGrinder`` (40526) reporting exactly 85
-        (see _client.py) — the *only* signal the official app's own
+        (see ble/client.py) — the *only* signal the official app's own
         ``CalibrateGrinderActivity.onEventBusEvent`` checks (decompiled
         2026-07-17). Also schedules ``_async_calibration_timeout_fallback``,
         mirroring the same activity's own 180s client-side timeout
@@ -1774,7 +1775,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),
         so nothing populates the two sensors until this runs — see
-        _client.py's CMD_GET_POUR_RADIUS module comment.
+        ble/client.py's CMD_GET_POUR_RADIUS module comment.
 
         Logged at INFO on our own logger (not the vendored xbloom.core.client
         one the SEND/RECV CMD lines use) — hardware debugging 2026-07-17
@@ -1848,7 +1849,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
           scale, ``raw = 1000 + level * 100`` — no ambiguity, matches
           MachineSetVibrationAmplitudeActivity exactly.
         - ``display_brightness_level`` (1-3, L1-L3): 3 fixed presets,
-          ``raw`` one of 1/8/15 (see ``_client.CMD_SET_DISPLAY_BRIGHTNESS``)
+          ``raw`` one of 1/8/15 (see ``ble.constants.Command.SET_DISPLAY_BRIGHTNESS``)
           — matches MachineDisplayActivity exactly, also no ambiguity (no
           GET counterpart either — the official app tracks the current
           value from its own account/device record, not a fresh BLE read,

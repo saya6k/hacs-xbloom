@@ -4,10 +4,10 @@
 
 Local Bluetooth control of an [XBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
 
-Built on two reverse-engineered BLE upstreams, both vendored:
+Built on the protocol work of two reverse-engineered BLE upstreams, kept in the repo as unmodified reference/attribution copies (see [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) — the BLE client itself is a clean-room native implementation, not a runtime dependency on either):
 
-- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) at `custom_components/xbloom/src/xbloom/` — the class-based client library powering connection, status, grinder/brewer/scale components, and the coffee brew flow.
-- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) at `custom_components/xbloom/src/xbloom-ble/` — HCI-snoop-confirmed protocol decode (`PROTOCOL.md`) that the tea recipe flow in `brewing.py` cherry-picks from.
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) at `custom_components/xbloom/src/xbloom/`.
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) at `custom_components/xbloom/src/xbloom-ble/`.
 
 Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the protocol work that makes this integration possible.
 

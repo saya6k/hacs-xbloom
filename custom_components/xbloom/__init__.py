@@ -2,16 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
-
-# Vendored upstream PyBloom package lives in src/xbloom/ and uses absolute
-# imports (`from xbloom.X import Y`). Inject src/ onto sys.path so those
-# imports resolve. Done at package init so it runs before any submodule
-# (coordinator, config_flow, llm_*) is imported.
-_VENDOR_PATH = os.path.join(os.path.dirname(__file__), "src")
-if _VENDOR_PATH not in sys.path:
-    sys.path.insert(0, _VENDOR_PATH)
 
 import voluptuous as vol
 import yaml

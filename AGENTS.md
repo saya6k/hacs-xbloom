@@ -18,7 +18,7 @@ ha_xbloom/
 │   ├── strings.json               ← English source-of-truth for translations
 │   ├── icons.json                 ← entity icons keyed by translation_key
 │   ├── coordinator.py             ← BLE lifecycle + state aggregation (single source of truth for entities)
-│   ├── _client.py                 ← BLE client: connection, framing, notification dispatch, event bus
+│   ├── ble/                       ← native BLE client: constants, framing, models, connection, client, components
 │   ├── _cloud_client.py           ← XBloom cloud API (client-api.xbloom.com + collective/backend APIs)
 │   ├── brewing.py                 ← HA-side brew flow (coffee + tea)
 │   └── ... (sensor / binary_sensor / button / number / select / switch / event / config_flow / __init__ / manifest / const / schema)
@@ -34,7 +34,7 @@ ha_xbloom/
 
 ## Hard rules
 
-1. **`src/xbloom` and `src/xbloom-ble` are reference/attribution copies, not runtime dependencies.** Both mirror their upstreams (`fhenwood/PyBloom`, `brAzzi64/xbloom-ble`) byte-for-byte and must never be modified. Per [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md), this integration's BLE client, framing, and command table are a clean-room native implementation in `custom_components/xbloom/` (currently `_client.py` + `coordinator.py` + `brewing.py`; a dedicated `ble/` package is planned, see the ADR) — built from this integration's own hardware findings and protocol documentation, not by importing or patching the vendored source. If you're unsure whether something is still imported from `src/xbloom` at runtime, check the actual `import` statements — don't assume from history.
+1. **`src/xbloom` and `src/xbloom-ble` are reference/attribution copies, not runtime dependencies.** Both mirror their upstreams (`fhenwood/PyBloom`, `brAzzi64/xbloom-ble`) byte-for-byte and must never be modified. Per [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md), this integration's BLE client, framing, and command table are a clean-room native implementation in `custom_components/xbloom/ble/` (`constants.py`/`framing.py`/`models.py`/`connection.py`/`client.py`/`components.py`/`scanner.py`) — built from this integration's own hardware findings and `docs/en/protocol.md`, not by importing or patching the vendored source. Nothing outside `tests/` imports from `xbloom.*` — a handful of tests still import the vendored package directly as a parity oracle (proving the native package is byte-exact with what it replaced), which is the one place that's still expected.
 2. **Never set `_attr_name` on an entity that has `_attr_translation_key`.** HA's `Entity._name_internal` returns `_attr_name` first and never consults the translation map afterwards — this silently breaks every non-English UI. Pick one or the other.
 3. **Translations live in two places.** `strings.json` is the English source of truth; `translations/<lang>.json` files are the localized copies. They must share the same key tree. Add a Korean entry to `translations/ko.json` whenever you add an English entry to `strings.json`.
 4. **Icons live in `icons.json`, not in entity classes.** Don't set `_attr_icon` unless the icon is dynamic (e.g. `XBloomErrorSensor` flips based on string content). Static icons go in `icons.json` keyed by `entity.<platform>.<translation_key>.default` (with optional `.state` map).

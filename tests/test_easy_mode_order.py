@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from custom_components.xbloom import brewing
-from xbloom.models.types import CupType, PourStep, XBloomRecipe
+from custom_components.xbloom.ble.models import CupType, PourStep, XBloomRecipe
 
 
 class _FakeClient:
