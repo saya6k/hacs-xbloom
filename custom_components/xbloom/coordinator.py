@@ -1384,15 +1384,6 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             except Exception as exc:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
 
-    async def async_vibrate_scale(self) -> None:
-        """Vibrate the scale tray."""
-        if not self._check_connected():
-            return
-        try:
-            await self.client.scale.vibrate()
-        except Exception as exc:
-            _LOGGER.error("Vibrate error: %s", exc)
-
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500)."""
         if not self._check_connected():

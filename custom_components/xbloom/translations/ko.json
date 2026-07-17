@@ -143,9 +143,6 @@
       "cancel": {
         "name": "취소"
       },
-      "vibrate_scale": {
-        "name": "저울 진동"
-      },
       "tare_scale": {
         "name": "저울 영점"
       },
