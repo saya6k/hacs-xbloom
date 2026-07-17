@@ -468,6 +468,26 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # distinct sensor.state value instead of leaving it generic.
         self._no_beans: bool = False
 
+        # Whether the machine is currently showing its own local "start
+        # this pod?" prompt (RD_Pods/pod_detected, cmd 40501) — nothing has
+        # been armed/executed yet. async_cancel() branches on this to send
+        # the one command (8017/quitRecipeStart) the official app itself
+        # uses to dismiss that exact prompt, instead of the heavier
+        # stop/quit sequence meant for an in-progress recipe.
+        self._pod_prompt_active: bool = False
+
+        # Which kind of operation is currently running, if any — one of
+        # "recipe" / "manual_grind" / "manual_pour" / None. Lets
+        # async_pause_resume()/async_cancel() target the right underlying
+        # command family: a manual grind/pour started via async_grind()/
+        # async_pour() must use the GrinderController/BrewerController's
+        # own pause/restart/stop (cmds 8018/8020/3505 grinder,
+        # 8019/8021/4507 brewer — decompile-confirmed real, see AGENTS.md),
+        # not the whole-recipe 40518/40524/40519 family, which only applies
+        # to an actual recipe execution. Cleared in _dispatch_event() on
+        # the matching completion event.
+        self._active_operation: Optional[str] = None
+
         # Track whether we temporarily switched to Pro Mode for an HA
         # operation.  When the operation completes we switch back to the
         # default (Easy) mode so the physical slot buttons work again.
@@ -532,7 +552,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
                 raw_label = getattr(s, "_raw_state_label", None)
-                if self._no_beans:
+                if self.client.is_calibrating_grinder():
+                    # Highest priority — a deliberate, HA-triggered action
+                    # (see async_calibrate_grinder()) we know is actually
+                    # running, not inferred from ambiguous telemetry.
+                    state_str = "calibrating"
+                elif self._no_beans:
                     state_str = "no_beans"
                 elif self._water_shortage:
                     state_str = "water_shortage"
@@ -576,10 +601,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     "error": None,
                     # Live readings from the machine's own knobs/heartbeat —
                     # see _client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
-                    # RD_MachineInfo handling. None until first observed;
-                    # 0 (the dataclass default) is not a real reading.
+                    # RD_MachineInfo handling. live_grind_size: None until
+                    # first observed — 0 (the dataclass default) is never a
+                    # real grind size, so it means "not yet seen".
                     "live_grind_size": s.grinder.size or None,
-                    "live_grind_speed": s.grinder.speed or None,
+                    # live_grind_speed: 0 IS a real, meaningful reading
+                    # (the grinder isn't currently spinning) — unlike grind
+                    # size, don't coerce it to None/Unknown. _client.py's
+                    # RD_Grinder_Stop handling explicitly zeroes this on
+                    # stop so it doesn't linger at a stale nonzero RPM.
+                    "live_grind_speed": s.grinder.speed,
                     "voltage": getattr(s, "voltage", None),
                     # Advanced Features (Pour Radius / Vibration Amplitude) —
                     # only populated once a GET/SET response has actually
@@ -1026,6 +1057,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
 
+        # ── Track the machine's local "start this pod?" prompt ──
+        if category == "notification" and event_type == "pod_detected":
+            self._pod_prompt_active = True
+        elif category == "notification" and event_type in (
+            "grinding_started", "brewing_started",
+        ):
+            # A real brew actually started — the official app's own
+            # arm+execute flow never sends 8017, so the prompt is
+            # implicitly resolved by this point. Clear the flag so a
+            # later cancel doesn't send 8017 mid-brew (never verified
+            # safe in that state) instead of the real stop/quit sequence.
+            self._pod_prompt_active = False
+
         # ── Track the active pour during recipe execution ──
         # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a
         # 0-based pour_index (see _client.py). Only meaningful while a
@@ -1048,6 +1092,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self._executing_recipe = False
             self._active_recipe_pours = None
             self.current_pour_index = None
+            self._active_operation = None
+        elif (
+            category == "notification" and event_type == "grinding_complete"
+            and self._active_operation == "manual_grind"
+        ):
+            # Only a *manual* grind is fully done here — a coffee recipe's
+            # own grind phase also fires this, but the recipe (brewing
+            # next) isn't done yet, so _active_operation stays "recipe"
+            # until pour_complete/recipe_complete above.
+            self._active_operation = None
         if pour_index_changed and self.hass and self.hass.loop:
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.hass.async_create_task(self.async_refresh())
@@ -1091,6 +1145,12 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return
         try:
             await self._ensure_pro_mode()
+            # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
+            # official app's standalone manual pour screen. Not
+            # functionally required (4506 alone is hardware-confirmed
+            # sufficient, see AGENTS.md), sent for parity/robustness.
+            await self.client._send_command(brewing._CMD_BREWER_IN)
+            self._active_operation = "manual_pour"
             await self.client.brewer.start(
                 volume=float(self.volume),
                 temperature=float(self.temperature),
@@ -1107,6 +1167,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return
         try:
             await self._ensure_pro_mode()
+            self._active_operation = "manual_grind"
             await self.client.grinder.start(size=self.grind_size, speed=self.rpm)
         except Exception as exc:
             _LOGGER.error("Grind error: %s", exc)
@@ -1240,6 +1301,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # pour's actual flow_rate as the brew progresses.
             self._active_recipe_pours = recipe.pours
             self._executing_recipe = True
+            self._active_operation = "recipe"
             self.current_pour_index = None
             # Bypass — coffee only. Default to the recipe's YAML value;
             # an explicit override (service / LLM) wins. The tea sequence
@@ -1264,12 +1326,18 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
             self._executing_recipe = False
             self._active_recipe_pours = None
+            self._active_operation = None
 
     async def async_pause_resume(self) -> None:
         """Toggle between pause and resume based on machine state.
 
-        Sends the whole-recipe pause (40518) / restart (40524) — see
-        ``_CMD_RECIPE_PAUSE``/``_CMD_RECIPE_RESTART``'s module comment.
+        Branches on ``_active_operation`` (2026-07-17): a manual grind or
+        pour (started via ``async_grind()``/``async_pour()``) must use the
+        ``GrinderController``/``BrewerController``'s own pause/restart
+        (cmds 8018/8020 grinder, 8019/8021 brewer — decompile-confirmed
+        real, see AGENTS.md), not the whole-recipe pause/restart (40518/
+        40524 — see ``_CMD_RECIPE_PAUSE``/``_CMD_RECIPE_RESTART``'s module
+        comment), which only applies to an actual recipe execution.
 
         When the machine is brewing or grinding the button PAUSES.
         When paused the button RESUMES.
@@ -1279,32 +1347,69 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return
         state = (self.data or {}).get("state", "unknown")
         try:
-            if state == "paused":
-                await self.client._send_command(_CMD_RECIPE_RESTART)
+            if self._active_operation == "manual_grind":
+                if state == "paused":
+                    await self.client.grinder.restart()
+                else:
+                    await self.client.grinder.pause()
+            elif self._active_operation == "manual_pour":
+                if state == "paused":
+                    await self.client.brewer.restart()
+                else:
+                    await self.client.brewer.pause()
             else:
-                await self.client._send_command(_CMD_RECIPE_PAUSE)
+                if state == "paused":
+                    await self.client._send_command(_CMD_RECIPE_RESTART)
+                else:
+                    await self.client._send_command(_CMD_RECIPE_PAUSE)
         except Exception as exc:
             _LOGGER.error("Pause/resume error (state=%s): %s", state, exc)
 
     async def async_cancel(self) -> None:
-        """Emergency stop all operations."""
+        """Emergency stop all operations.
+
+        Branches on ``_pod_prompt_active`` (2026-07-17, folded in from a
+        separate ``button.dismiss_pod`` — logically the same "cancel"
+        action from the user's perspective, just targeting a different
+        machine state): if the machine is only showing its own local
+        "start this pod?" prompt (RD_Pods/pod_detected) with nothing
+        actually armed or executing, the heavier stop/quit sequence below
+        doesn't apply — 8017/quitRecipeStart is the one command the
+        official app itself uses to dismiss that exact prompt (decompiled
+        2026-07-17, see AGENTS.md).
+
+        Also branches on ``_active_operation``: a manual grind or pour
+        must be stopped via the ``GrinderController``/``BrewerController``'s
+        own ``stop()`` (cmds 3505/4507), not the whole-recipe stop/quit
+        sequence below, which targets an actual recipe execution.
+        """
         if not self._check_connected():
             return
+        active_operation = self._active_operation
         self._executing_recipe = False
         self._active_recipe_pours = None
         self.current_pour_index = None
         try:
-            await self.client.stop_recipe()
-            await asyncio.sleep(0.3)
-            await self.client.grinder.stop()
-            await self.client.brewer.stop()
-            await asyncio.sleep(0.3)
-            # Reset the machine's UI/mode state to the home screen.
-            # Without this the machine stays in whatever screen was active
-            # (e.g. tea recipe UI) after the hardware stops.
-            await self.client._send_command(brewing._CMD_BACK_TO_HOME)
+            if self._pod_prompt_active:
+                await brewing.async_dismiss_pod_prompt(self.client)
+                self._pod_prompt_active = False
+            elif active_operation == "manual_grind":
+                await self.client.grinder.stop()
+            elif active_operation == "manual_pour":
+                await self.client.brewer.stop()
+            else:
+                await self.client.stop_recipe()
+                await asyncio.sleep(0.3)
+                await self.client.grinder.stop()
+                await self.client.brewer.stop()
+                await asyncio.sleep(0.3)
+                # Reset the machine's UI/mode state to the home screen.
+                # Without this the machine stays in whatever screen was
+                # active (e.g. tea recipe UI) after the hardware stops.
+                await self.client._send_command(brewing._CMD_BACK_TO_HOME)
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
+        self._active_operation = None
         # Restore the user's persisted mode if we had auto-switched to Pro
         # for an HA operation that is now cancelled.
         await self._restore_persisted_mode("cancel")
@@ -1568,24 +1673,6 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
 
-    async def async_dismiss_pod_prompt(self) -> None:
-        """Cancel the machine's local "start?" prompt after a pod scan (cmd 8017)."""
-        if not self._check_connected():
-            return
-        try:
-            await brewing.async_dismiss_pod_prompt(self.client)
-        except Exception as exc:
-            _LOGGER.error("Dismiss pod prompt error: %s", exc)
-
-    async def async_calibrate_grinder(self) -> None:
-        """Trigger the grinder gear-position calibration sweep (cmd 3502)."""
-        if not self._check_connected():
-            return
-        try:
-            await brewing.async_calibrate_grinder(self.client)
-        except Exception as exc:
-            _LOGGER.error("Calibrate grinder error: %s", exc)
-
     async def _async_refresh_advanced_settings(self) -> None:
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),
@@ -1765,6 +1852,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 await asyncio.sleep(0.3)
             if calibrate_grinder:
                 await self.client.async_calibrate_grinder()
+                # Sets is_calibrating_grinder and fires
+                # grinder_calibration_started here, at send time, rather
+                # than waiting for the machine's own 50038
+                # (RD_CalibrateStart) push — hardware-confirmed
+                # 2026-07-17 that 50038 never arrived at all during a
+                # real calibration run on at least one unit, which would
+                # otherwise leave the whole calibration flow (state,
+                # events, completion detection) silently inert. See
+                # _client.py's RD_Grinder_Stop/RD_CurrentGrinder handling
+                # for how completion is detected without relying on
+                # 50038/50039 either.
+                self.client.status.is_calibrating_grinder = True
+                self.client._fire_event("notification", "grinder_calibration_started")
         except Exception as exc:
             _LOGGER.error("Advanced settings error: %s", exc, exc_info=True)
             return {

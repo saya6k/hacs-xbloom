@@ -62,10 +62,13 @@ _CMD_BACK_TO_HOME = 8022
 # src/xbloom-ble/python/xbloom.py (CMD_TARE).
 _CMD_TARE = 8500
 
-# 3502 — Grinder gear-position calibration trigger ("磨豆档位归0" —
-# grind-size-reset-to-zero). Not in the vendored XBloomCommand enum.
-# Decompiled 2026-07-17 from CalibrateGrinderActivity's confirm button.
-_CMD_CALIBRATE_GRINDER = 3502
+# 8007 — RD_BREWER_IN ("进入浇水页面" = "enter pour page"), sent by the
+# official app before its standalone manual pour screen's APP_BREWER_START
+# (4506). Named with an "RD_" prefix in the vendored XBloomResponse enum
+# despite being outbound — see AGENTS.md's 8018/8019 bullet. Sent for app
+# parity in coordinator.async_pour(); not functionally required, 4506 alone
+# is already hardware-confirmed sufficient.
+_CMD_BREWER_IN = 8007
 
 # 11510 — Easy Mode recipe send. Type-2 packet. See
 # src/xbloom-ble/PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
@@ -438,22 +441,6 @@ async def async_dismiss_pod_prompt(client) -> None:
         raise ConnectionError("XBloom not connected")
     _LOGGER.info("Dismiss pod start prompt")
     await client._send_command(XBloomCommand.APP_RECIPE_START_QUIT)
-
-
-async def async_calibrate_grinder(client) -> None:
-    """Trigger the ~120s grinder gear-position calibration sweep (cmd 3502).
-
-    Decompiled 2026-07-17: ``CalibrateGrinderActivity``'s confirm button
-    sends ``CodeModule(3502, "磨豆档位归0", 1000)`` — cmd 3502 with a single
-    fixed int arg, 1000. The sweep then runs autonomously on the machine;
-    progress is observable via the ``grinder_calibration_started``/
-    ``grinder_calibration_progress``/``grinder_calibration_complete``
-    notification events (cmds 50038/50039/40526==85 — see _client.py).
-    """
-    if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
-    _LOGGER.info("Calibrate grinder")
-    await client._send_command(_CMD_CALIBRATE_GRINDER, [1000])
 
 
 async def async_write_easy_slots(
