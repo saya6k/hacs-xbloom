@@ -727,7 +727,26 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     # ------------------------------------------------------------------
 
     async def async_connect(self) -> bool:
-        """Establish a BLE connection. Safe to call when already connected."""
+        """Establish a BLE connection. Safe to call when already connected.
+
+        Uses a local ``client`` variable throughout its body instead of
+        repeatedly re-reading ``self.client`` — hardware-reported
+        2026-07-17: ``_handle_unexpected_disconnect()`` (bleak's
+        ``disconnected_callback``, fired independently of
+        ``_connect_lock``) sets ``self.client = None`` the instant a
+        disconnect happens, including one that fires again on this very
+        connection shortly after it succeeds (a brief real flap, or the
+        original drop's callback landing late). That raced an in-flight
+        ``async_connect()`` call already past ``connect()`` — one still
+        using ``self.client`` for the follow-up steps below — crashing
+        with ``'NoneType' object has no attribute ...`` instead of a
+        proper "not connected" BLE error. The local variable can't be
+        raced out from under this call; ``self.client`` is restored at
+        the very end so the common (no-race) case is unaffected, and if a
+        genuine reconnect got scheduled concurrently, it'll find
+        ``client.is_connected`` false and replace it properly once this
+        call releases the lock.
+        """
         async with self._connect_lock:
             if self.client and self.client.is_connected:
                 return True
@@ -735,13 +754,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.info("Connecting to XBloom at %s …", self.mac_address)
             self._manual_disconnect = False
             try:
-                self.client = XBloomClient(
+                client = XBloomClient(
                     mac_address=self.mac_address,
                     connection=HABleakConnection(
                         self.hass, disconnected_callback=self._handle_unexpected_disconnect
                     ),
                 )
-                self.client._cleanup_on_disconnect = False
+                self.client = client
+                client._cleanup_on_disconnect = False
 
                 # Propagate BLE notifications → coordinator refresh
                 def _on_status(_status) -> None:
@@ -750,14 +770,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                             lambda: self.hass.async_create_task(self.async_refresh())
                         )
 
-                self.client.on_status_update(_on_status)
-                self.client.on_event(self._dispatch_event)
+                client.on_status_update(_on_status)
+                client.on_event(self._dispatch_event)
 
-                connected = await self.client.connect(timeout=20.0)
+                connected = await client.connect(timeout=20.0)
                 if connected:
                     _LOGGER.info("XBloom connected ✓")
                     await self._log_gatt_inventory()
-                    await self._apply_unit_preferences()
+                    await self._apply_unit_preferences(client)
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
                     # Only fire the advanced-settings GET once the machine is
@@ -769,8 +789,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     # firmwares that need a handshake retry (hardware-
                     # confirmed 2026-07-17). If MachineInfo hasn't arrived
                     # yet, _machine_info_retry_loop fires this once it does.
-                    if self.hass and self.client.status.serial_number:
+                    if self.hass and client.status.serial_number:
                         self.hass.async_create_task(self._async_refresh_advanced_settings())
+                    self.client = client
                     return True
 
                 _LOGGER.error("XBloom connect returned False")
@@ -1419,7 +1440,7 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # for an HA operation that is now cancelled.
         await self._restore_persisted_mode("cancel")
 
-    async def _apply_unit_preferences(self) -> None:
+    async def _apply_unit_preferences(self, client=None) -> None:
         """Push the configured display units (8005 weight, 8010 temp) and
         water-feed setting (4508) to the machine, once per connection.
 
@@ -1431,13 +1452,24 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         the re-assert never fights an in-session machine-side change.
         Never raises; a failure here shouldn't block the rest of
         async_connect().
+
+        ``client`` lets ``async_connect()`` pass its own local client
+        reference instead of this method reading ``self.client`` —
+        hardware-reported 2026-07-17: a disconnect racing in mid-connect
+        (see ``async_connect()``'s docstring) could null ``self.client``
+        out from under this call, crashing with ``'NoneType' object has
+        no attribute '_send_command_raw'`` instead of a clean "not
+        connected" error. Defaults to ``self.client`` for the other call
+        site (``_handle_unit_options_change``), which already checks
+        ``self.client.is_connected`` immediately before scheduling this.
         """
+        client = client or self.client
         try:
             weight_code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
-            await self.client._send_command_raw(8005, bytes([weight_code]), type_code=1)
+            await client._send_command_raw(8005, bytes([weight_code]), type_code=1)
             temp_code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
-            await self.client._send_command_raw(8010, bytes([temp_code]), type_code=1)
-            await self.client._send_command(_CMD_SWITCH_WATER_FEED, [self.water_source])
+            await client._send_command_raw(8010, bytes([temp_code]), type_code=1)
+            await client._send_command(_CMD_SWITCH_WATER_FEED, [self.water_source])
             _LOGGER.info(
                 "Applied display units: weight=%s temp=%s water_source=%d",
                 self._weight_unit, self._temp_unit, self.water_source,
