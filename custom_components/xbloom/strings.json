@@ -146,6 +146,12 @@
       "tare_scale": {
         "name": "Tare Scale"
       },
+      "dismiss_pod": {
+        "name": "Dismiss Pod Prompt"
+      },
+      "calibrate_grinder": {
+        "name": "Calibrate Grinder"
+      },
       "write_slot_a": {
         "name": "Write to Easy Slot A"
       },
@@ -293,7 +299,12 @@
               "tea_soaking": "Tea Soaking",
               "tea_soak_time_changed": "Tea Soak Time Changed",
               "tea_resumed": "Tea Resumed",
-              "water_refilled": "Water Refilled"
+              "water_refilled": "Water Refilled",
+              "pod_detected": "Pod Detected",
+              "easy_slot_started": "Easy Slot Started",
+              "grinder_calibration_started": "Grinder Calibration Started",
+              "grinder_calibration_progress": "Grinder Calibration In Progress",
+              "grinder_calibration_complete": "Grinder Calibration Complete"
             }
           }
         }
