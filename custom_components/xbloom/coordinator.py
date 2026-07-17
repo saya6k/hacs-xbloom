@@ -136,6 +136,16 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
 
 _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
 
+# Connection-supervisor watchdog: if a still-"connected" client hasn't seen a
+# single BLE notification in this long, the link is presumed stale/wedged and
+# force-reconnected. Mirrors the official Android app's AppDeviceManager
+# heartbeat watchdog (see AGENTS.md's BLE connection management section),
+# which uses ~2s — widened here since our telemetry-flood assumption is
+# unverified on real hardware in this environment (no BLE-capable devcontainer
+# host) and a false-positive reconnect is more disruptive for an
+# always-running HA integration than for a foregrounded phone app.
+_BLE_SILENCE_TIMEOUT_S = 15.0
+
 # Firmware version gates for BLE features that don't exist on older
 # firmware — the machine silently ignores commands it doesn't understand
 # rather than refusing cleanly, so we check first and give a clear error.
@@ -429,13 +439,33 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # mode switches) and skip reconnecting in the former case.
         self._manual_disconnect: bool = False
 
+        # Guards against the silence watchdog spawning a second overlapping
+        # _async_force_reconnect() task if it fires again on a later poll
+        # tick while the first one is still mid-teardown (disconnect() is
+        # awaited, so self.client briefly still reports connected).
+        self._force_reconnect_pending: bool = False
+
     # ------------------------------------------------------------------
     # DataUpdateCoordinator contract
     # ------------------------------------------------------------------
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Pull fresh data from the BLE status object (no I/O needed)."""
+        """Pull fresh data from the BLE status object (no I/O needed).
+
+        Also drives the connection supervisor, on the same tick cadence as
+        the official Android app's AppDeviceManager poll loop (see
+        AGENTS.md): reconnect if not connected (unless the user explicitly
+        disconnected this session), and force a reconnect if the link has
+        gone silent for too long (``_BLE_SILENCE_TIMEOUT_S``).
+        """
         if self.client and self.client.is_connected:
+            if (
+                not self._force_reconnect_pending
+                and self.client.seconds_since_last_notification() > _BLE_SILENCE_TIMEOUT_S
+            ):
+                self._force_reconnect_pending = True
+                self.hass.async_create_task(self._async_force_reconnect())
+                return {**DEFAULT_STATE}
             try:
                 s = self.client.status
                 # water_level_ok is only flipped True inside RD_MachineInfo;
@@ -529,7 +559,50 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             except Exception as exc:
                 _LOGGER.warning("Error reading XBloom status: %s", exc)
                 return {**DEFAULT_STATE}
+        self._maybe_schedule_reconnect()
         return {**DEFAULT_STATE}
+
+    def _maybe_schedule_reconnect(self) -> None:
+        """Reconnect backstop for the supervisor poll above.
+
+        ``_handle_unexpected_disconnect`` only fires once per BLE-level drop
+        event and gives up silently if that one attempt fails (e.g. the
+        adapter is briefly busy). This runs on every poll tick instead, so a
+        failed attempt just gets retried on the next tick — matching the
+        official app's AppDeviceManager poll loop, which keeps calling
+        connect() every tick as long as the device isn't connected or
+        already connecting. Session-only: skipped after a user-initiated
+        disconnect (``_manual_disconnect``), and skipped while a connect
+        attempt is already in flight (``_connect_lock``) to avoid piling up
+        redundant tasks.
+        """
+        if self._manual_disconnect or self._connect_lock.locked():
+            return
+        _LOGGER.debug("XBloom not connected — reconnect supervisor retrying")
+        self.hass.async_create_task(self.async_connect())
+
+    async def _async_force_reconnect(self) -> None:
+        """Tear down a stale-looking link and reconnect immediately.
+
+        Triggered when the BLE GATT link still reports connected but no
+        notification has arrived in over ``_BLE_SILENCE_TIMEOUT_S`` — the
+        telemetry stream floods at multi-Hz under normal operation, so a gap
+        this large means the link is wedged, not just quiet. Goes through
+        ``async_disconnect()`` for proper teardown (cancels the MachineInfo
+        retry task, etc.), then immediately clears ``_manual_disconnect``
+        again so this doesn't look like a user-requested disconnect to the
+        reconnect supervisor above or to ``_handle_unexpected_disconnect``.
+        """
+        _LOGGER.warning(
+            "No BLE notification in over %.0fs — link looks stale, forcing reconnect",
+            _BLE_SILENCE_TIMEOUT_S,
+        )
+        try:
+            await self.async_disconnect()
+            self._manual_disconnect = False
+            await self.async_connect()
+        finally:
+            self._force_reconnect_pending = False
 
     def _maybe_update_device_registry(self, data: Dict[str, Any]) -> None:
         """Push updated serial/firmware version to the HA device registry."""
