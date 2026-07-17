@@ -10,7 +10,7 @@
 - [8100 handshake + firmware history](xbloom_8100_handshake_and_firmware_history.md) — MTU handshake gates all commands; D122→D500 firmware version table.
 - [MachineInfo reliability + padding](xbloom_machineinfo_reliability_and_padding.md) — 40521 can arrive late/never; 0xFF string padding needs strict_ascii().
 - [Raw state heartbeat vs cmd-tagged](xbloom_raw_state_heartbeat_vs_cmd_tagged.md) — starting/brewing/ready only reliable via raw frame; unknown→idle fix.
-- [Easy Mode slot batch write](xbloom_easy_mode_slot_batch_write.md) — 11510 must be A/B/C batch from PRO mode; bookkeeping-vs-BLE-payload split.
+- [Easy Mode slot batch write](xbloom_easy_mode_slot_batch_write.md) — 11510 must be A/B/C batch from PRO mode; bookkeeping-vs-BLE-payload split; tea recipes now refused (no tea slot format).
 - [40518/8104 third-party claims refuted](xbloom_40518_and_8104_third_party_claims_refuted.md) — official app decompile settles both disputes.
 - [Full command table androguard sweep](xbloom_full_command_table_androguard_sweep.md) — near-total table confirmation; pattern/vibration cloud mapping settled.
 - [Advanced Features jadx findings](xbloom_advanced_features_jadx_findings.md) — pour radius/vibration/brightness/calibration payloads; descale unresolved.
