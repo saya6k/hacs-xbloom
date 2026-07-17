@@ -32,6 +32,7 @@ NOTIFICATION_EVENT_TYPES = [
     "paused",
     "recipe_complete",
     "tea_soaking",
+    "water_refilled",
 ]
 
 

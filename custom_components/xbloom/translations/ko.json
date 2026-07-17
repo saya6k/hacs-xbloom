@@ -290,7 +290,8 @@
               "bloom": "블룸 시작",
               "paused": "일시 정지",
               "recipe_complete": "레시피 완료",
-              "tea_soaking": "티 우리는 중"
+              "tea_soaking": "티 우리는 중",
+              "water_refilled": "물 채워짐"
             }
           }
         }
