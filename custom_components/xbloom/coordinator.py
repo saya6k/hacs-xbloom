@@ -2125,6 +2125,34 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 }
             raw = self.recipes[name]
 
+        # Easy Mode slots (11510) are payload-identical to the coffee-only
+        # 8001/8004 auto-brew recipe blob (brewing.async_write_easy_slots
+        # builds them with the same _build_coffee_recipe_payload used
+        # there) — there is no dedicated tea slot format, and 8004 itself
+        # is hardware-confirmed to NOT enter tea mode (see AGENTS.md's tea
+        # firmware-quirks entry). So a tea recipe written to a slot can
+        # never brew as real tea from the physical button — at best it
+        # silently runs as a flat no-siphon multi-pour, and at worst (if
+        # the recipe's grind_size/dose_g were left at RECIPE_SCHEMA's
+        # coffee-oriented defaults, 50/15.0g, instead of explicitly zeroed)
+        # it grinds beans for a tea recipe, which is what this check exists
+        # to catch. Checked before any BLE traffic (mode switch included).
+        if str(raw.get("cup_type", "")).strip().lower() == "tea":
+            _LOGGER.warning(
+                "Easy slot write refused — %r is a tea recipe, Easy Mode "
+                "slots can't brew tea correctly", name,
+            )
+            return {
+                "success": False,
+                "error": "tea_not_supported_in_easy_slot",
+                "message": (
+                    f"{name!r} is a tea recipe — Easy Mode slots can't brew "
+                    "tea correctly (no dedicated tea slot format on this "
+                    "firmware). Use the execute_tea_recipe service or the "
+                    "Recipe select entity + manual brew instead."
+                ),
+            }
+
         if not self._check_connected():
             return {
                 "success": False,
