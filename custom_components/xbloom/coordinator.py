@@ -450,10 +450,27 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self._mode: str = initial_mode
 
         # Machine display units (config_flow's Settings step only — see
-        # WEIGHT_UNIT_OPTIONS/TEMP_UNIT_OPTIONS). Pushed to the machine
-        # once per connection by _apply_unit_preferences.
+        # WEIGHT_UNIT_OPTIONS/TEMP_UNIT_OPTIONS). Only pushed to the machine
+        # (_apply_unit_preferences) when _unit_preferences_dirty is set — see
+        # that flag's own comment for why this isn't unconditional per
+        # connection anymore.
         self._weight_unit: str = initial_weight_unit
         self._temp_unit: str = initial_temp_unit
+
+        # Set whenever a unit/water-source preference is changed via the
+        # config_flow Settings step while not connected (this file's
+        # _handle_unit_options_change) — the change is stored locally but
+        # couldn't be pushed to the machine yet. async_connect() checks this
+        # and pushes once, then clears it. Deliberately NOT set on every
+        # connect: the official app (decompiled 2026-07-18, MachineJ15Fragment)
+        # only ever sends the 8005/8010/4508 SET commands from an explicit
+        # button tap in its own Settings screen, never automatically on
+        # connect — hardware-reported that unconditionally resending them on
+        # every reconnect (the previous behavior) made the machine's own
+        # unit-settings screen pop up first on every single reconnect, since
+        # receiving those SET commands is indistinguishable to the firmware
+        # from a user tapping that screen's buttons.
+        self._unit_preferences_dirty: bool = False
 
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.
@@ -787,7 +804,15 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 if connected:
                     _LOGGER.info("XBloom connected ✓")
                     await self._log_gatt_inventory()
-                    await self._apply_unit_preferences(client)
+                    # Only push if a Settings-step change couldn't reach the
+                    # machine while disconnected — see _unit_preferences_dirty's
+                    # docstring in __init__. Otherwise this stays passive,
+                    # like the official app: the machine's own value flows
+                    # back to HA via cmd 8015 (_async_sync_units_from_machine)
+                    # instead of being overwritten on every reconnect.
+                    if self._unit_preferences_dirty:
+                        await self._apply_unit_preferences(client)
+                        self._unit_preferences_dirty = False
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
                     # Only fire the advanced-settings GET once the machine is
@@ -1529,33 +1554,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if new_options != dict(entry.options):
             self.hass.config_entries.async_update_entry(entry, options=new_options)
 
-    async def async_set_water_source(self, value: int) -> None:
-        """Set the machine's water-feed setting (cmd 4508) and persist it.
-
-        Unlike the pre-2026-07-17 behavior (an HA-local preference only
-        used in the manual-pour payload), this writes the machine's own
-        setting — the same command the official app's water-source screen
-        sends — so the machine's own water-shortage logic follows suit.
-        If not connected, the value is still persisted and applied on the
-        next connection by _apply_unit_preferences().
-        """
-        if value not in (WATER_SOURCE_TANK, WATER_SOURCE_DIRECT):
-            raise ValueError(f"water_source must be 0 or 1, got {value!r}")
-        self.water_source = value
-        if self.client and self.client.is_connected:
-            try:
-                await self.client._send_command(_CMD_SWITCH_WATER_FEED, [value])
-            except Exception as exc:
-                _LOGGER.error("Water-source switch (4508) send error: %s", exc)
-        self._persist_unit_options()
-        self.async_update_listeners()
-
     async def _async_sync_units_from_machine(self, attrs: dict) -> None:
         """Fold a machine-reported unit/water-source change (cmd 8015,
         RD_UNIT_CHANGE — fired when they're changed on the machine's own
-        touchscreen) back into the stored preferences, so the next
-        connection's _apply_unit_preferences() re-asserts what the machine
-        actually shows instead of a stale value.
+        touchscreen) back into the stored preferences, so HA's own display
+        matches what the machine actually shows instead of a stale value.
+        This is a machine-wins sync (never sets _unit_preferences_dirty) —
+        the machine is the source of truth here, there's nothing to push
+        back to it.
         """
         weight = _RAW_TO_WEIGHT_UNIT.get(attrs.get("weight_unit"))
         temp = _RAW_TO_TEMP_UNIT.get(attrs.get("temp_unit"))
@@ -1584,10 +1590,14 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         config flow's Settings step edits them).
 
         When the options match the coordinator's current values this is an
-        echo of our own _persist_unit_options() (select entity or an 8015
-        sync) — nothing to apply. Otherwise adopt the new values and, if
-        connected, push them to the machine right away; a reload used to do
-        that implicitly by reconnecting.
+        echo of our own _persist_unit_options() (an 8015 sync, or this same
+        method having just applied a change) — nothing to apply. Otherwise
+        adopt the new values: if connected, push them to the machine right
+        away (this is the explicit-user-action case the official app's own
+        Settings-screen button taps mirror); if not connected, mark
+        _unit_preferences_dirty so async_connect() pushes once on the next
+        connect instead of silently dropping the change — see that flag's
+        docstring for why this isn't unconditional on every connect.
         """
         from .const import CONF_TEMP_UNIT, CONF_WATER_SOURCE, CONF_WEIGHT_UNIT
 
@@ -1601,6 +1611,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.water_source = water
         if self.client and self.client.is_connected:
             self.hass.async_create_task(self._apply_unit_preferences())
+            self._unit_preferences_dirty = False
+        else:
+            self._unit_preferences_dirty = True
 
     async def _async_switch_mode_with_retry(self, mode: str) -> bool:
         """Send the mode-switch command (11511) and confirm it landed via

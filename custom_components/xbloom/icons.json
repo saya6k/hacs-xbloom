@@ -119,13 +119,6 @@
       "recipe": {
         "default": "mdi:coffee-maker-outline"
       },
-      "water_source": {
-        "default": "mdi:water-pump",
-        "state": {
-          "tank": "mdi:cup-water",
-          "direct": "mdi:water"
-        }
-      },
       "mode": {
         "default": "mdi:coffee-maker-check",
         "state": {
