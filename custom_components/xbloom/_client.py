@@ -867,7 +867,23 @@ class XBloomClientWithEvents(XBloomClient):
                     raw = struct.unpack_from("<I", payload, 0)[0]
                     if 0 <= raw <= 2:
                         attrs["slot"] = chr(ord("A") + raw)
-            self._fire_event("notification", event_type, attrs)
+            if event_type in ("grinding_started", "grinding_complete") and getattr(
+                self._status, "is_calibrating_grinder", False
+            ):
+                # Suppress — hardware-confirmed 2026-07-17: a grinder
+                # calibration sweep (cmd 3502) genuinely stops/restarts
+                # the motor several times while it searches for the zero
+                # position, firing the generic grinding_started/
+                # grinding_complete pair each time (several
+                # grinding_complete events observed during one ~73s
+                # calibration run). These carry no calibration-specific
+                # information — grinder_calibration_started/_progress/
+                # _complete already cover that — and firing the generic
+                # ones risks an automation listening for "my coffee grind
+                # finished" false-triggering mid-calibration.
+                pass
+            else:
+                self._fire_event("notification", event_type, attrs)
         elif response == XBloomResponse.RD_ErrorLackOfWater:
             # Cmd 40522 is a bidirectional water-tank state notification,
             # not a one-shot error — decompiled from the official app
