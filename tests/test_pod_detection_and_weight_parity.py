@@ -21,12 +21,13 @@ actually surface anything on a real unit: 50038/50039 never arrived
 during a real ~120s calibration run, so the whole started/progress/
 complete flow was silently inert (is_calibrating_grinder never got set,
 so even the RD_CurrentGrinder==85 completion check could never fire).
-Fixed by moving "started" to send time
-(coordinator.async_set_advanced_settings(calibrate_grinder=True), which
-already existed pre-dating this session — the trigger itself was never
-new, only the missing started/progress/complete tracking around it)
-instead of waiting for 50038, and adding RD_Grinder_Stop as a second,
-hardware-confirmed-reliable completion signal alongside the raw==85
+Fixed by moving "started" to send time (coordinator.async_calibrate_grinder(),
+called from button.calibrate_grinder — briefly folded into
+async_set_advanced_settings's calibrate_grinder field the same day, then
+split back out to its own button after a separate hardware report showed
+targeted advanced_settings calls were broken for an unrelated reason, see
+AGENTS.md) instead of waiting for 50038, and adding RD_Grinder_Stop as a
+second, hardware-confirmed-reliable completion signal alongside the raw==85
 check. Also fixed while
 investigating: RD_Grinder_Stop now zeroes live_grind_speed (0 RPM is a
 real reading when the grinder isn't spinning, not "unknown").
@@ -122,9 +123,8 @@ def test_current_grinder_40526_parses_into_grinder_size():
 def test_calibrate_start_sets_flag_without_firing_its_own_event():
     # 50038 is a best-effort safety net only, not the primary trigger —
     # hardware-confirmed 2026-07-17 that at least one real unit never sends
-    # it during a real calibration run.
-    # coordinator.async_set_advanced_settings(calibrate_grinder=True) fires
-    # "grinder_calibration_started" itself at send time instead.
+    # it during a real calibration run. coordinator.async_calibrate_grinder()
+    # fires "grinder_calibration_started" itself at send time instead.
     client, events = _client_with_events()
     client._handle_response(XBloomResponse.RD_CalibrateStart, _frame(b""))
     assert client._status.is_calibrating_grinder is True

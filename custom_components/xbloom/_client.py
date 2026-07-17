@@ -34,6 +34,7 @@ import asyncio
 import logging
 import struct
 import time
+import warnings
 from typing import Callable, List, Optional
 
 from bleak import BleakClient
@@ -945,7 +946,17 @@ class HABleakConnection(XBloomConnection):
     async def write_command(self, char_uuid: str, data: bytes, response: bool = False) -> None:
         if not self.is_connected:
             raise ConnectionError("Not connected")
-        mtu_size = getattr(self._client, "mtu_size", None) or 23
+        # bleak's own .mtu_size property warns ("Using default MTU value...")
+        # whenever the real MTU hasn't been negotiated yet — which is every
+        # write until the first GATT operation completes negotiation.
+        # Harmless (we already fall back to 23, bleak's own conservative
+        # default), but noisy: hardware-reported 2026-07-17, 4 identical
+        # warnings logged across a handful of early writes right after
+        # connect. Suppress just this one known-benign warning rather than
+        # calling bleak's private _acquire_mtu() ourselves.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Using default MTU value")
+            mtu_size = getattr(self._client, "mtu_size", None) or 23
         chunks = _split_write_chunks(bytes(data), mtu_size)
         if len(chunks) > 1:
             _LOGGER.debug(

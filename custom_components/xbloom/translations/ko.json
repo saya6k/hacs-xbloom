@@ -146,6 +146,9 @@
       "tare_scale": {
         "name": "저울 영점"
       },
+      "calibrate_grinder": {
+        "name": "그라인더 캘리브레이션"
+      },
       "write_slot_a": {
         "name": "이지 슬롯 A에 저장"
       },
@@ -381,10 +384,6 @@
         "display_brightness_level": {
           "name": "디스플레이 밝기 단계",
           "description": "L1(가장 어두움)~L3(가장 밝음), 공식 앱 선택 UI와 동일."
-        },
-        "calibrate_grinder": {
-          "name": "그라인더 보정",
-          "description": "약 120초 소요되는 그라인더 보정을 시작합니다."
         }
       }
     },

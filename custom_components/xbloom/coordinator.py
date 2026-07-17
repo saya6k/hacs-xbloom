@@ -528,16 +528,21 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 return {**DEFAULT_STATE}
             try:
                 s = self.client.status
-                # water_level_ok is only flipped True inside RD_MachineInfo;
-                # on firmwares that never send it, the dataclass default
-                # (False) would mean a permanent "problem". Trust the flag
-                # only if MachineInfo has actually been observed (proxied by
-                # serial_number), otherwise infer from the water_shortage
-                # event stream.
-                if s.serial_number:
-                    water_ok = bool(s.water_level_ok)
-                else:
-                    water_ok = not self._water_shortage
+                # Never trust the raw water_level_ok flag directly — it's
+                # only ever set from the one-shot connect-time
+                # RD_MachineInfo snapshot (payload[33]), which multiple
+                # firmwares report as False at idle regardless of the
+                # tank's real state (see the firmware-quirks section in
+                # AGENTS.md). Hardware-reported 2026-07-17: this used to
+                # trust the flag once MachineInfo had been observed
+                # (proxied by serial_number), which showed a permanent
+                # "problem" after a normal reconnect on a unit whose
+                # connect-time snapshot happened to read False and never
+                # fired a follow-up RD_ErrorLackOfWater (40522) to correct
+                # it. Always derive from the event-driven flag instead —
+                # it starts optimistic (no shortage) and only flips on an
+                # actual water_shortage/water_refilled notification.
+                water_ok = not self._water_shortage
                 # Layer the richer states our own event/status tracking can
                 # see on top of the vendored DeviceState value: no_beans /
                 # water_shortage (the machine WAITS rather than refusing),
@@ -1673,6 +1678,38 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
 
+    async def async_calibrate_grinder(self) -> None:
+        """Trigger the grinder gear-position calibration sweep (cmd 3502).
+
+        Split back out from ``async_set_advanced_settings`` into its own
+        ``button.calibrate_grinder`` on 2026-07-17 — a plain button fits
+        a one-shot trigger action better than a settings-values service,
+        and sidesteps ``config_entry_id`` service-call resolution
+        entirely (unrelated hardware report the same day found that
+        resolution was broken for *every* service — see
+        ``__init__.py``'s ``_coordinators_for_call`` — reinforcing that a
+        button was the simpler, more robust choice here regardless).
+
+        Sets ``is_calibrating_grinder`` and fires
+        ``grinder_calibration_started`` here, at send time, rather than
+        waiting for the machine's own 50038 (RD_CalibrateStart) push —
+        hardware-confirmed 2026-07-17 that 50038 never arrived at all
+        during a real calibration run on at least one unit, which would
+        otherwise leave the whole calibration flow (state, events,
+        completion detection) silently inert. See _client.py's
+        RD_Grinder_Stop/RD_CurrentGrinder handling for how completion is
+        detected without relying on 50038/50039 either.
+        """
+        if not self._check_connected():
+            return
+        try:
+            await self.client.async_calibrate_grinder()
+            self.client.status.is_calibrating_grinder = True
+            self.client._fire_event("notification", "grinder_calibration_started")
+            await self.async_refresh()
+        except Exception as exc:
+            _LOGGER.error("Calibrate grinder error: %s", exc)
+
     async def _async_refresh_advanced_settings(self) -> None:
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),
@@ -1722,14 +1759,26 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         *,
         pour_radius_level: Optional[int] = None,
         vibration_amplitude_level: Optional[int] = None,
-        calibrate_grinder: bool = False,
         display_brightness_level: Optional[int] = None,
     ) -> dict:
-        """Advanced Features — pour radius / vibration amplitude / grinder
-        calibration / display brightness, grouped into one service
-        (matching the official app's own "Advanced Features" screen)
-        rather than several always-visible entities for settings nobody
-        adjusts often. At least one action must be requested.
+        """Advanced Features — pour radius / vibration amplitude / display
+        brightness, grouped into one service (matching the official app's
+        own "Advanced Features" screen) rather than several always-visible
+        entities for settings nobody adjusts often. At least one action
+        must be requested.
+
+        Grinder calibration used to be a fourth field here
+        (``calibrate_grinder``) but was split back out to its own
+        ``button.calibrate_grinder``/``async_calibrate_grinder()`` on
+        2026-07-17 — hardware-reported: a real call with a real
+        ``config_entry_id`` failed with "No XBloom machine matched the
+        service call," which turned out to be an unrelated pre-existing
+        bug in ``_coordinators_for_call`` (fixed the same day, see
+        ``__init__.py``), but the report was reason enough to also
+        reconsider bundling a one-shot trigger action into a
+        settings-values service in the first place — a plain button is a
+        better fit for "press to fire," and doesn't depend on
+        ``config_entry_id`` resolution at all.
 
         Levels, not raw device values — mirrors the official app's own
         L1-L5 / L1-L6 / L1-L3 picker UIs (decompiled 2026-07-16, see
@@ -1764,12 +1813,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             pour_radius_level is None
             and vibration_amplitude_level is None
             and display_brightness_level is None
-            and not calibrate_grinder
         ):
             return {
                 "success": False,
                 "error": "no_action",
-                "message": "Specify at least one of pour_radius_level, vibration_amplitude_level, display_brightness_level, or calibrate_grinder.",
+                "message": "Specify at least one of pour_radius_level, vibration_amplitude_level, or display_brightness_level.",
             }
         if pour_radius_level is not None and not 0 <= pour_radius_level <= 4:
             return {
@@ -1850,21 +1898,6 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             if display_brightness_level is not None:
                 await self.client.async_set_display_brightness(display_brightness_level)
                 await asyncio.sleep(0.3)
-            if calibrate_grinder:
-                await self.client.async_calibrate_grinder()
-                # Sets is_calibrating_grinder and fires
-                # grinder_calibration_started here, at send time, rather
-                # than waiting for the machine's own 50038
-                # (RD_CalibrateStart) push — hardware-confirmed
-                # 2026-07-17 that 50038 never arrived at all during a
-                # real calibration run on at least one unit, which would
-                # otherwise leave the whole calibration flow (state,
-                # events, completion detection) silently inert. See
-                # _client.py's RD_Grinder_Stop/RD_CurrentGrinder handling
-                # for how completion is detected without relying on
-                # 50038/50039 either.
-                self.client.status.is_calibrating_grinder = True
-                self.client._fire_event("notification", "grinder_calibration_started")
         except Exception as exc:
             _LOGGER.error("Advanced settings error: %s", exc, exc_info=True)
             return {
