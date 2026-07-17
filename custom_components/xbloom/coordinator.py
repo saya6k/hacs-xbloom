@@ -7,7 +7,7 @@ import logging
 import re
 import struct
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import voluptuous as vol
 
@@ -319,6 +319,16 @@ _CMD_RECIPE_RESTART = 40524
 _MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
 _MODE_SWITCH_ACK_TIMEOUT_S = 1.5
 _MODE_SWITCH_MAX_ATTEMPTS = 4
+
+# General sleep-retry wrapper (coordinator._async_retry_while_sleeping),
+# for every other user-triggered action (grind/pour/tare/calibrate/execute
+# recipe/easy-slot write) — not just mode-switch. Decompiled 2026-07-17/18:
+# AppBleManager's `DefaultTimeOut = 1500L` (the same 1.5s used by
+# _MODE_SWITCH_ACK_TIMEOUT_S above) is the *universal* default timeout for
+# every command sent via sendMessage()/createDisposable(), not a
+# mode-switch-specific value. See _async_retry_while_sleeping's docstring.
+_WAKE_RETRY_DELAY_S = 1.5
+_WAKE_RETRY_MAX_ATTEMPTS = 4
 
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and
@@ -1166,35 +1176,50 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     # ------------------------------------------------------------------
 
     async def async_pour(self) -> None:
-        """Start a manual pour with current slider values."""
+        """Start a manual pour with current slider values.
+
+        The actual start send is wrapped in ``_async_retry_while_sleeping``
+        (2026-07-18, hardware-reported): a pour started while the machine
+        was asleep silently did nothing, since nothing resent it — see
+        that method's docstring.
+        """
         if not self._check_connected():
             return
         try:
             await self._ensure_pro_mode()
-            # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
-            # official app's standalone manual pour screen. Not
-            # functionally required (4506 alone is hardware-confirmed
-            # sufficient, see AGENTS.md), sent for parity/robustness.
-            await self.client._send_command(brewing._CMD_BREWER_IN)
+
+            async def _do() -> None:
+                # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
+                # official app's standalone manual pour screen. Not
+                # functionally required (4506 alone is hardware-confirmed
+                # sufficient, see AGENTS.md), sent for parity/robustness.
+                await self.client._send_command(brewing._CMD_BREWER_IN)
+                await self.client.brewer.start(
+                    volume=float(self.volume),
+                    temperature=float(self.temperature),
+                    flow_rate=self.flow_rate,
+                    water_source=self.water_source,
+                    pattern=self.pour_pattern,
+                )
+
             self._active_operation = "manual_pour"
-            await self.client.brewer.start(
-                volume=float(self.volume),
-                temperature=float(self.temperature),
-                flow_rate=self.flow_rate,
-                water_source=self.water_source,
-                pattern=self.pour_pattern,
-            )
+            await self._async_retry_while_sleeping(_do)
         except Exception as exc:
             _LOGGER.error("Pour error: %s", exc)
 
     async def async_grind(self) -> None:
-        """Start grinding with current slider values."""
+        """Start grinding with current slider values.
+
+        See ``async_pour``'s docstring — same sleep-retry wrapping.
+        """
         if not self._check_connected():
             return
         try:
             await self._ensure_pro_mode()
             self._active_operation = "manual_grind"
-            await self.client.grinder.start(size=self.grind_size, speed=self.rpm)
+            await self._async_retry_while_sleeping(
+                lambda: self.client.grinder.start(size=self.grind_size, speed=self.rpm)
+            )
         except Exception as exc:
             _LOGGER.error("Grind error: %s", exc)
 
@@ -1343,10 +1368,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     float(raw.get("bypass_temperature", 0.0) or 0.0)
                     if bypass_temperature is None else float(bypass_temperature)
                 )
-            await brewing.async_execute_recipe(
-                self.client, recipe,
-                bypass_volume=bypass_vol,
-                bypass_temperature=bypass_temp,
+            # Sleep-retry wrapped (2026-07-18) — see
+            # _async_retry_while_sleeping's docstring. If the machine was
+            # asleep, none of this sequence's writes took effect, so
+            # retrying the whole thing from the top is safe.
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_execute_recipe(
+                    self.client, recipe,
+                    bypass_volume=bypass_vol,
+                    bypass_temperature=bypass_temp,
+                )
             )
         except Exception as exc:
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
@@ -1701,12 +1732,58 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             except Exception as exc:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
 
+    async def _async_retry_while_sleeping(
+        self, action: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Run ``action()``, retrying it while the machine reports itself
+        asleep — the general form of ``_async_switch_mode_with_retry``'s
+        pattern, for every other user-triggered action (grind/pour/tare/
+        calibrate/execute recipe/easy-slot write).
+
+        Decompiled 2026-07-17/18: the official app's ``AppBleManager.
+        sendMessage``/``createDisposable`` wraps *every* command it sends
+        in this exact retry — a 1.5s ACK timeout (``DefaultTimeOut``, the
+        same value ``_MODE_SWITCH_ACK_TIMEOUT_S`` uses), and on timeout,
+        if the machine was asleep at that moment, resend the identical
+        command (up to 3 retries, 4 total sends); the instant it's not
+        sleeping, stop — a non-sleep failure won't be fixed by resending.
+        This integration had only implemented that pattern for the
+        mode-switch command; every other action was a single blind send
+        with no retry at all, so hardware-reported 2026-07-17: operating
+        the machine while it was asleep silently did nothing.
+
+        Unlike the mode-switch retry, this has no per-command ACK to wait
+        on — our writes are write-without-response, and most commands
+        here (unlike mode-switch's ``mode_ack_hex``) have no dedicated
+        confirmation notification — so it can't verify the retried send
+        actually landed. ``is_sleeping()`` after the wait is the same
+        signal the app itself gates its own retry on, so it's used
+        directly as the retry condition instead of a true per-command
+        timeout. Safe to retry blindly on that condition: while the
+        machine is confirmed still asleep, its application layer isn't
+        processing incoming commands at all (the same "ignores everything
+        until awake" behavior the 8100 handshake gate exhibits at
+        connect), so a still-sleeping resend is very unlikely to double-
+        fire whatever the first send was.
+        """
+        for attempt in range(1, _WAKE_RETRY_MAX_ATTEMPTS + 1):
+            await action()
+            if not (self.client and self.client.is_sleeping()):
+                return
+            if attempt < _WAKE_RETRY_MAX_ATTEMPTS:
+                _LOGGER.info(
+                    "Action sent while machine reports asleep — retrying "
+                    "(attempt %d/%d)", attempt, _WAKE_RETRY_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_WAKE_RETRY_DELAY_S)
+
     async def async_tare_scale(self) -> None:
-        """Zero the scale (cmd 8500)."""
+        """Zero the scale (cmd 8500). See ``async_pour``'s docstring —
+        same sleep-retry wrapping."""
         if not self._check_connected():
             return
         try:
-            await brewing.async_tare(self.client)
+            await self._async_retry_while_sleeping(lambda: brewing.async_tare(self.client))
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
 
@@ -1748,7 +1825,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if not self._check_connected():
             return
         try:
-            await self.client.async_calibrate_grinder()
+            # Only the raw send is retried while asleep (see
+            # _async_retry_while_sleeping's docstring) — the bookkeeping
+            # below must run exactly once regardless of how many attempts
+            # the send took, or a retry would fire a duplicate
+            # "grinder_calibration_started" event and schedule a second,
+            # redundant 180s timeout fallback task.
+            await self._async_retry_while_sleeping(self.client.async_calibrate_grinder)
             self.client.status.is_calibrating_grinder = True
             self.client._fire_event("notification", "grinder_calibration_started")
             await self.async_refresh()
@@ -2098,7 +2181,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 await self._async_switch_mode_with_retry("pro")
                 switched_to_pro = True
 
-            await brewing.async_write_easy_slots(self.client, slot_recipes)
+            # Sleep-retry wrapped (2026-07-18) — see
+            # _async_retry_while_sleeping's docstring.
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_write_easy_slots(self.client, slot_recipes)
+            )
         except Exception as exc:
             _LOGGER.error(
                 "Easy slot write error (%s): %s", target_letter, exc, exc_info=True
@@ -2349,10 +2436,16 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         plain recipe_not_found error, so a typo'd recipe name doesn't
         trigger a pointless network fetch. Share ids are base64
         (possibly percent-encoded) — recipe names practically never
-        contain these characters.
+        contain these characters. A bare all-digit string is also treated
+        as a possible ref (a collective.xbloom.com community recipe id —
+        see fetch_shared_recipe's docstring); by the time this heuristic
+        runs, find_recipe has already tried it as a local cloud table id
+        and failed, so this only risks one extra (cleanly-failing) network
+        round-trip for the rare purely-numeric recipe name, not a wrong
+        match.
         """
         s = identifier.strip()
-        return "://" in s or any(c in s for c in "%=+/")
+        return "://" in s or any(c in s for c in "%=+/") or s.isdigit()
 
     @staticmethod
     def _summarize_local_recipe(name: str, recipe: dict) -> dict:
