@@ -125,6 +125,11 @@ _MACHINE_INFO_VOLTAGE_OFFSET = 39
 _GRIND_SIZE_RAW_OFFSET = 30  # UI value = max(1, raw - 30)
 _VALID_POUR_PATTERNS = (0, 1, 2)  # matches coordinator.POUR_PATTERN_OPTIONS values
 
+# Raw RD_CurrentGrinder (40526) value the official app's
+# CalibrateGrinderActivity treats as "calibration complete" — decompiled
+# 2026-07-17, see async_calibrate_grinder()/cmd 3502 in brewing.py.
+_GRINDER_CALIBRATION_DONE_RAW = 85
+
 # Raw status-heartbeat frame (distinct from the cmd-tagged RD_* notifications
 # above — never reaches _handle_response, no XBloomResponse enum entry).
 # Cross-referenced against Janczykkkko/xbloom-ble's independent capture and
@@ -267,6 +272,25 @@ _NOTIFICATION_MAP = {
     # (RD_TEA_RECIP_PAUSE above). The official app's TeaRestartBleModel
     # treats it the same way: a bare notification, no payload parsing.
     XBloomResponse.RD_TEA_RECIP_RESTART: "tea_resumed",
+    # 40501 — NFC pod detected (the machine reads a pod's embedded xid the
+    # moment it's inserted). The official app opens a pod-detail/brew flow
+    # on this; we don't have that flow, but it's a genuinely useful
+    # automation trigger on its own (e.g. notify/automate on pod insert).
+    XBloomResponse.RD_Pods: "pod_detected",
+    # 8111 — an Easy Mode brew was started from the machine's own dial
+    # (not from HA). Decompiled from the official app's
+    # EasyModeBeginBleModel/AppBaseActivity.showEasyModeRecipeIfNeed
+    # (2026-07-17): payload is a single LE uint32, validated 0-2 and used
+    # to index a 3-element Easy Slot list — confirmed slot index, A/B/C.
+    XBloomResponse.RD_EASYMODE_BEGIN: "easy_slot_started",
+    # 50038/50039 — grinder gear-position calibration sweep (cmd 3502,
+    # "磨豆档位归0"/grind-size-reset-to-zero) start/in-progress pulses.
+    # Decompiled 2026-07-17: CalibrateStartModel/CalibratingModel both
+    # just clear pending BLE state and show a toast — no payload. Paired
+    # with async_calibrate_grinder() (3502) and the calibration-complete
+    # check on RD_CurrentGrinder (40526 == 85) below.
+    XBloomResponse.RD_CalibrateStart: "grinder_calibration_started",
+    XBloomResponse.RD_Calibrating: "grinder_calibration_progress",
 }
 
 _ERROR_MAP = {
@@ -675,6 +699,43 @@ class XBloomClientWithEvents(XBloomClient):
             payload = data[10:-2] if len(data) > 12 else b""
             if len(payload) >= 4:
                 self._status.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+        elif response == XBloomResponse.RD_CurrentGrinder:
+            # Cmd 40526 — decompile shows this carries the same LE uint32
+            # grind-size value as RD_GRINDER_SIZE (identical -30 offset,
+            # confirmed via GrinderActivity's `value - 30` slider mapping)
+            # but fires in contexts our own brew flow doesn't otherwise
+            # trigger (standalone Grinder screen, grinder calibration) —
+            # parity fix, same reasoning as RD_CURRENT_WEIGHT/10507 below.
+            # Also the calibration-done signal: CalibrateGrinderActivity
+            # treats value == 85 as "calibration complete" while a
+            # calibration is in progress.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                self._status.grinder.size = max(raw - _GRIND_SIZE_RAW_OFFSET, 1)
+                if (
+                    getattr(self._status, "is_calibrating_grinder", False)
+                    and raw == _GRINDER_CALIBRATION_DONE_RAW
+                ):
+                    self._status.is_calibrating_grinder = False
+                    self._fire_event("notification", "grinder_calibration_complete")
+        elif response == XBloomResponse.RD_CalibrateStart:
+            # 50038 — grinder calibration sweep (cmd 3502) began. Fired as
+            # a notification event via _NOTIFICATION_MAP below; the flag
+            # here is what RD_CurrentGrinder above checks to know a
+            # value == 85 means "done" rather than an unrelated knob turn
+            # that happens to land on 85.
+            self._status.is_calibrating_grinder = True
+        elif response == XBloomResponse.RD_CURRENT_WEIGHT:
+            # Cmd 10507 — decompile shows the official app treats this the
+            # same as RD_CURRENT_WEIGHT2 (20501, already handled by the
+            # vendored client at src/xbloom/core/client.py). The vendored
+            # client only parses 20501; mirror the identical float32 parse
+            # here for 10507 so we don't silently miss scale updates if a
+            # given firmware/session sends this cmd instead.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 4:
+                self._status.scale.weight = struct.unpack_from("<f", payload, 0)[0]
         elif response == XBloomResponse.RD_MachineSleeping:
             self._status.is_sleeping = True
             _LOGGER.debug("Machine sleep state: sleeping")
@@ -740,6 +801,30 @@ class XBloomClientWithEvents(XBloomClient):
                 payload = data[10:-2] if len(data) > 12 else b""
                 if len(payload) >= 4:
                     attrs["pour_index"] = struct.unpack_from("<I", payload, 0)[0]
+            elif response == XBloomResponse.RD_Pods:
+                # 40501 — decompiled from the official app's PodsBleModel
+                # (2026-07-17): xid is the first 6 raw payload bytes (the
+                # app takes hexStr.substring(0,12) — 12 HEX CHARACTERS,
+                # i.e. 6 bytes — then hex-decodes each byte to its ASCII
+                # char, no reversal). Reuse strict_ascii() (printable-ASCII
+                # only) as a defensive filter the official app doesn't
+                # bother with, for the same reason RD_MachineInfo's
+                # serial/version fields do: an unpopulated/padded xid
+                # should decode to an empty string, not garbage.
+                payload = data[10:-2] if len(data) > 12 else b""
+                attrs["xid"] = strict_ascii(payload[:6])
+            elif response == XBloomResponse.RD_EASYMODE_BEGIN:
+                # 8111 — payload is a single LE uint32, confirmed 0-2
+                # (decompile: AppBaseActivity.showEasyModeRecipeIfNeed
+                # bails out unless 0 <= mode <= 2, then indexes a 3-slot
+                # list with it directly). Map to the A/B/C letters this
+                # integration already uses for Easy Slots elsewhere (see
+                # coordinator.easy_slot_contents).
+                payload = data[10:-2] if len(data) > 12 else b""
+                if len(payload) >= 4:
+                    raw = struct.unpack_from("<I", payload, 0)[0]
+                    if 0 <= raw <= 2:
+                        attrs["slot"] = chr(ord("A") + raw)
             self._fire_event("notification", event_type, attrs)
         elif response == XBloomResponse.RD_ErrorLackOfWater:
             # Cmd 40522 is a bidirectional water-tank state notification,
