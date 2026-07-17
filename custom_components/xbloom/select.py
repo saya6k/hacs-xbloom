@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_WATER_SOURCE, DATA_COORDINATOR, DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import (
     XBloomCoordinator,
     POUR_PATTERN_OPTIONS,
@@ -95,12 +95,13 @@ class XBloomRecipeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
 
 
 class XBloomWaterSourceSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
-    """Select the water source for MANUAL POUR operations.
+    """Select the machine's water source (tank / direct feed).
 
-    Note: This setting applies only to the manual Pour button (APP_BREWER_START).
-    Recipe execution (APP_RECIPE_EXECUTE) does not support a water_source
-    parameter — the machine manages its own pour sequence internally.
-    The selected value is persisted in config entry options and restored on restart.
+    Writes the machine's own water-feed setting via cmd 4508 (the same
+    command the official app's water-source screen sends) and is kept in
+    sync with machine-side changes via cmd 8015 (RD_UNIT_CHANGE). The
+    value is also used in the manual Pour payload (APP_BREWER_START) and
+    persisted in config entry options so it survives restarts.
     """
 
     _attr_translation_key = "water_source"
@@ -110,7 +111,6 @@ class XBloomWaterSourceSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
 
     def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry = entry  # needed to persist the selection
 
     @property
     def device_info(self):
@@ -125,15 +125,9 @@ class XBloomWaterSourceSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
         return "tank"  # safe fallback
 
     async def async_select_option(self, option: str) -> None:
-        """Update in-memory state and persist to config entry options."""
+        """Send the new setting to the machine (cmd 4508) and persist it."""
         new_val = WATER_SOURCE_OPTIONS.get(option, 0)
-        self.coordinator.water_source = new_val
-
-        # Persist so the value survives HA restarts.
-        # async_update_entry does not reload the entry — it only writes options.
-        new_options = {**self._entry.options, CONF_WATER_SOURCE: new_val}
-        self.hass.config_entries.async_update_entry(self._entry, options=new_options)
-
+        await self.coordinator.async_set_water_source(new_val)
         self.async_write_ha_state()
         _LOGGER.debug("Water source changed to: %s (%d)", option, new_val)
 

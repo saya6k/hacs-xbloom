@@ -143,9 +143,6 @@
       "cancel": {
         "name": "취소"
       },
-      "vibrate_scale": {
-        "name": "저울 진동"
-      },
       "tare_scale": {
         "name": "저울 영점"
       },
@@ -291,6 +288,8 @@
               "paused": "일시 정지",
               "recipe_complete": "레시피 완료",
               "tea_soaking": "티 우리는 중",
+              "tea_soak_time_changed": "티 우림 시간 변경",
+              "tea_resumed": "티 추출 재개",
               "water_refilled": "물 채워짐"
             }
           }

@@ -143,9 +143,6 @@
       "cancel": {
         "name": "Cancel"
       },
-      "vibrate_scale": {
-        "name": "Vibrate Scale"
-      },
       "tare_scale": {
         "name": "Tare Scale"
       },
@@ -291,6 +288,8 @@
               "paused": "Paused",
               "recipe_complete": "Recipe Complete",
               "tea_soaking": "Tea Soaking",
+              "tea_soak_time_changed": "Tea Soak Time Changed",
+              "tea_resumed": "Tea Resumed",
               "water_refilled": "Water Refilled"
             }
           }

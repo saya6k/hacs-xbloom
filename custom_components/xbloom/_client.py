@@ -55,6 +55,27 @@ _MACHINE_INFO_CMD_BYTES = (40521).to_bytes(2, "little")  # b"\x09\xa9"
 # reject a garbage length field read from a false-positive header byte.
 _MAX_PACKET_LEN = 256
 
+# Max bytes per BLE write, matching the official Android app's fastble
+# setSplitWriteNum(100): the app requests MTU 100 and splits every outbound
+# packet into 100-byte chunks, so the firmware demonstrably reassembles a
+# command from multiple writes (framing is header+length, write boundaries
+# mid-packet are fine). We additionally bound each chunk by the negotiated
+# MTU's write-without-response limit (mtu - 3) so long recipe payloads
+# (8001/8004, 11510) survive low-MTU paths (e.g. ESPHome BLE proxies) where
+# a single unfragmented write would be truncated or rejected.
+_SPLIT_WRITE_CHUNK_MAX = 100
+
+
+def _split_write_chunks(data: bytes, mtu_size: int) -> List[bytes]:
+    """Split an outbound packet into per-write chunks.
+
+    Chunk size is min(100, mtu-3) with a floor of 20 (the BLE-minimum
+    ATT_MTU of 23 minus the 3-byte write header) so a bogus/unknown
+    mtu_size can never produce a zero or negative chunk.
+    """
+    chunk = max(20, min(_SPLIT_WRITE_CHUNK_MAX, mtu_size - 3))
+    return [data[i : i + chunk] for i in range(0, len(data), chunk)]
+
 # Constant marker byte every real notification/response frame carries right
 # after the length field (offset+9) — a second, independent sanity check
 # _split_and_parse uses alongside _MAX_PACKET_LEN. Confirmed on our own
@@ -224,6 +245,10 @@ _NOTIFICATION_MAP = {
     XBloomResponse.RD_ENJOY2: "recipe_complete",
     XBloomResponse.RD_TEA_RECIP_SOAK: "tea_soaking",
     XBloomResponse.RD_TEA_RECIP_CHANGE_SOAK_TIME: "tea_soak_time_changed",
+    # 9011 — the machine resumed pouring after a between-steep pause
+    # (RD_TEA_RECIP_PAUSE above). The official app's TeaRestartBleModel
+    # treats it the same way: a bare notification, no payload parsing.
+    XBloomResponse.RD_TEA_RECIP_RESTART: "tea_resumed",
 }
 
 _ERROR_MAP = {
@@ -633,6 +658,33 @@ class XBloomClientWithEvents(XBloomClient):
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 if raw in _VALID_POUR_PATTERNS:
                     self._status.pour_pattern_live = raw
+        elif response == XBloomResponse.RD_UNIT_CHANGE:
+            # Cmd 8015 — machine-initiated display-units / water-source
+            # sync (e.g. the user changed them on the machine's own
+            # touchscreen). Decompiled from the official app's
+            # DeviceUnitBleModel: payload is three LE uint32s, in this
+            # order — [0:4] weight unit (0=g/1=oz/2=ml, same codes as our
+            # outbound 8005), [4:8] temperature unit (0=C/1=F, same as
+            # 8010), [8:12] water source (0=tank/1=direct, same as 4508).
+            # Fired as a "settings" event (not "notification") so it
+            # reaches the coordinator without surfacing on the
+            # notification event entity.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 12:
+                weight_raw, temp_raw, water_raw = struct.unpack_from("<3I", payload, 0)
+                _LOGGER.info(
+                    "RD_UNIT_CHANGE: weight_unit=%d temp_unit=%d water_source=%d",
+                    weight_raw, temp_raw, water_raw,
+                )
+                self._fire_event(
+                    "settings",
+                    "unit_change",
+                    {
+                        "weight_unit": weight_raw,
+                        "temp_unit": temp_raw,
+                        "water_source": water_raw,
+                    },
+                )
         if response == XBloomResponse.RD_EASYMODE_TYPE:
             # ACK for a mode-switch command (cmd 11511) — the machine
             # echoes the newly-applied mode code back as its payload
@@ -743,7 +795,15 @@ class HABleakConnection(XBloomConnection):
     async def write_command(self, char_uuid: str, data: bytes, response: bool = False) -> None:
         if not self.is_connected:
             raise ConnectionError("Not connected")
-        await self._client.write_gatt_char(char_uuid, data, response=response)
+        mtu_size = getattr(self._client, "mtu_size", None) or 23
+        chunks = _split_write_chunks(bytes(data), mtu_size)
+        if len(chunks) > 1:
+            _LOGGER.debug(
+                "Splitting %d-byte write into %d chunks (mtu=%d)",
+                len(data), len(chunks), mtu_size,
+            )
+        for chunk in chunks:
+            await self._client.write_gatt_char(char_uuid, chunk, response=response)
 
     async def start_notify(
         self, char_uuid: str, callback: Callable[[int, bytearray], None]

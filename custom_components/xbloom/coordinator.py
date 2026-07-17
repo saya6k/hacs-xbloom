@@ -245,10 +245,13 @@ DEFAULT_STATE: Dict[str, Any] = {
     "vibration_amplitude": None,
 }
 
-# Water source integer values used in APP_BREWER_START payload.
-# NOTE: These only apply to MANUAL POUR (brewer.start / async_pour).
-# Recipe execution (APP_RECIPE_EXECUTE) does not accept a water_source
-# parameter — the machine controls its own pours internally.
+# Water source integer values. Used both in the APP_BREWER_START manual-pour
+# payload and as the machine's own water-feed setting via cmd 4508
+# (switchWaterFeed in the official app's BleCodeFactory) — same 0/1 codes in
+# both places (Studio uses WaterSourceType.ordinal(); the app's 8/50 values
+# are J20-only). Recipe execution (APP_RECIPE_EXECUTE) still doesn't take a
+# water_source parameter — the machine controls its own pours internally,
+# honoring its persisted 4508 setting.
 WATER_SOURCE_TANK   = 0   # Built-in tank
 WATER_SOURCE_DIRECT = 1   # Direct plumbed line
 
@@ -258,14 +261,22 @@ WATER_SOURCE_OPTIONS = {
 }
 
 # Machine display-unit values for commands 8005 (weight) / 8010 (temp).
-# Config-only (config_flow's Settings step) — unlike mode/water_source
-# there's no dashboard toggle, since neither has a live BLE readback to
-# reflect back (confirmed live 2026-07-04: both ACKs are bare status
-# bytes with no echoed value, unlike the 11511 mode-switch ACK). Applied
-# once per connection in async_connect(), not on every recipe/telemetry
-# refresh — see _apply_unit_preferences.
+# Config-only (config_flow's Settings step) — no dashboard toggle. The 8005/
+# 8010 ACKs carry no echoed value (confirmed live 2026-07-04), but the
+# machine DOES push cmd 8015 (RD_UNIT_CHANGE) with all three values —
+# weight unit, temp unit, water source — when they change on its own
+# touchscreen; _async_sync_units_from_machine() folds that back into these
+# stored preferences. Applied once per connection in async_connect(), not on
+# every recipe/telemetry refresh — see _apply_unit_preferences.
 WEIGHT_UNIT_OPTIONS = {"g": 0, "oz": 1, "ml": 2}
 TEMP_UNIT_OPTIONS = {"c": 0, "f": 1}
+_RAW_TO_WEIGHT_UNIT = {v: k for k, v in WEIGHT_UNIT_OPTIONS.items()}
+_RAW_TO_TEMP_UNIT = {v: k for k, v in TEMP_UNIT_OPTIONS.items()}
+
+# The machine's own water-feed setting (cmd 4508, official app's
+# switchWaterFeed). A single LE uint32: 0=tank, 1=direct — see
+# WATER_SOURCE_TANK/DIRECT above.
+_CMD_SWITCH_WATER_FEED = 4508
 
 # Mode-switch (cmd 11511) hex codes and retry spec. Matches the official
 # app's own AppBleManager.sendMessage retry logic, decompiled 2026-07-17
@@ -932,6 +943,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """
         _LOGGER.debug("XBloom event [%s] %s %s", category, event_type, attributes)
 
+        # ── Machine-side unit/water-source change (cmd 8015) ──
+        # "settings" is a coordinator-internal category: the event entities
+        # filter on "error"/"notification", so this never surfaces there.
+        if category == "settings" and event_type == "unit_change":
+            if self.hass and self.hass.loop:
+                attrs_copy = dict(attributes)
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.hass.async_create_task(
+                        self._async_sync_units_from_machine(attrs_copy)
+                    )
+                )
+            return
+
         # Drive the water-shortage / no-beans flags from the BLE event stream.
         prev_shortage = self._water_shortage
         prev_no_beans = self._no_beans
@@ -1243,27 +1267,124 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         await self._restore_persisted_mode("cancel")
 
     async def _apply_unit_preferences(self) -> None:
-        """Push the configured display units to the machine (8005 weight,
-        8010 temp) once per connection.
+        """Push the configured display units (8005 weight, 8010 temp) and
+        water-feed setting (4508) to the machine, once per connection.
 
-        Config-only (config_flow's Settings step) — there is no live ACK
-        to read the applied unit back from (confirmed live 2026-07-04:
-        both ACKs are bare status bytes, unlike 11511's mode-switch ACK
-        which echoes the value), so unlike mode there is no dashboard
-        select entity for this — just re-assert the stored preference on
-        every fresh connection. Never raises; a failure here shouldn't
-        block the rest of async_connect().
+        The 8005/8010 ACKs carry no echoed value (confirmed live
+        2026-07-04), so this re-asserts the stored preferences on every
+        fresh connection; changes made on the machine's own touchscreen
+        *while connected* flow back via cmd 8015 (RD_UNIT_CHANGE — see
+        _async_sync_units_from_machine) and update the stored values, so
+        the re-assert never fights an in-session machine-side change.
+        Never raises; a failure here shouldn't block the rest of
+        async_connect().
         """
         try:
             weight_code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
             await self.client._send_command_raw(8005, bytes([weight_code]), type_code=1)
             temp_code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
             await self.client._send_command_raw(8010, bytes([temp_code]), type_code=1)
+            await self.client._send_command(_CMD_SWITCH_WATER_FEED, [self.water_source])
             _LOGGER.info(
-                "Applied display units: weight=%s temp=%s", self._weight_unit, self._temp_unit
+                "Applied display units: weight=%s temp=%s water_source=%d",
+                self._weight_unit, self._temp_unit, self.water_source,
             )
         except Exception as exc:
             _LOGGER.warning("Failed to apply display unit preferences: %s", exc)
+
+    def _persist_unit_options(self) -> None:
+        """Persist the current unit/water-source values to entry.options.
+
+        All three keys are in __init__.py's _NO_RELOAD_OPTION_KEYS, so
+        this never reloads the entry (and therefore never drops the BLE
+        connection). No-op if the options already match.
+        """
+        from .const import CONF_TEMP_UNIT, CONF_WATER_SOURCE, CONF_WEIGHT_UNIT
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        new_options = {
+            **entry.options,
+            CONF_WATER_SOURCE: self.water_source,
+            CONF_WEIGHT_UNIT: self._weight_unit,
+            CONF_TEMP_UNIT: self._temp_unit,
+        }
+        if new_options != dict(entry.options):
+            self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+    async def async_set_water_source(self, value: int) -> None:
+        """Set the machine's water-feed setting (cmd 4508) and persist it.
+
+        Unlike the pre-2026-07-17 behavior (an HA-local preference only
+        used in the manual-pour payload), this writes the machine's own
+        setting — the same command the official app's water-source screen
+        sends — so the machine's own water-shortage logic follows suit.
+        If not connected, the value is still persisted and applied on the
+        next connection by _apply_unit_preferences().
+        """
+        if value not in (WATER_SOURCE_TANK, WATER_SOURCE_DIRECT):
+            raise ValueError(f"water_source must be 0 or 1, got {value!r}")
+        self.water_source = value
+        if self.client and self.client.is_connected:
+            try:
+                await self.client._send_command(_CMD_SWITCH_WATER_FEED, [value])
+            except Exception as exc:
+                _LOGGER.error("Water-source switch (4508) send error: %s", exc)
+        self._persist_unit_options()
+        self.async_update_listeners()
+
+    async def _async_sync_units_from_machine(self, attrs: dict) -> None:
+        """Fold a machine-reported unit/water-source change (cmd 8015,
+        RD_UNIT_CHANGE — fired when they're changed on the machine's own
+        touchscreen) back into the stored preferences, so the next
+        connection's _apply_unit_preferences() re-asserts what the machine
+        actually shows instead of a stale value.
+        """
+        weight = _RAW_TO_WEIGHT_UNIT.get(attrs.get("weight_unit"))
+        temp = _RAW_TO_TEMP_UNIT.get(attrs.get("temp_unit"))
+        water = attrs.get("water_source")
+        changed = False
+        if weight is not None and weight != self._weight_unit:
+            self._weight_unit = weight
+            changed = True
+        if temp is not None and temp != self._temp_unit:
+            self._temp_unit = temp
+            changed = True
+        if water in (WATER_SOURCE_TANK, WATER_SOURCE_DIRECT) and water != self.water_source:
+            self.water_source = water
+            changed = True
+        if changed:
+            _LOGGER.info(
+                "Machine-side unit change synced: weight=%s temp=%s water_source=%d",
+                self._weight_unit, self._temp_unit, self.water_source,
+            )
+            self._persist_unit_options()
+            self.async_update_listeners()
+
+    def _handle_unit_options_change(self, options: dict) -> None:
+        """React to a unit/water-source change in entry.options (called by
+        __init__.py's update listener on its no-reload path, i.e. after the
+        config flow's Settings step edits them).
+
+        When the options match the coordinator's current values this is an
+        echo of our own _persist_unit_options() (select entity or an 8015
+        sync) — nothing to apply. Otherwise adopt the new values and, if
+        connected, push them to the machine right away; a reload used to do
+        that implicitly by reconnecting.
+        """
+        from .const import CONF_TEMP_UNIT, CONF_WATER_SOURCE, CONF_WEIGHT_UNIT
+
+        weight = options.get(CONF_WEIGHT_UNIT, self._weight_unit)
+        temp = options.get(CONF_TEMP_UNIT, self._temp_unit)
+        water = options.get(CONF_WATER_SOURCE, self.water_source)
+        if (weight, temp, water) == (self._weight_unit, self._temp_unit, self.water_source):
+            return
+        self._weight_unit = weight
+        self._temp_unit = temp
+        self.water_source = water
+        if self.client and self.client.is_connected:
+            self.hass.async_create_task(self._apply_unit_preferences())
 
     async def _async_switch_mode_with_retry(self, mode: str) -> bool:
         """Send the mode-switch command (11511) and confirm it landed via
@@ -1383,15 +1504,6 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 await self.async_refresh()
             except Exception as exc:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
-
-    async def async_vibrate_scale(self) -> None:
-        """Vibrate the scale tray."""
-        if not self._check_connected():
-            return
-        try:
-            await self.client.scale.vibrate()
-        except Exception as exc:
-            _LOGGER.error("Vibrate error: %s", exc)
 
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500)."""

@@ -884,16 +884,21 @@ _RECIPE_ONLY_OPTION_KEYS = {
 # and nothing reconnects automatically afterwards, so the connection switch
 # was left stuck "off" on every mode change. No BLE-affecting work is needed
 # for this key, so it's exempt from the reload just like the recipe keys.
-_NO_RELOAD_OPTION_KEYS = _RECIPE_ONLY_OPTION_KEYS | {CONF_MODE}
+# The unit/water-source keys are exempt for the same reason (they used to
+# reload — and therefore drop the BLE connection — on every water-source
+# select change); their only follow-up is pushing the new values to the
+# machine, which coordinator._handle_unit_options_change() does in place.
+_UNIT_OPTION_KEYS = {CONF_WATER_SOURCE, CONF_WEIGHT_UNIT, CONF_TEMP_UNIT}
+_NO_RELOAD_OPTION_KEYS = _RECIPE_ONLY_OPTION_KEYS | {CONF_MODE} | _UNIT_OPTION_KEYS
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change.
 
     Exception: changes confined to ``_NO_RELOAD_OPTION_KEYS`` (the recipe
-    store plus the mode preference) skip the reload — a recipe rebuild is
-    enough for the former, and the latter needs no follow-up at all — so
-    these updates apply in place without dropping the BLE connection.
+    store, the mode preference, and the unit/water-source preferences)
+    skip the reload — a recipe rebuild / an in-place unit push is enough —
+    so these updates apply without dropping the BLE connection.
     """
     data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if data and DATA_COORDINATOR in data:
@@ -905,6 +910,8 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
             coordinator: XBloomCoordinator = data[DATA_COORDINATOR]
             if changed & _RECIPE_ONLY_OPTION_KEYS:
                 coordinator._rebuild_recipes()
+            if changed & _UNIT_OPTION_KEYS:
+                coordinator._handle_unit_options_change(cur)
             coordinator.async_update_listeners()
             return
     await hass.config_entries.async_reload(entry.entry_id)
