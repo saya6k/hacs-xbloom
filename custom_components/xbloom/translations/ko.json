@@ -63,7 +63,8 @@
           "telemetry_interval": "텔레메트리 업데이트 간격 (초)",
           "session_timeout": "유휴 연결 해제 시간 (초)",
           "weight_unit": "기계 자체 무게 표시 단위",
-          "temp_unit": "기계 자체 온도 표시 단위"
+          "temp_unit": "기계 자체 온도 표시 단위",
+          "water_source": "급수 방식"
         }
       },
       "account": {
@@ -231,13 +232,6 @@
     "select": {
       "recipe": {
         "name": "레시피"
-      },
-      "water_source": {
-        "name": "급수 방식",
-        "state": {
-          "tank": "물탱크",
-          "direct": "직수"
-        }
       },
       "pour_pattern": {
         "name": "수동 추출 패턴",
@@ -740,6 +734,12 @@
         "150": "발효",
         "151": "과숙",
         "152": "미숙"
+      }
+    },
+    "water_source": {
+      "options": {
+        "tank": "물탱크",
+        "direct": "직수 연결"
       }
     }
   }
