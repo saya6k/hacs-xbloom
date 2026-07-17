@@ -201,7 +201,9 @@ def test_grinder_stop_does_not_end_calibration():
 
     assert client._status.is_calibrating_grinder is True
     assert client._status.grinder.speed == 0
-    assert events == [("notification", "grinding_complete", {})]
+    # grinding_complete is suppressed while calibrating — see
+    # test_grinding_events_suppressed_during_calibration.
+    assert events == []
 
     # The real signal, arriving afterward, still resolves it correctly.
     client._handle_response(
@@ -216,6 +218,29 @@ def test_grinder_stop_outside_calibration_does_not_fire_complete():
     client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
     assert client.is_calibrating_grinder() is False
     assert events == [("notification", "grinding_complete", {})]
+
+
+def test_grinding_events_suppressed_during_calibration():
+    # Hardware-confirmed 2026-07-17: a real calibration sweep genuinely
+    # stops/restarts the grinder motor several times while it searches
+    # for the zero position, firing several grinding_complete events
+    # during one ~73s run — noise an automation listening for "my coffee
+    # grind finished" shouldn't see. The dedicated grinder_calibration_*
+    # events already cover calibration progress.
+    client, events = _client_with_events()
+    client._status.is_calibrating_grinder = True
+
+    client._handle_response(XBloomResponse.RD_GRINDER_BEGIN, _frame(b""))
+    client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
+    client._handle_response(XBloomResponse.RD_GRINDER_BEGIN, _frame(b""))
+    client._handle_response(XBloomResponse.RD_Grinder_Stop, _frame(b""))
+
+    assert events == []
+
+    # Once calibration is over, the generic events fire normally again.
+    client._status.is_calibrating_grinder = False
+    client._handle_response(XBloomResponse.RD_GRINDER_BEGIN, _frame(b""))
+    assert events == [("notification", "grinding_started", {})]
 
 
 def test_is_calibrating_grinder_accessor():
