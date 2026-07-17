@@ -540,6 +540,19 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     state_str = raw_label
                 else:
                     state_str = s.state.value
+                    if state_str == "unknown":
+                        # Vendored DeviceState defaults to UNKNOWN and only
+                        # ever transitions to IDLE on a Grinder/Brewer
+                        # Begin/Stop event (src/xbloom/core/client.py) — on
+                        # a connection where the machine has never
+                        # ground/brewed yet, nothing ever sets it, so a
+                        # genuinely idle, connected machine reports
+                        # "unknown" forever (hardware-reported 2026-07-17).
+                        # We're inside the `client.is_connected` branch
+                        # here, so treat "connected + no error + no
+                        # activity ever observed" as idle rather than a
+                        # permanent placeholder.
+                        state_str = "idle"
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
