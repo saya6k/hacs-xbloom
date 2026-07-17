@@ -26,7 +26,6 @@ async def async_setup_entry(
             XBloomExecuteRecipeButton(coordinator, entry),
             XBloomPauseButton(coordinator, entry),
             XBloomCancelButton(coordinator, entry),
-            XBloomVibrateButton(coordinator, entry),
             XBloomTareButton(coordinator, entry),
             XBloomWriteSlotAButton(coordinator, entry),
             XBloomWriteSlotBButton(coordinator, entry),
@@ -103,18 +102,6 @@ class XBloomCancelButton(_XBloomButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_cancel()
-
-
-class XBloomVibrateButton(_XBloomButton):
-    _attr_translation_key = "vibrate_scale"
-    _attr_unique_id = "xbloom_vibrate"
-
-    @property
-    def device_info(self):
-        return self.coordinator.scale_device_info
-
-    async def async_press(self) -> None:
-        await self.coordinator.async_vibrate_scale()
 
 
 class XBloomTareButton(_XBloomButton):
