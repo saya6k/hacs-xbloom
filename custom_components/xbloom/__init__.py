@@ -56,7 +56,6 @@ from .const import (
     ATTR_SLOT,
     ATTR_POUR_RADIUS_LEVEL,
     ATTR_VIBRATION_AMPLITUDE_LEVEL,
-    ATTR_CALIBRATE_GRINDER,
     ATTR_DISPLAY_BRIGHTNESS_LEVEL,
     CONF_ACCOUNT_RECIPES_SEEDED,
     CONF_EASY_SLOTS,
@@ -226,7 +225,6 @@ ADVANCED_SETTINGS_SCHEMA = vol.Schema(
         vol.Optional(ATTR_POUR_RADIUS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=4)),
         vol.Optional(ATTR_VIBRATION_AMPLITUDE_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
         vol.Optional(ATTR_DISPLAY_BRIGHTNESS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
-        vol.Optional(ATTR_CALIBRATE_GRINDER, default=False): cv.boolean,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -271,20 +269,27 @@ def _coordinators_for_call(hass: HomeAssistant, call: ServiceCall) -> list:
     key there; that's only valid inside a ``target:`` block, which these
     services don't use). Each config entry maps 1:1 to a coordinator
     already, so no device-registry lookup is needed at all.
+
+    ``config_entry_id`` is a bare string, not a list — HA's
+    ``ConfigEntrySelector`` has no ``multiple`` option (confirmed against
+    core's own ``helpers/selector.py``, see AGENTS.md), so a real call
+    only ever carries at most one id. Hardware-reported 2026-07-17: this
+    used to do ``for eid in entry_ids`` over that string, which iterates
+    it character-by-character — no single character ever matches a real
+    config entry id, so every service call that actually specified a
+    target machine failed with "No XBloom machine matched the service
+    call," regardless of which service.
     """
     all_coords = {
         eid: data[DATA_COORDINATOR]
         for eid, data in hass.data.get(DOMAIN, {}).items()
         if isinstance(data, dict) and DATA_COORDINATOR in data
     }
-    entry_ids = call.data.get("config_entry_id") or []
-    if not entry_ids:
+    entry_id = call.data.get("config_entry_id")
+    if not entry_id:
         return list(all_coords.values())
-    selected = []
-    for eid in entry_ids:
-        if eid in all_coords and all_coords[eid] not in selected:
-            selected.append(all_coords[eid])
-    return selected
+    coordinator = all_coords.get(entry_id)
+    return [coordinator] if coordinator else []
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -447,7 +452,6 @@ def _register_services(hass: HomeAssistant) -> None:
             pour_radius_level=call.data.get(ATTR_POUR_RADIUS_LEVEL),
             vibration_amplitude_level=call.data.get(ATTR_VIBRATION_AMPLITUDE_LEVEL),
             display_brightness_level=call.data.get(ATTR_DISPLAY_BRIGHTNESS_LEVEL),
-            calibrate_grinder=call.data.get(ATTR_CALIBRATE_GRINDER, False),
         )
         if not result.get("success"):
             raise HomeAssistantError(result.get("message", "advanced_settings failed"))

@@ -39,6 +39,9 @@
       "tare_scale": {
         "default": "mdi:scale-balance"
       },
+      "calibrate_grinder": {
+        "default": "mdi:cog-refresh"
+      },
       "write_slot_a": {
         "default": "mdi:alpha-a-box-outline"
       },
