@@ -245,6 +245,10 @@ _NOTIFICATION_MAP = {
     XBloomResponse.RD_ENJOY2: "recipe_complete",
     XBloomResponse.RD_TEA_RECIP_SOAK: "tea_soaking",
     XBloomResponse.RD_TEA_RECIP_CHANGE_SOAK_TIME: "tea_soak_time_changed",
+    # 9011 — the machine resumed pouring after a between-steep pause
+    # (RD_TEA_RECIP_PAUSE above). The official app's TeaRestartBleModel
+    # treats it the same way: a bare notification, no payload parsing.
+    XBloomResponse.RD_TEA_RECIP_RESTART: "tea_resumed",
 }
 
 _ERROR_MAP = {
