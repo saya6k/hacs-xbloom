@@ -654,6 +654,33 @@ class XBloomClientWithEvents(XBloomClient):
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 if raw in _VALID_POUR_PATTERNS:
                     self._status.pour_pattern_live = raw
+        elif response == XBloomResponse.RD_UNIT_CHANGE:
+            # Cmd 8015 — machine-initiated display-units / water-source
+            # sync (e.g. the user changed them on the machine's own
+            # touchscreen). Decompiled from the official app's
+            # DeviceUnitBleModel: payload is three LE uint32s, in this
+            # order — [0:4] weight unit (0=g/1=oz/2=ml, same codes as our
+            # outbound 8005), [4:8] temperature unit (0=C/1=F, same as
+            # 8010), [8:12] water source (0=tank/1=direct, same as 4508).
+            # Fired as a "settings" event (not "notification") so it
+            # reaches the coordinator without surfacing on the
+            # notification event entity.
+            payload = data[10:-2] if len(data) > 12 else b""
+            if len(payload) >= 12:
+                weight_raw, temp_raw, water_raw = struct.unpack_from("<3I", payload, 0)
+                _LOGGER.info(
+                    "RD_UNIT_CHANGE: weight_unit=%d temp_unit=%d water_source=%d",
+                    weight_raw, temp_raw, water_raw,
+                )
+                self._fire_event(
+                    "settings",
+                    "unit_change",
+                    {
+                        "weight_unit": weight_raw,
+                        "temp_unit": temp_raw,
+                        "water_source": water_raw,
+                    },
+                )
         if response == XBloomResponse.RD_EASYMODE_TYPE:
             # ACK for a mode-switch command (cmd 11511) — the machine
             # echoes the newly-applied mode code back as its payload
