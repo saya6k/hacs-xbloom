@@ -146,6 +146,9 @@
       "tare_scale": {
         "name": "Tare Scale"
       },
+      "calibrate_grinder": {
+        "name": "Calibrate Grinder"
+      },
       "write_slot_a": {
         "name": "Write to Easy Slot A"
       },
@@ -381,10 +384,6 @@
         "display_brightness_level": {
           "name": "Display brightness level",
           "description": "L1 (dimmest) to L3 (brightest), matching the official app's picker."
-        },
-        "calibrate_grinder": {
-          "name": "Calibrate grinder",
-          "description": "Trigger the ~120 second grinder calibration sweep."
         }
       }
     },

@@ -1,6 +1,6 @@
 """Tool: calibrate_xbloom_grinder — trigger the grinder gear-position
-calibration sweep (cmd 3502, via the same Advanced Features path as
-service.xbloom_advanced_settings's calibrate_grinder field)."""
+calibration sweep (cmd 3502, via coordinator.async_calibrate_grinder(),
+the same call button.calibrate_grinder uses)."""
 from __future__ import annotations
 
 import logging
@@ -53,16 +53,13 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
                     ),
                 }
 
-        result = await self.coordinator.async_set_advanced_settings(
-            calibrate_grinder=True
-        )
-        if not result.get("success"):
+        try:
+            await self.coordinator.async_calibrate_grinder()
+        except Exception as exc:
+            _LOGGER.exception("calibrate_xbloom_grinder failed: %s", exc)
             return {
                 "success": False,
-                "error": result.get("error", "calibration_failed"),
-                "instruction": result.get(
-                    "message", "Tell the user the calibration could not be started."
-                ),
+                "error": f"Calibration failed: {exc!s}",
             }
 
         return {

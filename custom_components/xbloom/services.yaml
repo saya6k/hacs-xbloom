@@ -260,16 +260,6 @@ advanced_settings:
               value: "2"
             - label: "L3"
               value: "3"
-    calibrate_grinder:
-      name: Calibrate grinder
-      description: >-
-        Trigger the ~120 second grinder calibration sweep. The machine
-        runs it autonomously once sent.
-      required: false
-      default: false
-      selector:
-        boolean:
-
 cloud_import_recipe:
   name: Import recipe from XBloom cloud
   description: >-
