@@ -17,7 +17,7 @@ ha_xbloom/
 │   ├── translations/              ← per-locale entity/config UI strings
 │   ├── strings.json               ← English source-of-truth for translations
 │   ├── icons.json                 ← entity icons keyed by translation_key
-│   ├── coordinator.py             ← BLE lifecycle + state aggregation (single source of truth for entities)
+│   ├── coordinator/               ← BLE lifecycle + state aggregation (single source of truth for entities); connection/state/recipes/advanced_settings/operations mixins + constants
 │   ├── ble/                       ← native BLE client: constants, framing, models, connection, client, components
 │   ├── _cloud_client.py           ← XBloom cloud API (client-api.xbloom.com + collective/backend APIs)
 │   ├── brewing.py                 ← HA-side brew flow (coffee + tea)
@@ -205,3 +205,4 @@ This repo (and other `ha-*` HACS components, excluding `ha-app*`) ships on a two
 - Adding a new **device** (not entity)? Same idea, one level up — see the Device registry section.
 - Adding a new BLE command or event type? Check `docs/en/protocol.md`'s command table first (status: Active/Telemetry/Present-unconfirmed) — don't assume behavior from a command's name alone. New event types need `event.py` + all 3 translation files, see [[xbloom-tea-steep-events]].
 - A protocol claim from a third-party capture repo conflicts with this integration's behavior? Decompile `xbloom_coffee_release.apk` directly rather than trusting either source on priors — see [[xbloom-40518-and-8104-third-party-claims-refuted]] and [[xbloom-full-command-table-androguard-sweep]] for the established methodology.
+- A service call targeting a specific machine (`config_entry_id`) silently matches nothing? `__init__.py`'s `_coordinators_for_call` treats it as a scalar, not a list — `ConfigEntrySelector` has no `multiple` option, so never iterate it. See [[xbloom-service-config-entry-targeting]].
