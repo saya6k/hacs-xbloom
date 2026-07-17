@@ -346,9 +346,11 @@ class XBloomClientWithEvents(XBloomClient):
     def is_calibrating_grinder(self) -> bool:
         """Whether a grinder gear-position calibration sweep (cmd 3502) is
         in progress — set at send time by
-        ``coordinator.async_set_advanced_settings(calibrate_grinder=True)``,
-        cleared on completion (see ``RD_Grinder_Stop``/``RD_CurrentGrinder``
-        handling above).
+        ``coordinator.async_calibrate_grinder()``, cleared on completion
+        (``RD_CurrentGrinder`` == 85, or the 180s timeout fallback in
+        ``coordinator._async_calibration_timeout_fallback()`` — see the
+        ``RD_CurrentGrinder`` handling above for why ``RD_Grinder_Stop``
+        is deliberately *not* one of the completion signals).
         """
         return getattr(self._status, "is_calibrating_grinder", False)
 
@@ -715,20 +717,27 @@ class XBloomClientWithEvents(XBloomClient):
             # reading here, not "unknown" (hardware-confirmed 2026-07-17:
             # the live RPM sensor stayed at its last nonzero value/showed
             # Unknown after grinding ended instead of reflecting reality).
+            #
+            # NOT a calibration-complete signal, despite an earlier version
+            # of this comment claiming otherwise (hardware-confirmed
+            # 2026-07-17, then corrected the same day by a second, longer
+            # hardware test): a real calibration run fired RD_Grinder_Stop/
+            # "grinding_complete" within ~5s of the button press, while
+            # live_grind_size telemetry kept moving for another full minute
+            # afterward, only settling at 55 (raw 85 - the real completion
+            # value) around a minute later. RD_Grinder_Stop here is an
+            # early, transient event from the calibration sequence's own
+            # startup/homing move, not its end. Treating it as "done"
+            # closed the is_calibrating_grinder gate before the real 85
+            # signal (below) ever had a chance to fire — confirmed by
+            # decompiling CalibrateGrinderActivity's own onEventBusEvent,
+            # which only ever checks CurrentGrinderBleModel.value == 85 and
+            # never references RD_Grinder_Stop at all. See
+            # coordinator._async_calibration_timeout_fallback() for the
+            # 180s client-side timeout the official app also runs
+            # alongside this signal (CalibrateGrinderActivity's own
+            # `Observable.just(0).delay(180000, MILLISECONDS)`).
             self._status.grinder.speed = 0
-            if getattr(self._status, "is_calibrating_grinder", False):
-                # Hardware-confirmed 2026-07-17: on at least one unit, cmd
-                # 3502's calibration sweep never sent 50038/50039, and
-                # RD_CurrentGrinder never reported exactly 85 either — only
-                # an entirely ordinary RD_Grinder_Stop at the end (grind
-                # size telemetry did update live throughout, confirming
-                # the sweep really ran). Treat the grinder actually
-                # stopping while a calibration is in progress as the
-                # authoritative completion signal; the raw==85 check below
-                # stays as an earlier/secondary signal on units that do
-                # report it.
-                self._status.is_calibrating_grinder = False
-                self._fire_event("notification", "grinder_calibration_complete")
         elif response == XBloomResponse.RD_CurrentGrinder:
             # Cmd 40526 — decompile shows this carries the same LE uint32
             # grind-size value as RD_GRINDER_SIZE (identical -30 offset,
