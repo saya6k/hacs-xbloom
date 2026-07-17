@@ -55,7 +55,13 @@ class AdvancedSettingsMixin:
         if not self._check_connected():
             return
         try:
-            await self.client.async_calibrate_grinder()
+            # Only the raw send is retried while asleep (see
+            # _async_retry_while_sleeping's docstring) — the bookkeeping
+            # below must run exactly once regardless of how many attempts
+            # the send took, or a retry would fire a duplicate
+            # "grinder_calibration_started" event and schedule a second,
+            # redundant 180s timeout fallback task.
+            await self._async_retry_while_sleeping(self.client.async_calibrate_grinder)
             self.client.status.is_calibrating_grinder = True
             self.client._fire_event("notification", "grinder_calibration_started")
             await self.async_refresh()

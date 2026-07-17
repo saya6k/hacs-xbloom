@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Awaitable, Callable, Dict
 
 from homeassistant.helpers import device_registry as dr
 
@@ -25,6 +25,8 @@ from .constants import (
     _MODE_SWITCH_MAX_ATTEMPTS,
     _RAW_TO_TEMP_UNIT,
     _RAW_TO_WEIGHT_UNIT,
+    _WAKE_RETRY_DELAY_S,
+    _WAKE_RETRY_MAX_ATTEMPTS,
     TEMP_UNIT_OPTIONS,
     WATER_SOURCE_DIRECT,
     WATER_SOURCE_TANK,
@@ -674,3 +676,48 @@ class ConnectionMixin:
                 await self.async_refresh()
             except Exception as exc:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
+
+    async def _async_retry_while_sleeping(
+        self, action: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Run ``action()``, retrying it while the machine reports itself
+        asleep — the general form of ``_async_switch_mode_with_retry``'s
+        pattern, for every other user-triggered action (grind/pour/tare/
+        calibrate/execute recipe/easy-slot write).
+
+        Decompiled 2026-07-17/18: the official app's ``AppBleManager.
+        sendMessage``/``createDisposable`` wraps *every* command it sends
+        in this exact retry — a 1.5s ACK timeout (``DefaultTimeOut``, the
+        same value ``_MODE_SWITCH_ACK_TIMEOUT_S`` uses), and on timeout,
+        if the machine was asleep at that moment, resend the identical
+        command (up to 3 retries, 4 total sends); the instant it's not
+        sleeping, stop — a non-sleep failure won't be fixed by resending.
+        This integration had only implemented that pattern for the
+        mode-switch command; every other action was a single blind send
+        with no retry at all, so hardware-reported 2026-07-17: operating
+        the machine while it was asleep silently did nothing.
+
+        Unlike the mode-switch retry, this has no per-command ACK to wait
+        on — our writes are write-without-response, and most commands
+        here (unlike mode-switch's ``mode_ack_hex``) have no dedicated
+        confirmation notification — so it can't verify the retried send
+        actually landed. ``is_sleeping()`` after the wait is the same
+        signal the app itself gates its own retry on, so it's used
+        directly as the retry condition instead of a true per-command
+        timeout. Safe to retry blindly on that condition: while the
+        machine is confirmed still asleep, its application layer isn't
+        processing incoming commands at all (the same "ignores everything
+        until awake" behavior the 8100 handshake gate exhibits at
+        connect), so a still-sleeping resend is very unlikely to double-
+        fire whatever the first send was.
+        """
+        for attempt in range(1, _WAKE_RETRY_MAX_ATTEMPTS + 1):
+            await action()
+            if not (self.client and self.client.is_sleeping()):
+                return
+            if attempt < _WAKE_RETRY_MAX_ATTEMPTS:
+                _LOGGER.info(
+                    "Action sent while machine reports asleep — retrying "
+                    "(attempt %d/%d)", attempt, _WAKE_RETRY_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_WAKE_RETRY_DELAY_S)

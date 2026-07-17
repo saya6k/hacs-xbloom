@@ -29,3 +29,5 @@
 - [Collective hub + backend API](xbloom_collective_hub_and_backend_api.md) — 3 separate cloud backends; backend-api.xbloom.com signing scheme.
 - [Removed features](xbloom_removed_features.md) — SG_* scale-vibrate and duplicate last_error sensor removed; verify-before-shipping lesson.
 - [Temperature name constants](xbloom_temperature_name_constants.md) — RT=20/BP=98 fixed constants, not computed.
+- [Wake-retry universal pattern](xbloom_wake_retry_universal_pattern.md) — DefaultTimeOut=1500L is universal, not mode-switch-specific; generalized to grind/pour/tare/calibrate/execute/easy-slot.
+- [Collective bare-id import bug](xbloom_collective_bare_id_import_bug.md) — bare community recipe id fell through to share-h5 id space; fixed via .isdigit() routing.
