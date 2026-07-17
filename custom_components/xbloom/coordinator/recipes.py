@@ -300,10 +300,16 @@ class RecipesMixin:
                     float(raw.get("bypass_temperature", 0.0) or 0.0)
                     if bypass_temperature is None else float(bypass_temperature)
                 )
-            await brewing.async_execute_recipe(
-                self.client, recipe,
-                bypass_volume=bypass_vol,
-                bypass_temperature=bypass_temp,
+            # Sleep-retry wrapped (2026-07-18) — see coordinator.
+            # connection._async_retry_while_sleeping's docstring. If the
+            # machine was asleep, none of this sequence's writes took
+            # effect, so retrying the whole thing from the top is safe.
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_execute_recipe(
+                    self.client, recipe,
+                    bypass_volume=bypass_vol,
+                    bypass_temperature=bypass_temp,
+                )
             )
         except Exception as exc:
             _LOGGER.error("Recipe execute error: %s", exc, exc_info=True)
@@ -441,7 +447,11 @@ class RecipesMixin:
                 await self._async_switch_mode_with_retry("pro")
                 switched_to_pro = True
 
-            await brewing.async_write_easy_slots(self.client, slot_recipes)
+            # Sleep-retry wrapped (2026-07-18) — see coordinator.
+            # connection._async_retry_while_sleeping's docstring.
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_write_easy_slots(self.client, slot_recipes)
+            )
         except Exception as exc:
             _LOGGER.error(
                 "Easy slot write error (%s): %s", target_letter, exc, exc_info=True
@@ -692,10 +702,16 @@ class RecipesMixin:
         plain recipe_not_found error, so a typo'd recipe name doesn't
         trigger a pointless network fetch. Share ids are base64
         (possibly percent-encoded) — recipe names practically never
-        contain these characters.
+        contain these characters. A bare all-digit string is also treated
+        as a possible ref (a collective.xbloom.com community recipe id —
+        see fetch_shared_recipe's docstring); by the time this heuristic
+        runs, find_recipe has already tried it as a local cloud table id
+        and failed, so this only risks one extra (cleanly-failing) network
+        round-trip for the rare purely-numeric recipe name, not a wrong
+        match.
         """
         s = identifier.strip()
-        return "://" in s or any(c in s for c in "%=+/")
+        return "://" in s or any(c in s for c in "%=+/") or s.isdigit()
 
     @staticmethod
     def _summarize_local_recipe(name: str, recipe: dict) -> dict:

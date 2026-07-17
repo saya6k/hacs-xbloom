@@ -18,35 +18,50 @@ class OperationsMixin:
     """Manual pour/grind/tare and pause/resume/cancel, state-aware."""
 
     async def async_pour(self) -> None:
-        """Start a manual pour with current slider values."""
+        """Start a manual pour with current slider values.
+
+        The actual start send is wrapped in ``_async_retry_while_sleeping``
+        (2026-07-18, hardware-reported): a pour started while the machine
+        was asleep silently did nothing, since nothing resent it — see
+        that method's docstring.
+        """
         if not self._check_connected():
             return
         try:
             await self._ensure_pro_mode()
-            # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
-            # official app's standalone manual pour screen. Not
-            # functionally required (4506 alone is hardware-confirmed
-            # sufficient, see AGENTS.md), sent for parity/robustness.
-            await self.client._send_command(brewing._CMD_BREWER_IN)
+
+            async def _do() -> None:
+                # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
+                # official app's standalone manual pour screen. Not
+                # functionally required (4506 alone is hardware-confirmed
+                # sufficient, see AGENTS.md), sent for parity/robustness.
+                await self.client._send_command(brewing._CMD_BREWER_IN)
+                await self.client.brewer.start(
+                    volume=float(self.volume),
+                    temperature=float(self.temperature),
+                    flow_rate=self.flow_rate,
+                    water_source=self.water_source,
+                    pattern=self.pour_pattern,
+                )
+
             self._active_operation = "manual_pour"
-            await self.client.brewer.start(
-                volume=float(self.volume),
-                temperature=float(self.temperature),
-                flow_rate=self.flow_rate,
-                water_source=self.water_source,
-                pattern=self.pour_pattern,
-            )
+            await self._async_retry_while_sleeping(_do)
         except Exception as exc:
             _LOGGER.error("Pour error: %s", exc)
 
     async def async_grind(self) -> None:
-        """Start grinding with current slider values."""
+        """Start grinding with current slider values.
+
+        See ``async_pour``'s docstring — same sleep-retry wrapping.
+        """
         if not self._check_connected():
             return
         try:
             await self._ensure_pro_mode()
             self._active_operation = "manual_grind"
-            await self.client.grinder.start(size=self.grind_size, speed=self.rpm)
+            await self._async_retry_while_sleeping(
+                lambda: self.client.grinder.start(size=self.grind_size, speed=self.rpm)
+            )
         except Exception as exc:
             _LOGGER.error("Grind error: %s", exc)
 
@@ -137,10 +152,11 @@ class OperationsMixin:
         await self._restore_persisted_mode("cancel")
 
     async def async_tare_scale(self) -> None:
-        """Zero the scale (cmd 8500)."""
+        """Zero the scale (cmd 8500). See ``async_pour``'s docstring —
+        same sleep-retry wrapping."""
         if not self._check_connected():
             return
         try:
-            await brewing.async_tare(self.client)
+            await self._async_retry_while_sleeping(lambda: brewing.async_tare(self.client))
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)

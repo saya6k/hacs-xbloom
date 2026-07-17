@@ -193,6 +193,32 @@ _MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
 _MODE_SWITCH_ACK_TIMEOUT_S = 1.5
 _MODE_SWITCH_MAX_ATTEMPTS = 4
 
+# General sleep-retry wrapper (coordinator._async_retry_while_sleeping),
+# for every other user-triggered action (grind/pour/tare/calibrate/execute
+# recipe/easy-slot write) — not just mode-switch. Decompiled 2026-07-17/18:
+# AppBleManager's `DefaultTimeOut = 1500L` (the same 1.5s used by
+# _MODE_SWITCH_ACK_TIMEOUT_S above) is the *universal* default timeout for
+# every command sent via sendMessage()/createDisposable(), not a
+# mode-switch-specific value — every one of the app's commands goes
+# through the identical "on ACK timeout, resend the same command while
+# isSleeping() is true, up to 3 retries (4 total sends); the instant it's
+# not sleeping, stop" pattern this integration had only implemented for
+# mode-switch. Hardware-reported 2026-07-17: commands sent while the
+# machine was asleep silently did nothing, since nothing else retried.
+#
+# We have no per-command ACK to wait on the way the app's own
+# response-correlation system does — our writes are write-without-response
+# and most commands here have no dedicated confirmation notification (mode
+# switch is the one exception, via mode_ack_hex) — so unlike
+# _async_switch_mode_with_retry, this generic wrapper can't verify the
+# retried send actually landed; it only knows whether the machine is still
+# reporting itself asleep after the wait, the same signal the app itself
+# gates its own retry on. Values kept in sync with the mode-switch
+# constants above (same underlying DefaultTimeOut) but named separately
+# since they're a distinct, more approximate retry mechanism.
+_WAKE_RETRY_DELAY_S = 1.5
+_WAKE_RETRY_MAX_ATTEMPTS = 4
+
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and
 # PourPattern (0=center, 1=circular, 2=spiral).

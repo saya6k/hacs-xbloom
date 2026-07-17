@@ -66,6 +66,7 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 - Tea steeps pause/resume via `40515`/`9011`; every new event type needs `event.py` + all 3 translation files or it crashes at runtime → [[xbloom-tea-steep-events]]
 - `SG_*` scale-gesture commands are not real (vendor-named but never sent by the official app) → [[xbloom-removed-features]]
 - `temperature_c` accepts `"RT"`/`"BP"` — fixed constants (20/98), not computed values → [[xbloom-temperature-name-constants]]
+- Every user-triggered action (grind/pour/tare/calibrate/execute recipe/easy-slot write) must retry while the machine reports itself asleep, not just mode-switch — the official app's `DefaultTimeOut`/1.5s retry is universal, not mode-switch-specific → [[xbloom-wake-retry-universal-pattern]]
 
 If a quirk you're debugging isn't in this checklist, it may not have been hit yet — check `docs/en/protocol.md`'s command table for the id's confirmed/unconfirmed status before assuming new behavior, and write a new memory entry (project-type) once you've root-caused it, rather than growing this file.
 
@@ -92,6 +93,8 @@ Endpoints, wire-format gotchas (missing `theName` field, pour-volume-sum constra
 A Product/Shared account recipe tab feature was implemented then reverted same-day for lacking a concrete use case → [[xbloom-removed-features]].
 
 Two more, separate cloud backends exist beyond `client-api.xbloom.com`: `collective.xbloom.com`/`collective-api.xbloom.com` (public recipe hub, powers `cloud_search_collective_recipes`) and `backend-api.xbloom.com` (signed Retrofit API, used for the real per-device pour-radius center value) → [[xbloom-collective-hub-and-backend-api]].
+
+`fetch_shared_recipe`'s identifier routing has had two real bugs in the collective-vs-share-h5 identifier-space distinction — a bare (non-URL) community recipe id is the latest → [[xbloom-collective-bare-id-import-bug]].
 
 ## Recipe store architecture (local source of truth)
 
