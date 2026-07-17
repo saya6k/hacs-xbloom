@@ -1568,6 +1568,24 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
 
+    async def async_dismiss_pod_prompt(self) -> None:
+        """Cancel the machine's local "start?" prompt after a pod scan (cmd 8017)."""
+        if not self._check_connected():
+            return
+        try:
+            await brewing.async_dismiss_pod_prompt(self.client)
+        except Exception as exc:
+            _LOGGER.error("Dismiss pod prompt error: %s", exc)
+
+    async def async_calibrate_grinder(self) -> None:
+        """Trigger the grinder gear-position calibration sweep (cmd 3502)."""
+        if not self._check_connected():
+            return
+        try:
+            await brewing.async_calibrate_grinder(self.client)
+        except Exception as exc:
+            _LOGGER.error("Calibrate grinder error: %s", exc)
+
     async def _async_refresh_advanced_settings(self) -> None:
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),

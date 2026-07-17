@@ -39,6 +39,12 @@
       "tare_scale": {
         "default": "mdi:scale-balance"
       },
+      "dismiss_pod": {
+        "default": "mdi:close-circle-outline"
+      },
+      "calibrate_grinder": {
+        "default": "mdi:cog-refresh"
+      },
       "write_slot_a": {
         "default": "mdi:alpha-a-box-outline"
       },

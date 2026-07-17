@@ -62,6 +62,11 @@ _CMD_BACK_TO_HOME = 8022
 # src/xbloom-ble/python/xbloom.py (CMD_TARE).
 _CMD_TARE = 8500
 
+# 3502 — Grinder gear-position calibration trigger ("磨豆档位归0" —
+# grind-size-reset-to-zero). Not in the vendored XBloomCommand enum.
+# Decompiled 2026-07-17 from CalibrateGrinderActivity's confirm button.
+_CMD_CALIBRATE_GRINDER = 3502
+
 # 11510 — Easy Mode recipe send. Type-2 packet. See
 # src/xbloom-ble/PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
 _CMD_EASY_RECIPE_SEND = 11510
@@ -416,6 +421,39 @@ async def async_tare(client) -> None:
         raise ConnectionError("XBloom not connected")
     _LOGGER.info("Scale tare")
     await client._send_command(_CMD_TARE)
+
+
+async def async_dismiss_pod_prompt(client) -> None:
+    """Cancel the machine's local "start?" prompt after a pod scan (cmd 8017).
+
+    Decompiled 2026-07-17: ``PodsDetailActivity``/``RecipeDetailActivity``'s
+    ``showStartDialog()`` dismiss handler sends ``quitRecipeStart()`` (8017,
+    already ``XBloomCommand.APP_RECIPE_START_QUIT`` in the vendored enum)
+    before any BLE brew commands are sent — the machine shows its own local
+    "ready to brew this pod" state the moment it reads the NFC tag (see
+    ``RD_Pods``/40501, fired as the ``pod_detected`` event), independent of
+    whether the app/HA has armed anything. No payload.
+    """
+    if not client.is_connected:
+        raise ConnectionError("XBloom not connected")
+    _LOGGER.info("Dismiss pod start prompt")
+    await client._send_command(XBloomCommand.APP_RECIPE_START_QUIT)
+
+
+async def async_calibrate_grinder(client) -> None:
+    """Trigger the ~120s grinder gear-position calibration sweep (cmd 3502).
+
+    Decompiled 2026-07-17: ``CalibrateGrinderActivity``'s confirm button
+    sends ``CodeModule(3502, "磨豆档位归0", 1000)`` — cmd 3502 with a single
+    fixed int arg, 1000. The sweep then runs autonomously on the machine;
+    progress is observable via the ``grinder_calibration_started``/
+    ``grinder_calibration_progress``/``grinder_calibration_complete``
+    notification events (cmds 50038/50039/40526==85 — see _client.py).
+    """
+    if not client.is_connected:
+        raise ConnectionError("XBloom not connected")
+    _LOGGER.info("Calibrate grinder")
+    await client._send_command(_CMD_CALIBRATE_GRINDER, [1000])
 
 
 async def async_write_easy_slots(
