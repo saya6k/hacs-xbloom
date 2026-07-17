@@ -278,6 +278,28 @@ _RAW_TO_TEMP_UNIT = {v: k for k, v in TEMP_UNIT_OPTIONS.items()}
 # WATER_SOURCE_TANK/DIRECT above.
 _CMD_SWITCH_WATER_FEED = 4508
 
+# Whole-recipe pause/restart — decompiled 2026-07-17 (jadx) from
+# com/chisalsoft/andite/manager/AppJ15AutoManager.java's pause()/restart(),
+# the official app's only recipe-pause mechanism (bound to the single
+# pause/resume button shown while an Auto recipe is running). Both are
+# bare commands (``CodeModule(40518, ...)``/``CodeModule(40524, ...)``, no
+# payload) — the app's own success handler does nothing but update local
+# UI/timer bookkeeping, no readback.
+#
+# NOT ``APP_GRINDER_PAUSE``/``APP_BREWER_PAUSE`` (8018/8019) — those only
+# ever appear in the app's separate, standalone manual Grinder/Brewer
+# screens (``GrinderActivity``/``BrewerActivity``, reached from the home
+# screen's own Grind/Brew quick-action icons via a distinct
+# ``APP_GRINDER_IN``/``RD_BREWER_IN`` "enter mode" handshake first) — a
+# completely different machine mode from the onboard Auto-recipe state our
+# own 8001/8004+8002-driven brews put the machine into, which is exactly
+# what 40518/40524 target. This coordinator used to send 8018/8019 (and
+# 8020/8021 to resume) here — inherited unchanged from the vendored
+# PyBloom library's naming, never actually decompile- or hardware-verified
+# for this use. See AGENTS.md for the full investigation.
+_CMD_RECIPE_PAUSE = 40518
+_CMD_RECIPE_RESTART = 40524
+
 # Mode-switch (cmd 11511) hex codes and retry spec. Matches the official
 # app's own AppBleManager.sendMessage retry logic, decompiled 2026-07-17
 # (com/chisalsoft/andite/manager/AppBleManager.java): 1.5s ACK timeout,
@@ -287,6 +309,13 @@ _CMD_SWITCH_WATER_FEED = 4508
 # a type-2 frame (marker 0xC2) that was previously silently dropped
 # before ever reaching _mode_ack_hex, so this retry loop would otherwise
 # always exhaust every attempt for nothing.
+#
+# The retry itself is further gated on AppDeviceManager.isSleeping()
+# (decompiled 2026-07-17, see _client.py's sleep-state-tracking comment):
+# createDisposable's ACK-timeout handler only retries while the machine
+# last reported itself asleep (cmd 8009/8011/8023) — if it's awake, a
+# missed ACK fails immediately on the first timeout, no retry at all.
+# _async_switch_mode_with_retry mirrors this via client.is_sleeping().
 _MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
 _MODE_SWITCH_ACK_TIMEOUT_S = 1.5
 _MODE_SWITCH_MAX_ATTEMPTS = 4
@@ -1226,8 +1255,11 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def async_pause_resume(self) -> None:
         """Toggle between pause and resume based on machine state.
 
+        Sends the whole-recipe pause (40518) / restart (40524) — see
+        ``_CMD_RECIPE_PAUSE``/``_CMD_RECIPE_RESTART``'s module comment.
+
         When the machine is brewing or grinding the button PAUSES.
-        When paused the button RESUMES (brewer + grinder).
+        When paused the button RESUMES.
         When idle the button is a no-op.
         """
         if not self._check_connected():
@@ -1235,11 +1267,9 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         state = (self.data or {}).get("state", "unknown")
         try:
             if state == "paused":
-                await self.client.brewer.restart()
-                await self.client.grinder.restart()
+                await self.client._send_command(_CMD_RECIPE_RESTART)
             else:
-                await self.client.brewer.pause()
-                await self.client.grinder.pause()
+                await self.client._send_command(_CMD_RECIPE_PAUSE)
         except Exception as exc:
             _LOGGER.error("Pause/resume error (state=%s): %s", state, exc)
 
@@ -1398,6 +1428,10 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Returns ``True`` once the ACK confirms the target mode, ``False``
         if every attempt timed out (the command was still sent each
         time — this only affects whether we know it worked).
+
+        Retries only continue while the machine last reported itself
+        asleep (``client.is_sleeping()``) — matching the official app,
+        which gives up after a single timeout when the machine is awake.
         """
         target_hex = _MODE_SWITCH_HEX[mode]
         mode_bytes = bytes.fromhex(target_hex)
@@ -1415,6 +1449,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "Mode switch to %s: no ACK after %.1fs (attempt %d/%d)",
                 mode, _MODE_SWITCH_ACK_TIMEOUT_S, attempt, _MODE_SWITCH_MAX_ATTEMPTS,
             )
+            if not self.client.is_sleeping():
+                _LOGGER.info(
+                    "Mode switch to %s: machine not asleep — matching official "
+                    "app, no retry",
+                    mode,
+                )
+                break
         _LOGGER.warning(
             "Mode switch to %s: no ACK after %d attempts — proceeding without confirmation",
             mode, _MODE_SWITCH_MAX_ATTEMPTS,
