@@ -290,7 +290,8 @@
               "bloom": "Bloom",
               "paused": "Paused",
               "recipe_complete": "Recipe Complete",
-              "tea_soaking": "Tea Soaking"
+              "tea_soaking": "Tea Soaking",
+              "water_refilled": "Water Refilled"
             }
           }
         }

@@ -939,6 +939,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self._water_shortage = True
         elif category == "error" and event_type == "no_beans":
             self._no_beans = True
+        elif category == "notification" and event_type == "water_refilled":
+            # The firmware's own "tank refilled" notification (cmd 40522
+            # with value=1 — see _client.py). Without this, the only clear
+            # path was a successful brew, which async_execute_recipe's own
+            # low-water gate blocks — a deadlock the user could only escape
+            # by reconnecting (real-hardware report 2026-07-17).
+            self._water_shortage = False
         elif category == "notification" and event_type in (
             "brewing_started", "pour_complete", "recipe_complete",
         ):

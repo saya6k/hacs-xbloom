@@ -228,7 +228,12 @@ _NOTIFICATION_MAP = {
 
 _ERROR_MAP = {
     XBloomResponse.RD_ErrorIdling: "no_beans",
-    XBloomResponse.RD_ErrorLackOfWater: "water_shortage",
+    # RD_ErrorLackOfWater (40522) is handled separately in _handle_response —
+    # it is NOT a one-way error: the payload carries a value (0 = tank
+    # empty, 1 = water restored), and the firmware sends it again with
+    # value=1 when the tank is refilled. Treating every 40522 as a
+    # shortage (as this map used to) turns the firmware's own "refilled"
+    # notification into a re-trigger of the shortage flag.
     XBloomResponse.RD_AbnormalDoseOrWater: "abnormal_dose_or_water",
     XBloomResponse.RD_AbnormalGearPosition: "abnormal_gear_position",
 }
@@ -651,6 +656,28 @@ class XBloomClientWithEvents(XBloomClient):
                 if len(payload) >= 4:
                     attrs["pour_index"] = struct.unpack_from("<I", payload, 0)[0]
             self._fire_event("notification", event_type, attrs)
+        elif response == XBloomResponse.RD_ErrorLackOfWater:
+            # Cmd 40522 is a bidirectional water-tank state notification,
+            # not a one-shot error — decompiled from the official app
+            # (ErrorLackOfWaterBleModel parses payload[0:4] LE as a value;
+            # HomeActivity dismisses the water-scarcity warning on
+            # value == 1 and shows it on value == 0). The firmware sends
+            # value=1 again when the tank is refilled, so both directions
+            # are observable live. Mirror it onto water_level_ok too — the
+            # vendored client only ever sets that flag from the one-shot
+            # connect-time RD_MachineInfo snapshot, which goes stale the
+            # moment the tank state changes.
+            payload = data[10:-2] if len(data) > 12 else b""
+            value = (
+                struct.unpack_from("<I", payload, 0)[0] if len(payload) >= 4 else 0
+            )
+            self._status.water_level_ok = value == 1
+            _LOGGER.info("RD_ErrorLackOfWater: value=%d (%s)",
+                         value, "restored" if value == 1 else "shortage")
+            if value == 1:
+                self._fire_event("notification", "water_refilled")
+            else:
+                self._fire_event("error", "water_shortage")
         elif response in _ERROR_MAP:
             self._fire_event("error", _ERROR_MAP[response])
 
