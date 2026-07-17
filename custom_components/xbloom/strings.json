@@ -63,7 +63,8 @@
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)",
           "weight_unit": "Machine's own weight display unit",
-          "temp_unit": "Machine's own temperature display unit"
+          "temp_unit": "Machine's own temperature display unit",
+          "water_source": "Water source"
         }
       },
       "account": {
@@ -233,13 +234,6 @@
         "name": "Recipe",
         "state": {
           "no_recipes_configured": "No recipes configured"
-        }
-      },
-      "water_source": {
-        "name": "Manual Pour Water Source",
-        "state": {
-          "tank": "Water Tank",
-          "direct": "Direct Plumbed"
         }
       },
       "pour_pattern": {
@@ -743,6 +737,12 @@
         "150": "Fermented",
         "151": "Overripe",
         "152": "Under-ripe"
+      }
+    },
+    "water_source": {
+      "options": {
+        "tank": "Water Tank",
+        "direct": "Direct Plumbed"
       }
     }
   }

@@ -22,7 +22,7 @@
 - [Service config_entry targeting](xbloom_service_config_entry_targeting.md) — selector migration + string-iteration bug broke every targeted service call.
 - [Connection race + supervisor](xbloom_connection_race_and_supervisor.md) — reconnect supervisor, silence watchdog, split-write chunking, NoneType race fix.
 - [Water shortage + level derivation](xbloom_water_shortage_and_level_derivation.md) — 40522 bidirectional; never trust raw water_level_ok snapshot.
-- [Unit + water-source sync](xbloom_unit_and_water_source_sync.md) — 8015 push + 4508 set; needs _NO_RELOAD_OPTION_KEYS.
+- [Unit + water-source sync](xbloom_unit_and_water_source_sync.md) — 8015 push + 4508 set; needs _NO_RELOAD_OPTION_KEYS; dirty-flag gates the connect-time push so it isn't unconditional.
 - [Tea steep events](xbloom_tea_steep_events.md) — 40515/9011 events; every event type needs event.py + all 3 translation files.
 - [Device registry 4-way split](xbloom_device_registry_4way_split.md) — via_device doesn't propagate translation/area; main device must register first.
 - [Cloud wire API quirks](xbloom_cloud_wire_api_quirks.md) — theName field, pour-volume-sum, server-assigned share_url, delete idempotency.

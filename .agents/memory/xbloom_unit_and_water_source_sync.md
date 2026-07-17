@@ -1,6 +1,6 @@
 ---
 name: xbloom-unit-and-water-source-sync
-description: "Display units and water source are bidirectional - cmd 8015 (RD_UNIT_CHANGE) pushes touchscreen-side unit changes to HA, and cmd 4508 actually sets water source on the machine (previously HA-local only); required adding unit/water-source keys to the no-reload option-change path to avoid dropping the BLE connection on every change."
+description: "Display units and water source are bidirectional - cmd 8015 (RD_UNIT_CHANGE) pushes touchscreen-side unit changes to HA, and cmd 4508 actually sets water source on the machine; required adding unit/water-source keys to the no-reload option-change path, and (2026-07-18) a dirty-flag gate so the SET commands only go out on an explicit user change, not on every reconnect."
 metadata: 
   node_type: memory
   type: project
@@ -44,3 +44,39 @@ HA counterpart.
 added to `_NO_RELOAD_OPTION_KEYS` and routed through the same echo-
 recognition pattern, or it will silently drop the connection on every
 change from either direction.
+
+**2026-07-18 update — `select.water_source` removed, moved into the
+config_flow Settings step (options flow) alongside `weight_unit`/
+`temp_unit`; `coordinator.async_set_water_source` was deleted as dead code
+once its only caller (the select entity) was gone** — water_source now
+follows the exact same path weight_unit/temp_unit always used
+(`config_flow.py`'s `async_step_settings` → `entry.options` →
+`_handle_unit_options_change`), no dedicated setter method needed.
+
+**Also fixed the same day, hardware-reported: the machine's own
+unit-settings screen was popping up first on every single reconnect.**
+Root cause: `async_connect()` called `_apply_unit_preferences()`
+(8005/8010/4508 SET) unconditionally on every connect, to "re-assert"
+the stored preference since the ACKs carry no echoed value. Decompiled
+`MachineJ15Fragment`/`ScaleActivity` (`xbloom_coffee_release.apk`,
+2026-07-18): the official app only ever sends those three SET commands
+from an explicit button tap in its own Settings screen
+(`loadListener$3`–`$9`) — never automatically on connect, anywhere in the
+app. Receiving one of those SET commands is indistinguishable to the
+firmware from a real button tap, so blindly resending them every
+reconnect made the machine jump to its own settings screen every time.
+
+Fixed with a `_unit_preferences_dirty` flag (`coordinator/__init__.py`):
+`_handle_unit_options_change` sets it only when a Settings-step change
+couldn't reach the machine because it was disconnected at the time (the
+connected case still pushes immediately — that's the real "explicit user
+action" the app's button taps represent); `async_connect()` only calls
+`_apply_unit_preferences()` if the flag is set, then clears it. The
+machine→HA direction (`_async_sync_units_from_machine`, cmd 8015) is
+unaffected — it never sets the flag, since there's nothing to push back
+when the machine is the one that just told us its value. Tests:
+`tests/test_unit_preferences_dirty.py`. **Not hardware-verified** — the
+decompile evidence is about as direct as this integration ever gets (a
+1:1 command-id + call-site match with no automatic-send code path
+anywhere), but the actual "does the settings screen still pop up"
+behavior needs a real reconnect to confirm.

@@ -1,4 +1,4 @@
-"""Select entities for XBloom — recipe chooser and water source."""
+"""Select entities for XBloom — recipe chooser, pour pattern, and mode."""
 from __future__ import annotations
 
 import logging
@@ -13,7 +13,6 @@ from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import (
     XBloomCoordinator,
     POUR_PATTERN_OPTIONS,
-    WATER_SOURCE_OPTIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +24,6 @@ async def async_setup_entry(
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     async_add_entities([
         XBloomRecipeSelect(coordinator, entry),
-        XBloomWaterSourceSelect(coordinator, entry),
         XBloomPourPatternSelect(coordinator, entry),
         XBloomModeSelect(coordinator, entry),
     ])
@@ -92,44 +90,6 @@ class XBloomRecipeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
         self.coordinator.select_recipe(option)
         self.async_write_ha_state()
         _LOGGER.debug("Selected recipe: %s", option)
-
-
-class XBloomWaterSourceSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
-    """Select the machine's water source (tank / direct feed).
-
-    Writes the machine's own water-feed setting via cmd 4508 (the same
-    command the official app's water-source screen sends) and is kept in
-    sync with machine-side changes via cmd 8015 (RD_UNIT_CHANGE). The
-    value is also used in the manual Pour payload (APP_BREWER_START) and
-    persisted in config entry options so it survives restarts.
-    """
-
-    _attr_translation_key = "water_source"
-    _attr_unique_id = "xbloom_water_source"
-    _attr_has_entity_name = True
-    _attr_options = list(WATER_SOURCE_OPTIONS.keys())  # ["tank", "direct"]
-
-    def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
-
-    @property
-    def device_info(self):
-        return self.coordinator.device_info
-
-    @property
-    def current_option(self) -> str:
-        """Return the internal key for the current integer water_source value."""
-        for name, val in WATER_SOURCE_OPTIONS.items():
-            if val == self.coordinator.water_source:
-                return name
-        return "tank"  # safe fallback
-
-    async def async_select_option(self, option: str) -> None:
-        """Send the new setting to the machine (cmd 4508) and persist it."""
-        new_val = WATER_SOURCE_OPTIONS.get(option, 0)
-        await self.coordinator.async_set_water_source(new_val)
-        self.async_write_ha_state()
-        _LOGGER.debug("Water source changed to: %s (%d)", option, new_val)
 
 
 class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
