@@ -287,6 +287,13 @@ _CMD_SWITCH_WATER_FEED = 4508
 # a type-2 frame (marker 0xC2) that was previously silently dropped
 # before ever reaching _mode_ack_hex, so this retry loop would otherwise
 # always exhaust every attempt for nothing.
+#
+# The retry itself is further gated on AppDeviceManager.isSleeping()
+# (decompiled 2026-07-17, see _client.py's sleep-state-tracking comment):
+# createDisposable's ACK-timeout handler only retries while the machine
+# last reported itself asleep (cmd 8009/8011/8023) — if it's awake, a
+# missed ACK fails immediately on the first timeout, no retry at all.
+# _async_switch_mode_with_retry mirrors this via client.is_sleeping().
 _MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
 _MODE_SWITCH_ACK_TIMEOUT_S = 1.5
 _MODE_SWITCH_MAX_ATTEMPTS = 4
@@ -1398,6 +1405,10 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Returns ``True`` once the ACK confirms the target mode, ``False``
         if every attempt timed out (the command was still sent each
         time — this only affects whether we know it worked).
+
+        Retries only continue while the machine last reported itself
+        asleep (``client.is_sleeping()``) — matching the official app,
+        which gives up after a single timeout when the machine is awake.
         """
         target_hex = _MODE_SWITCH_HEX[mode]
         mode_bytes = bytes.fromhex(target_hex)
@@ -1415,6 +1426,13 @@ class XBloomCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "Mode switch to %s: no ACK after %.1fs (attempt %d/%d)",
                 mode, _MODE_SWITCH_ACK_TIMEOUT_S, attempt, _MODE_SWITCH_MAX_ATTEMPTS,
             )
+            if not self.client.is_sleeping():
+                _LOGGER.info(
+                    "Mode switch to %s: machine not asleep — matching official "
+                    "app, no retry",
+                    mode,
+                )
+                break
         _LOGGER.warning(
             "Mode switch to %s: no ACK after %d attempts — proceeding without confirmation",
             mode, _MODE_SWITCH_MAX_ATTEMPTS,
