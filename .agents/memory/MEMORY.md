@@ -5,3 +5,27 @@
 - [Additive variant split](feedback_additive_variant_split.md) — splitting a service/entity for a variant (coffee/tea): add a leaner sibling, don't restructure the original, keep shared field names.
 - [Commit incrementally](feedback_commit_incrementally.md) — commit each discrete change as it lands, don't batch a whole session into one uncommitted diff.
 - [rc.19 hardware verification](project_rc19_hardware_verification.md) — PRs #80-83 (8015/4508 sync, split writes, tea events) decompile-derived, pending real-hardware checks via prerelease.
+
+## xbloom project history (extracted from AGENTS.md 2026-07-17, see ADR-001)
+- [8100 handshake + firmware history](xbloom_8100_handshake_and_firmware_history.md) — MTU handshake gates all commands; D122→D500 firmware version table.
+- [MachineInfo reliability + padding](xbloom_machineinfo_reliability_and_padding.md) — 40521 can arrive late/never; 0xFF string padding needs strict_ascii().
+- [Raw state heartbeat vs cmd-tagged](xbloom_raw_state_heartbeat_vs_cmd_tagged.md) — starting/brewing/ready only reliable via raw frame; unknown→idle fix.
+- [Easy Mode slot batch write](xbloom_easy_mode_slot_batch_write.md) — 11510 must be A/B/C batch from PRO mode; bookkeeping-vs-BLE-payload split.
+- [40518/8104 third-party claims refuted](xbloom_40518_and_8104_third_party_claims_refuted.md) — official app decompile settles both disputes.
+- [Full command table androguard sweep](xbloom_full_command_table_androguard_sweep.md) — near-total table confirmation; pattern/vibration cloud mapping settled.
+- [Advanced Features jadx findings](xbloom_advanced_features_jadx_findings.md) — pour radius/vibration/brightness/calibration payloads; descale unresolved.
+- [Advanced settings transport bugs](xbloom_advanced_settings_transport_bugs.md) — 5-layer saga: offset scan, type_code=2, marker byte, handshake timing, 0.3s gap.
+- [Easy Mode ACK marker + mode-switch retry](xbloom_easymode_ack_marker_and_mode_switch_retry.md) — 11511 marker fix; retry spec mirrors official app + sleep tracking.
+- [Manual operation command targeting](xbloom_manual_operation_command_targeting.md) — pause/cancel must branch on _active_operation, not assume recipe.
+- [Dismiss pod prompt (8017)](xbloom_dismiss_pod_prompt_8017.md) — folded into cancel button via _pod_prompt_active.
+- [Grinder calibration completion saga](xbloom_grinder_calibration_completion_signal_saga.md) — 6-round saga; only RD_CurrentGrinder==85/timeout may clear calibrating.
+- [Service config_entry targeting](xbloom_service_config_entry_targeting.md) — selector migration + string-iteration bug broke every targeted service call.
+- [Connection race + supervisor](xbloom_connection_race_and_supervisor.md) — reconnect supervisor, silence watchdog, split-write chunking, NoneType race fix.
+- [Water shortage + level derivation](xbloom_water_shortage_and_level_derivation.md) — 40522 bidirectional; never trust raw water_level_ok snapshot.
+- [Unit + water-source sync](xbloom_unit_and_water_source_sync.md) — 8015 push + 4508 set; needs _NO_RELOAD_OPTION_KEYS.
+- [Tea steep events](xbloom_tea_steep_events.md) — 40515/9011 events; every event type needs event.py + all 3 translation files.
+- [Device registry 4-way split](xbloom_device_registry_4way_split.md) — via_device doesn't propagate translation/area; main device must register first.
+- [Cloud wire API quirks](xbloom_cloud_wire_api_quirks.md) — theName field, pour-volume-sum, server-assigned share_url, delete idempotency.
+- [Collective hub + backend API](xbloom_collective_hub_and_backend_api.md) — 3 separate cloud backends; backend-api.xbloom.com signing scheme.
+- [Removed features](xbloom_removed_features.md) — SG_* scale-vibrate and duplicate last_error sensor removed; verify-before-shipping lesson.
+- [Temperature name constants](xbloom_temperature_name_constants.md) — RT=20/BP=98 fixed constants, not computed.
