@@ -91,6 +91,7 @@ class DeviceStatus:
     version: str = ""
     water_level_ok: bool = False
     water_volume: int = 0
+    voltage: int = 0
 
     last_update: datetime = field(default_factory=datetime.now)
 
@@ -106,6 +107,9 @@ class DeviceStatus:
     is_sleeping: bool = False
     pour_radius: Optional[int] = None
     vibration_amplitude: Optional[int] = None
+    # Live pour-pattern knob turn (RD_BREWER_MODE), same raw ints as
+    # coordinator.POUR_PATTERN_OPTIONS (0=center/1=circular/2=spiral).
+    pour_pattern_live: Optional[int] = None
 
 
 @dataclass

@@ -119,6 +119,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | 실시간 추출 패턴 노브 |
 | 8108 | `RD_BREWER_TEMPERATURE` | LE u32 | Telemetry | 실시간 추출 온도 |
 | 8111 | `RD_EASYMODE_BEGIN` | LE u32, 0–2 | Active | 머신 자체 다이얼에서 Easy Mode 추출 시작; A/B/C 슬롯에 매핑 |
+| 8113 | `RD_TEA_RECIP_CHANGE_SOAK_TIME` | — | Active | `"tea_soak_time_changed"` 알림에 매핑 |
 | 8203 | `RD_AbnormalGearPosition` | — | Active | 에러 이벤트 |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | 에러 이벤트 |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | 모드 진입 ACK, 이 통합에 핸들러 없음 |
