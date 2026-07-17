@@ -4,3 +4,4 @@
 - [xbloom-studio review adoptions](project_xbloom_studio_review_adoptions.md) — uncommitted: BT discovery, live knob sync, 4-device split, flow_rate sensor, execute_tea_recipe. Needs hardware verification.
 - [Additive variant split](feedback_additive_variant_split.md) — splitting a service/entity for a variant (coffee/tea): add a leaner sibling, don't restructure the original, keep shared field names.
 - [Commit incrementally](feedback_commit_incrementally.md) — commit each discrete change as it lands, don't batch a whole session into one uncommitted diff.
+- [rc.19 hardware verification](project_rc19_hardware_verification.md) — PRs #80-83 (8015/4508 sync, split writes, tea events) decompile-derived, pending real-hardware checks via prerelease.
