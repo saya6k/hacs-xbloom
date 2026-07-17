@@ -146,12 +146,6 @@
       "tare_scale": {
         "name": "저울 영점"
       },
-      "dismiss_pod": {
-        "name": "팟 시작 알림 무시"
-      },
-      "calibrate_grinder": {
-        "name": "그라인더 캘리브레이션"
-      },
       "write_slot_a": {
         "name": "이지 슬롯 A에 저장"
       },
@@ -190,7 +184,8 @@
           "no_beans": "원두 없음",
           "water_shortage": "물 부족",
           "ready": "완료 (컵 대기)",
-          "starting": "시작 중"
+          "starting": "시작 중",
+          "calibrating": "캘리브레이션 중"
         }
       },
       "weight": {

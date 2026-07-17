@@ -283,13 +283,14 @@ _NOTIFICATION_MAP = {
     # (2026-07-17): payload is a single LE uint32, validated 0-2 and used
     # to index a 3-element Easy Slot list — confirmed slot index, A/B/C.
     XBloomResponse.RD_EASYMODE_BEGIN: "easy_slot_started",
-    # 50038/50039 — grinder gear-position calibration sweep (cmd 3502,
-    # "磨豆档位归0"/grind-size-reset-to-zero) start/in-progress pulses.
-    # Decompiled 2026-07-17: CalibrateStartModel/CalibratingModel both
-    # just clear pending BLE state and show a toast — no payload. Paired
-    # with async_calibrate_grinder() (3502) and the calibration-complete
-    # check on RD_CurrentGrinder (40526 == 85) below.
-    XBloomResponse.RD_CalibrateStart: "grinder_calibration_started",
+    # 50039 — grinder calibration sweep (cmd 3502) in-progress pulse.
+    # Hardware-confirmed 2026-07-17: on at least one real unit this cmd
+    # (and its 50038 "start" sibling) never arrived at all during a real
+    # ~120s calibration run — see async_calibrate_grinder() in
+    # coordinator.py, which fires "grinder_calibration_started" itself at
+    # send time instead of waiting for 50038. 50039 is kept as a bonus
+    # signal for units that do report it; no send-time equivalent exists
+    # for a mid-sweep "progress" pulse, so there's nothing to duplicate.
     XBloomResponse.RD_Calibrating: "grinder_calibration_progress",
 }
 
@@ -340,6 +341,15 @@ class XBloomClientWithEvents(XBloomClient):
         sleep-state notification arrives.
         """
         return getattr(self._status, "is_sleeping", False)
+
+    def is_calibrating_grinder(self) -> bool:
+        """Whether a grinder gear-position calibration sweep (cmd 3502) is
+        in progress — set at send time by
+        ``coordinator.async_set_advanced_settings(calibrate_grinder=True)``,
+        cleared on completion (see ``RD_Grinder_Stop``/``RD_CurrentGrinder``
+        handling above).
+        """
+        return getattr(self._status, "is_calibrating_grinder", False)
 
     async def async_send_handshake(self) -> bool:
         """Send the 8100 MTU handshake the firmware needs to wake up.
@@ -699,6 +709,25 @@ class XBloomClientWithEvents(XBloomClient):
             payload = data[10:-2] if len(data) > 12 else b""
             if len(payload) >= 4:
                 self._status.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+        elif response == XBloomResponse.RD_Grinder_Stop:
+            # The grinder just stopped — 0 RPM is a real, meaningful
+            # reading here, not "unknown" (hardware-confirmed 2026-07-17:
+            # the live RPM sensor stayed at its last nonzero value/showed
+            # Unknown after grinding ended instead of reflecting reality).
+            self._status.grinder.speed = 0
+            if getattr(self._status, "is_calibrating_grinder", False):
+                # Hardware-confirmed 2026-07-17: on at least one unit, cmd
+                # 3502's calibration sweep never sent 50038/50039, and
+                # RD_CurrentGrinder never reported exactly 85 either — only
+                # an entirely ordinary RD_Grinder_Stop at the end (grind
+                # size telemetry did update live throughout, confirming
+                # the sweep really ran). Treat the grinder actually
+                # stopping while a calibration is in progress as the
+                # authoritative completion signal; the raw==85 check below
+                # stays as an earlier/secondary signal on units that do
+                # report it.
+                self._status.is_calibrating_grinder = False
+                self._fire_event("notification", "grinder_calibration_complete")
         elif response == XBloomResponse.RD_CurrentGrinder:
             # Cmd 40526 — decompile shows this carries the same LE uint32
             # grind-size value as RD_GRINDER_SIZE (identical -30 offset,
@@ -720,11 +749,14 @@ class XBloomClientWithEvents(XBloomClient):
                     self._status.is_calibrating_grinder = False
                     self._fire_event("notification", "grinder_calibration_complete")
         elif response == XBloomResponse.RD_CalibrateStart:
-            # 50038 — grinder calibration sweep (cmd 3502) began. Fired as
-            # a notification event via _NOTIFICATION_MAP below; the flag
-            # here is what RD_CurrentGrinder above checks to know a
-            # value == 85 means "done" rather than an unrelated knob turn
-            # that happens to land on 85.
+            # 50038 — grinder calibration sweep (cmd 3502) began. Best-
+            # effort only: hardware-confirmed 2026-07-17 that this doesn't
+            # arrive on at least one real unit, so
+            # coordinator.async_set_advanced_settings(calibrate_grinder=True)
+            # already sets this flag (and fires
+            # "grinder_calibration_started") at send time — this branch is
+            # just a safety net for units that do report it, and is
+            # idempotent if the flag is already set.
             self._status.is_calibrating_grinder = True
         elif response == XBloomResponse.RD_CURRENT_WEIGHT:
             # Cmd 10507 — decompile shows the official app treats this the
