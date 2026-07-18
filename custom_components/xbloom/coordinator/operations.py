@@ -24,28 +24,39 @@ class OperationsMixin:
         (2026-07-18, hardware-reported): a pour started while the machine
         was asleep silently did nothing, since nothing resent it — see
         that method's docstring.
+
+        Sends bare 4506 (BREWER_START) only — no 8007 (RD_BREWER_IN)
+        prelude. Hardware-reported 2026-07-18: standalone manual pour left
+        the machine sitting on its own pour-page screen needing a manual
+        tap to actually start, instead of pouring immediately. Root cause:
+        8007 ("enter pour page") and 4506 were being sent back-to-back with
+        no delay between them — unlike GrinderController.start()'s own
+        analogous enter_mode() → 2.0s sleep → GRINDER_START sequence for
+        the identical "enter mode, let the machine transition, then start"
+        shape, 4506 here had nothing giving the machine time to actually
+        finish switching into the pour page before the start command
+        arrived, and it was apparently getting dropped mid-transition. The
+        8007 send was already documented as "not functionally required,
+        4506 alone is hardware-confirmed sufficient" when added purely for
+        app parity — removed rather than given an untested delay value,
+        since the bare-4506 behavior it reverts to was the one actually
+        confirmed working.
         """
         if not self._check_connected():
             return
         try:
             await self._ensure_pro_mode()
 
-            async def _do() -> None:
-                # 8007 (RD_BREWER_IN) — "enter pour page" parity with the
-                # official app's standalone manual pour screen. Not
-                # functionally required (4506 alone is hardware-confirmed
-                # sufficient, see AGENTS.md), sent for parity/robustness.
-                await self.client._send_command(brewing._CMD_BREWER_IN)
-                await self.client.brewer.start(
+            self._active_operation = "manual_pour"
+            await self._async_retry_while_sleeping(
+                lambda: self.client.brewer.start(
                     volume=float(self.volume),
                     temperature=float(self.temperature),
                     flow_rate=self.flow_rate,
                     water_source=self.water_source,
                     pattern=self.pour_pattern,
                 )
-
-            self._active_operation = "manual_pour"
-            await self._async_retry_while_sleeping(_do)
+            )
         except Exception as exc:
             _LOGGER.error("Pour error: %s", exc)
 
