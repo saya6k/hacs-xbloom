@@ -62,14 +62,6 @@ _CMD_BACK_TO_HOME = 8022
 # src/xbloom-ble/python/xbloom.py (CMD_TARE).
 _CMD_TARE = 8500
 
-# 8007 — RD_BREWER_IN ("进入浇水页面" = "enter pour page"), sent by the
-# official app before its standalone manual pour screen's APP_BREWER_START
-# (4506). Named with an "RD_" prefix in the vendored XBloomResponse enum
-# despite being outbound — see AGENTS.md's 8018/8019 bullet. Sent for app
-# parity in coordinator.async_pour(); not functionally required, 4506 alone
-# is already hardware-confirmed sufficient.
-_CMD_BREWER_IN = 8007
-
 # 11510 — Easy Mode recipe send. Type-2 packet. See
 # src/xbloom-ble/PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
 _CMD_EASY_RECIPE_SEND = 11510
