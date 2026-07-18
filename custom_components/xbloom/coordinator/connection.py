@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, TypeVar
 
 from homeassistant.helpers import device_registry as dr
 
@@ -35,6 +35,8 @@ from .constants import (
 from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 
 class ConnectionMixin:
@@ -674,8 +676,8 @@ class ConnectionMixin:
                 _LOGGER.warning("Pro-mode switch failed: %s", exc)
 
     async def _async_retry_while_sleeping(
-        self, action: Callable[[], Awaitable[None]]
-    ) -> None:
+        self, action: Callable[[], Awaitable[_T]]
+    ) -> _T:
         """Run ``action()``, retrying it while the machine reports itself
         asleep — the general form of ``_async_switch_mode_with_retry``'s
         pattern, for every other user-triggered action (grind/pour/tare/
@@ -706,14 +708,23 @@ class ConnectionMixin:
         until awake" behavior the 8100 handshake gate exhibits at
         connect), so a still-sleeping resend is very unlikely to double-
         fire whatever the first send was.
+
+        Returns the last call's return value (2026-07-18, added for the
+        two-stage arm/confirm recipe flow — ``async_arm_recipe`` needs the
+        built tea payload back from ``brewing.async_arm_recipe`` so
+        ``async_confirm_recipe`` can re-send those exact bytes for 4512).
+        Every pre-existing caller ignores the return value, so this is
+        backward compatible.
         """
+        result: _T = None  # type: ignore[assignment]
         for attempt in range(1, _WAKE_RETRY_MAX_ATTEMPTS + 1):
-            await action()
+            result = await action()
             if not (self.client and self.client.is_sleeping()):
-                return
+                return result
             if attempt < _WAKE_RETRY_MAX_ATTEMPTS:
                 _LOGGER.info(
                     "Action sent while machine reports asleep — retrying "
                     "(attempt %d/%d)", attempt, _WAKE_RETRY_MAX_ATTEMPTS,
                 )
                 await asyncio.sleep(_WAKE_RETRY_DELAY_S)
+        return result

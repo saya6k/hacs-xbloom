@@ -47,6 +47,15 @@ class _XBloomButton(CoordinatorEntity[XBloomCoordinator], ButtonEntity):
 
 
 class XBloomGrindButton(_XBloomButton):
+    """Two-stage arm/confirm flow (2026-07-18): the first press queues
+    the grinder (enter mode, size/speed set, burrs adjust) without
+    starting; a second press starts it. Gives the user time to place a
+    cup/dripper before the grinder actually runs. See
+    ``coordinator._armed_operation``'s docstring for the full design —
+    HA button entity only, the execute_recipe service / LLM tools /
+    async_grind() itself still act in one call.
+    """
+
     _attr_translation_key = "grind"
     _attr_unique_id = "xbloom_grind"
 
@@ -55,10 +64,17 @@ class XBloomGrindButton(_XBloomButton):
         return self.coordinator.grinder_device_info
 
     async def async_press(self) -> None:
-        await self.coordinator.async_grind()
+        if self.coordinator._armed_operation == "grind":
+            await self.coordinator.async_confirm_grind()
+        else:
+            await self.coordinator.async_arm_grind()
 
 
 class XBloomPourButton(_XBloomButton):
+    """Two-stage arm/confirm flow — see ``XBloomGrindButton``'s
+    docstring; same design, first press sends RD_BREWER_IN (8007) only.
+    """
+
     _attr_translation_key = "pour"
     _attr_unique_id = "xbloom_pour"
 
@@ -67,15 +83,26 @@ class XBloomPourButton(_XBloomButton):
         return self.coordinator.brewer_device_info
 
     async def async_press(self) -> None:
-        await self.coordinator.async_pour()
+        if self.coordinator._armed_operation == "pour":
+            await self.coordinator.async_confirm_pour()
+        else:
+            await self.coordinator.async_arm_pour()
 
 
 class XBloomExecuteRecipeButton(_XBloomButton):
+    """Two-stage arm/confirm flow — see ``XBloomGrindButton``'s
+    docstring; first press queues the selected recipe (through
+    8001/8004 coffee or 4513 tea) without starting it.
+    """
+
     _attr_translation_key = "execute_recipe"
     _attr_unique_id = "xbloom_execute_recipe"
 
     async def async_press(self) -> None:
-        await self.coordinator.async_execute_recipe()
+        if self.coordinator._armed_operation == "recipe":
+            await self.coordinator.async_confirm_recipe()
+        else:
+            await self.coordinator.async_arm_recipe()
 
 
 class XBloomPauseButton(_XBloomButton):

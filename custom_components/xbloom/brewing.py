@@ -254,14 +254,20 @@ async def async_execute_recipe(
     )
 
 
-async def _async_brew_coffee(
+async def _async_arm_coffee(
     client,
     recipe: XBloomRecipe,
     *,
     bypass_volume: float = 0.0,
     bypass_temperature: float = 0.0,
 ) -> None:
-    """Coffee brew sequence with optional bypass support.
+    """Queue a coffee recipe on the machine without starting it.
+
+    Everything ``_async_brew_coffee`` sends up to and including the
+    recipe-send command (8001/8004) — the "arm" half of the two-stage
+    manual execute-recipe button flow (2026-07-18). The matching "go"
+    step is a bare ``client.execute_coffee_recipe()`` (8002), with no
+    payload to carry over — see ``async_confirm_recipe``.
 
     Mirrors ``send_brew_packets`` from brAzzi64/xbloom-ble plus the
     grind/no-grind cup-bound split from the vendored ``XBloomClient``.
@@ -284,7 +290,7 @@ async def _async_brew_coffee(
     dose = int(recipe.bean_weight) if recipe.bean_weight > 0 else 0
 
     _LOGGER.info(
-        "Coffee brew start: %s (grind=%s, dose=%dg, bypass=%.0fml@%.0f°C)",
+        "Coffee brew arm: %s (grind=%s, dose=%dg, bypass=%.0fml@%.0f°C)",
         recipe.name, grinding, dose, bypass_volume, bypass_temperature,
     )
 
@@ -342,19 +348,49 @@ async def _async_brew_coffee(
         else Command.RECIPE_SEND_MANUAL
     )
     await client._send_command_raw(recipe_cmd, payload)
-    await asyncio.sleep(_STEP_DELAY)
+
+
+async def _async_brew_coffee(
+    client,
+    recipe: XBloomRecipe,
+    *,
+    bypass_volume: float = 0.0,
+    bypass_temperature: float = 0.0,
+) -> None:
+    """Coffee brew sequence with optional bypass support.
+
+    Single-shot form: ``_async_arm_coffee`` followed by the same 1.0s
+    spacing and the 8002 execute, unchanged from before the arm/confirm
+    split (2026-07-18) — used by ``async_execute_recipe`` (the
+    execute_recipe service and every LLM tool), which always brews in
+    one call. See ``async_arm_recipe``/``async_confirm_recipe`` for the
+    two-stage manual-button form.
+    """
+    await _async_arm_coffee(
+        client, recipe,
+        bypass_volume=bypass_volume, bypass_temperature=bypass_temperature,
+    )
+    await asyncio.sleep(1.0)
 
     # 8002 — Execute.
     await client.execute_coffee_recipe()
 
 
-async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
-    """Send the tea brew sequence over an already-connected client."""
+async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
+    """Queue a tea recipe on the machine without starting it.
+
+    Everything ``_async_brew_tea`` sends up to and including 4513
+    (APP_TEA_RECIP_CODE) — the "arm" half of the two-stage manual
+    execute-recipe button flow (2026-07-18). Returns the built payload:
+    unlike coffee's bare 8002, tea's "go" step (4512) must re-send these
+    exact bytes (matches the firmware's expected sequence — see below),
+    so the caller needs them back to hand to ``async_confirm_recipe``.
+    """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
 
     _LOGGER.info(
-        "Tea brew start: %s — %d steep(s)", recipe.name, len(recipe.pours),
+        "Tea brew arm: %s — %d steep(s)", recipe.name, len(recipe.pours),
     )
 
     # Spacing between brew packets. brAzzi64's send_brew_packets uses
@@ -396,13 +432,69 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
     await client._send_command_raw(
         Command.TEA_RECIPE_CODE, payload,
     )
-    await asyncio.sleep(_STEP_DELAY)
+    return payload
+
+
+async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
+    """Send the tea brew sequence over an already-connected client.
+
+    Single-shot form: ``_async_arm_tea`` followed by the same 2.0s
+    spacing and re-sending the payload as 4512, unchanged from before the
+    arm/confirm split (2026-07-18) — used by ``async_execute_recipe``
+    (the execute_recipe / execute_tea_recipe services and every LLM
+    tool), which always brews in one call. See
+    ``async_arm_recipe``/``async_confirm_recipe`` for the two-stage
+    manual-button form.
+    """
+    payload = await _async_arm_tea(client, recipe)
+    await asyncio.sleep(2.0)
 
     # 4512 — APP_TEA_RECIP_MAKE. Execute. Re-sends the payload here rather
     # than an empty execute (matches the firmware's expected sequence).
     await client._send_command_raw(
         Command.TEA_RECIPE_MAKE, payload,
     )
+
+
+async def async_arm_recipe(
+    client,
+    recipe: XBloomRecipe,
+    *,
+    bypass_volume: float = 0.0,
+    bypass_temperature: float = 0.0,
+) -> bytes | None:
+    """Queue a recipe (coffee or tea) on the machine without starting it —
+    the "arm" half of the two-stage manual execute-recipe button flow
+    (2026-07-18, HA button entity only; the execute_recipe /
+    execute_tea_recipe services and every LLM tool call
+    ``async_execute_recipe`` directly and always brew in one call).
+
+    Returns whatever ``async_confirm_recipe`` needs to send the matching
+    "go" command: ``None`` for coffee (confirm sends a bare 8002) or the
+    built tea payload for tea (confirm re-sends those exact bytes).
+    """
+    if is_tea_recipe(recipe):
+        return await _async_arm_tea(client, recipe)
+    await _async_arm_coffee(
+        client, recipe,
+        bypass_volume=bypass_volume, bypass_temperature=bypass_temperature,
+    )
+    return None
+
+
+async def async_confirm_recipe(
+    client, *, is_tea: bool, tea_payload: bytes | None = None
+) -> None:
+    """Send the "go" command for a recipe previously queued by
+    ``async_arm_recipe`` — the second half of the two-stage manual
+    execute-recipe button flow.
+    """
+    if is_tea:
+        if tea_payload is None:
+            raise ValueError("tea_payload is required to confirm a tea recipe")
+        await client._send_command_raw(Command.TEA_RECIPE_MAKE, tea_payload)
+    else:
+        await client.execute_coffee_recipe()
 
 
 async def async_tare(client) -> None:

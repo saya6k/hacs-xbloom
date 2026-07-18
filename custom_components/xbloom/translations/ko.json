@@ -189,7 +189,10 @@
           "water_shortage": "물 부족",
           "ready": "완료 (컵 대기)",
           "starting": "시작 중",
-          "calibrating": "캘리브레이션 중"
+          "calibrating": "캘리브레이션 중",
+          "armed_grind": "예약됨 (분쇄)",
+          "armed_pour": "예약됨 (추출)",
+          "armed_recipe": "예약됨 (레시피)"
         }
       },
       "weight": {

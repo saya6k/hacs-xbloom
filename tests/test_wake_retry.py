@@ -109,6 +109,35 @@ def test_action_called_fresh_each_retry_not_reused_coroutine(monkeypatch):
     assert seen == [0, 1]
 
 
+def test_returns_the_action_result(monkeypatch):
+    # 2026-07-18: added so async_arm_recipe can get the built tea payload
+    # back from brewing.async_arm_recipe through the retry wrapper — every
+    # pre-existing caller ignores the return value, so this is additive.
+    _no_sleep(monkeypatch)
+    client = _FakeClient(sleeping_for_n_checks=0)
+    coordinator = _Coordinator(client)
+
+    async def action():
+        return "some-payload"
+
+    result = asyncio.run(coordinator._async_retry_while_sleeping(action))
+    assert result == "some-payload"
+
+
+def test_returns_the_last_result_even_after_retries(monkeypatch):
+    _no_sleep(monkeypatch)
+    client = _FakeClient(sleeping_for_n_checks=2)
+    coordinator = _Coordinator(client)
+    calls = []
+
+    async def action():
+        calls.append(1)
+        return len(calls)
+
+    result = asyncio.run(coordinator._async_retry_while_sleeping(action))
+    assert result == 3  # the 3rd (final, successful) attempt's return value
+
+
 def test_waits_the_expected_delay_between_retries(monkeypatch):
     sleeps = []
 

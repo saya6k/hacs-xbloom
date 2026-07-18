@@ -16,6 +16,7 @@
 - **로컬 레시피가 source of truth** — 모든 레시피는 HA 안에서 고유한 로컬 `uid`를 갖고, Recipe 드롭다운이 보여주고 추출하는 대상도 바로 이것입니다. 설치 시 1회 시드됩니다(계정이 연결돼 있으면 클라우드 계정 레시피, 아니면 XBloom 공식 공개 레시피). 이후로는 백그라운드 동기화가 없습니다 — HA UI, 레시피 서비스, `configuration.yaml`로 직접 관리하세요.
 - **교차 식별자 지정** — 레시피를 다루는 모든 서비스/도구는 `recipe` 필드 하나로 로컬 uid, 클라우드 table id, 공유 URL/id, 또는 정확한 이름을 받습니다.
 - **수동 제어** — 커스텀 온도/용량/유량/푸어 패턴으로 추출, 커스텀 크기/RPM으로 그라인딩, 저울 **영점(tare)**, 트레이 진동.
+- **그라인딩/추출/레시피 실행 2단계 버튼** — 처음 누르면 기계에 해당 동작을 예약만 하고(그라인더/추출 모드 진입, 또는 선택된 레시피 큐잉) 실제로 시작하지 않아 컵/드리퍼를 준비할 시간을 줌 — 같은 버튼을 한 번 더 누르면 실제 시작 명령이 전송됨. 예약 대기 중에는 `sensor.xbloom_state`가 `armed_grind`/`armed_pour`/`armed_recipe`로 표시되며, 취소 버튼으로 예약만 되고 확정되지 않은 동작을 되돌릴 수 있음. HA 버튼 엔티티에만 적용 — `execute_recipe`/`execute_tea_recipe` 서비스와 모든 LLM 도구는 여전히 한 번의 호출로 추출됨.
 - **브루별 오버라이드** — 레시피를 수정하지 않고 그라인드/RPM/도즈/비율/컵 타입/바이패스를 조정해 브루(dose/ratio 오버라이드는 pour 볼륨을 비례 재계산). 레시피를 선택하면 Grind Size / RPM 슬라이더도 그 값으로 동기화됩니다.
 - **차 레시피** (`cup_type: tea`) — 각 우려내기를 pour 하나로 표현, `pausing`이 곧 소크(우림) 초. 펌웨어가 추출 → 소크 → 사이펀 배수를 내부적으로 처리. 사이펀 메커니즘은 [`brewing-notes.md`](./brewing-notes.md) 참고.
 - **선택된 레시피 조회** — recipe select 엔티티의 `recipe` 속성에 pours / bypass / 온도 등 전체 파라미터가 노출됨. 개발자 도구 → 상태 → `select.xbloom_recipe`, 또는 템플릿에서 `{{ state_attr('select.xbloom_recipe', 'recipe').pours }}`.

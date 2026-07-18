@@ -180,6 +180,99 @@ class RecipesMixin:
         self.rpm = int(raw.get("rpm", self.rpm) or self.rpm)
         self.async_update_listeners()
 
+    def _prepare_recipe_execution(
+        self,
+        *,
+        overrides: Optional[dict],
+        pour_overrides: Optional[List[dict]],
+        bypass_volume: Optional[float],
+        bypass_temperature: Optional[float],
+    ):
+        """Shared pre-brew logic for :meth:`async_execute_recipe` (full
+        single-shot) and :meth:`async_arm_recipe` (arm half of the
+        two-stage manual button flow, 2026-07-18): water check, firmware
+        gate, recipe build with overrides/pour_overrides/grind-rpm-sync
+        applied, and bypass resolution. Both callers apply the exact same
+        checks/overrides/rescaling this way; only what happens after
+        (full brew vs. arm-only) differs between them.
+
+        Returns ``(recipe, is_tea, bypass_vol, bypass_temp)``, or
+        ``None`` if no valid recipe is selected (callers log and no-op).
+        Raises ``HomeAssistantError`` for a low water level or an
+        unsupported-firmware tea recipe — checked before any BLE traffic,
+        so callers should call this before their own ``try`` block.
+        """
+        # Check water BEFORE touching the machine (mode switch, BLE writes,
+        # etc.) — without this, a low-water recipe attempt runs the whole
+        # brew sequence and only fails once the firmware fires
+        # RD_ErrorLackOfWater, so the user finds out mid-attempt instead of
+        # up front. Skipped when the user has told us they're on a direct
+        # (hose) feed: water_level_ok tracks the internal tank sensor, which
+        # stays empty/unreliable by design on a hose setup and would
+        # otherwise block every brew. (This is the same water_source select
+        # that otherwise only affects manual pour — here it's just the
+        # user's declaration of which feed is actually plumbed in.)
+        if self.water_source == WATER_SOURCE_TANK and not self.data.get(
+            "water_level_ok", True
+        ):
+            raise HomeAssistantError(
+                "XBloom water level is too low — refill the tank before brewing."
+            )
+        if not self.selected_recipe or self.selected_recipe not in self.recipes:
+            _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
+            return None
+        # Tea (cmd 4512/4513) doesn't exist on firmware older than
+        # V12.0D.300 — the machine would silently ignore it rather than
+        # refuse cleanly, so check before touching the machine at all
+        # (mode switch included). See MIN_FIRMWARE_TEA's docstring above.
+        raw_cup_type = self.recipes[self.selected_recipe].get("cup_type")
+        if overrides and "cup_type" in overrides:
+            raw_cup_type = overrides["cup_type"]
+        if str(raw_cup_type).lower() == "tea" and not _firmware_at_least(
+            self.data.get("version"), MIN_FIRMWARE_TEA
+        ):
+            raise HomeAssistantError(
+                f"Tea recipes require XBloom firmware {MIN_FIRMWARE_TEA} or newer "
+                f"(current: {self.data.get('version') or 'unknown'})."
+            )
+        raw = self.recipes[self.selected_recipe]
+        if overrides:
+            raw = {**raw, **overrides}
+            if "dose_g" in overrides or "ratio" in overrides:
+                dose = float(raw.get("dose_g", 0) or 0)
+                ratio = raw.get("ratio")
+                if dose > 0 and ratio:
+                    effective_bypass = (
+                        float(raw.get("bypass_volume", 0.0) or 0.0)
+                        if bypass_volume is None else float(bypass_volume)
+                    )
+                    raw["pours"] = scale_pours_to_total(
+                        raw.get("pours", []),
+                        dose * float(ratio) - effective_bypass,
+                    )
+        recipe = _build_recipe_from_yaml(raw)
+        is_tea = brewing.is_tea_recipe(recipe)
+        if not is_tea and recipe.grind_size > 0:
+            recipe.grind_size = int(self.grind_size)
+            recipe.rpm = int(self.rpm)
+        if pour_overrides:
+            _apply_pour_overrides(recipe, pour_overrides)
+        # Bypass — coffee only. Default to the recipe's YAML value; an
+        # explicit override (service / LLM) wins. The tea sequence forces
+        # bypass off internally, so tea always passes 0/0.
+        if is_tea:
+            bypass_vol = bypass_temp = 0.0
+        else:
+            bypass_vol = (
+                float(raw.get("bypass_volume", 0.0) or 0.0)
+                if bypass_volume is None else float(bypass_volume)
+            )
+            bypass_temp = (
+                float(raw.get("bypass_temperature", 0.0) or 0.0)
+                if bypass_temperature is None else float(bypass_temperature)
+            )
+        return recipe, is_tea, bypass_vol, bypass_temp
+
     async def async_execute_recipe(
         self,
         *,
@@ -213,42 +306,21 @@ class RecipesMixin:
         ``sum(pours) + bypass == dose_g * ratio`` (the machine's own
         invariant). Grind/RPM overrides go through the number-entity
         values above instead.
+
+        Always brews in one call — the execute_recipe / execute_tea_recipe
+        services and every LLM tool call this directly. See
+        :meth:`async_arm_recipe`/:meth:`async_confirm_recipe` for the
+        two-stage manual-button form (HA button entity only).
         """
         if not self._check_connected():
             return
-        # Check water BEFORE touching the machine (mode switch, BLE writes,
-        # etc.) — without this, a low-water recipe attempt runs the whole
-        # brew sequence and only fails once the firmware fires
-        # RD_ErrorLackOfWater, so the user finds out mid-attempt instead of
-        # up front. Skipped when the user has told us they're on a direct
-        # (hose) feed: water_level_ok tracks the internal tank sensor, which
-        # stays empty/unreliable by design on a hose setup and would
-        # otherwise block every brew. (This is the same water_source select
-        # that otherwise only affects manual pour — here it's just the
-        # user's declaration of which feed is actually plumbed in.)
-        if self.water_source == WATER_SOURCE_TANK and not self.data.get(
-            "water_level_ok", True
-        ):
-            raise HomeAssistantError(
-                "XBloom water level is too low — refill the tank before brewing."
-            )
-        if not self.selected_recipe or self.selected_recipe not in self.recipes:
-            _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
+        prepared = self._prepare_recipe_execution(
+            overrides=overrides, pour_overrides=pour_overrides,
+            bypass_volume=bypass_volume, bypass_temperature=bypass_temperature,
+        )
+        if prepared is None:
             return
-        # Tea (cmd 4512/4513) doesn't exist on firmware older than
-        # V12.0D.300 — the machine would silently ignore it rather than
-        # refuse cleanly, so check before touching the machine at all
-        # (mode switch included). See MIN_FIRMWARE_TEA's docstring above.
-        raw_cup_type = self.recipes[self.selected_recipe].get("cup_type")
-        if overrides and "cup_type" in overrides:
-            raw_cup_type = overrides["cup_type"]
-        if str(raw_cup_type).lower() == "tea" and not _firmware_at_least(
-            self.data.get("version"), MIN_FIRMWARE_TEA
-        ):
-            raise HomeAssistantError(
-                f"Tea recipes require XBloom firmware {MIN_FIRMWARE_TEA} or newer "
-                f"(current: {self.data.get('version') or 'unknown'})."
-            )
+        recipe, is_tea, bypass_vol, bypass_temp = prepared
         try:
             # ── Auto-switch to PRO mode if the machine is in Easy mode ──
             # Easy Mode silences or misinterprets the 8001/8004/8002 Pro-mode
@@ -257,28 +329,6 @@ class RecipesMixin:
             # sequence is honoured.  The user can switch back via the Mode
             # switch entity if they want physical slot buttons afterwards.
             await self._ensure_pro_mode()
-            raw = self.recipes[self.selected_recipe]
-            if overrides:
-                raw = {**raw, **overrides}
-                if "dose_g" in overrides or "ratio" in overrides:
-                    dose = float(raw.get("dose_g", 0) or 0)
-                    ratio = raw.get("ratio")
-                    if dose > 0 and ratio:
-                        effective_bypass = (
-                            float(raw.get("bypass_volume", 0.0) or 0.0)
-                            if bypass_volume is None else float(bypass_volume)
-                        )
-                        raw["pours"] = scale_pours_to_total(
-                            raw.get("pours", []),
-                            dose * float(ratio) - effective_bypass,
-                        )
-            recipe = _build_recipe_from_yaml(raw)
-            is_tea = brewing.is_tea_recipe(recipe)
-            if not is_tea and recipe.grind_size > 0:
-                recipe.grind_size = int(self.grind_size)
-                recipe.rpm = int(self.rpm)
-            if pour_overrides:
-                _apply_pour_overrides(recipe, pour_overrides)
             # Snapshot the final (post-override, post-rescale) pour list so
             # the "bloom" handler in _dispatch_event can look up each
             # pour's actual flow_rate as the brew progresses.
@@ -286,20 +336,6 @@ class RecipesMixin:
             self._executing_recipe = True
             self._active_operation = "recipe"
             self.current_pour_index = None
-            # Bypass — coffee only. Default to the recipe's YAML value;
-            # an explicit override (service / LLM) wins. The tea sequence
-            # forces bypass off internally, so tea always passes 0/0.
-            if is_tea:
-                bypass_vol = bypass_temp = 0.0
-            else:
-                bypass_vol = (
-                    float(raw.get("bypass_volume", 0.0) or 0.0)
-                    if bypass_volume is None else float(bypass_volume)
-                )
-                bypass_temp = (
-                    float(raw.get("bypass_temperature", 0.0) or 0.0)
-                    if bypass_temperature is None else float(bypass_temperature)
-                )
             # Sleep-retry wrapped (2026-07-18) — see coordinator.
             # connection._async_retry_while_sleeping's docstring. If the
             # machine was asleep, none of this sequence's writes took
@@ -316,6 +352,75 @@ class RecipesMixin:
             self._executing_recipe = False
             self._active_recipe_pours = None
             self._active_operation = None
+
+    async def async_arm_recipe(self) -> None:
+        """First press of the two-stage manual execute-recipe button flow
+        (2026-07-18, HA button entity only — see ``_armed_operation``'s
+        docstring in ``__init__.py``): runs every check
+        :meth:`async_execute_recipe` does and queues the currently
+        selected recipe on the machine (through 8001/8004 for coffee, or
+        4513 for tea) without starting it. ``async_confirm_recipe()``
+        sends the actual go command on a second press of the same button.
+        Always uses the recipe's own stored settings — no overrides,
+        matching the button's no-argument single-shot counterpart.
+        """
+        if not self._check_connected():
+            return
+        prepared = self._prepare_recipe_execution(
+            overrides=None, pour_overrides=None,
+            bypass_volume=None, bypass_temperature=None,
+        )
+        if prepared is None:
+            return
+        recipe, is_tea, bypass_vol, bypass_temp = prepared
+        try:
+            await self._ensure_pro_mode()
+            tea_payload = await self._async_retry_while_sleeping(
+                lambda: brewing.async_arm_recipe(
+                    self.client, recipe,
+                    bypass_volume=bypass_vol,
+                    bypass_temperature=bypass_temp,
+                )
+            )
+            self._armed_operation = "recipe"
+            self._armed_recipe_is_tea = is_tea
+            self._armed_recipe_tea_payload = tea_payload
+            # Snapshot now so pause/resume-adjacent UI (flow rate, etc.)
+            # is ready the instant confirm actually starts the brew —
+            # mirrors async_execute_recipe's own timing relative to its
+            # single BLE call.
+            self._active_recipe_pours = recipe.pours
+        except Exception as exc:
+            _LOGGER.error("Recipe arm error: %s", exc, exc_info=True)
+            self._active_recipe_pours = None
+
+    async def async_confirm_recipe(self) -> None:
+        """Second press of the two-stage manual execute-recipe button
+        flow: send the go command (8002 coffee, 4512 tea) for the recipe
+        queued by :meth:`async_arm_recipe`.
+        """
+        if not self._check_connected():
+            return
+        try:
+            self._executing_recipe = True
+            self._active_operation = "recipe"
+            self.current_pour_index = None
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_confirm_recipe(
+                    self.client,
+                    is_tea=self._armed_recipe_is_tea,
+                    tea_payload=self._armed_recipe_tea_payload,
+                )
+            )
+        except Exception as exc:
+            _LOGGER.error("Recipe confirm error: %s", exc, exc_info=True)
+            self._executing_recipe = False
+            self._active_recipe_pours = None
+            self._active_operation = None
+        finally:
+            self._armed_operation = None
+            self._armed_recipe_is_tea = False
+            self._armed_recipe_tea_payload = None
 
     async def async_write_easy_slot(
         self, slot_letter: str, identifier: Optional[str] = None

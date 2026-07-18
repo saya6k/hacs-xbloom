@@ -67,6 +67,7 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 - `SG_*` scale-gesture commands are not real (vendor-named but never sent by the official app) → [[xbloom-removed-features]]
 - `temperature_c` accepts `"RT"`/`"BP"` — fixed constants (20/98), not computed values → [[xbloom-temperature-name-constants]]
 - Every user-triggered action (grind/pour/tare/calibrate/execute recipe/easy-slot write) must retry while the machine reports itself asleep, not just mode-switch — the official app's `DefaultTimeOut`/1.5s retry is universal, not mode-switch-specific → [[xbloom-wake-retry-universal-pattern]]
+- `button.grind`/`button.pour`/`button.execute_recipe` are two-stage (arm then confirm on a 2nd press) — HA-button-only, services/LLM tools still act in one call → [[xbloom-two-stage-arm-confirm-buttons]]
 
 If a quirk you're debugging isn't in this checklist, it may not have been hit yet — check `docs/en/protocol.md`'s command table for the id's confirmed/unconfirmed status before assuming new behavior, and write a new memory entry (project-type) once you've root-caused it, rather than growing this file.
 
