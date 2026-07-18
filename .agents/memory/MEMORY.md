@@ -16,7 +16,7 @@
 - [Advanced Features jadx findings](xbloom_advanced_features_jadx_findings.md) — pour radius/vibration/brightness/calibration payloads; descale unresolved.
 - [Advanced settings transport bugs](xbloom_advanced_settings_transport_bugs.md) — 5-layer saga: offset scan, type_code=2, marker byte, handshake timing, 0.3s gap.
 - [Easy Mode ACK marker + mode-switch retry](xbloom_easymode_ack_marker_and_mode_switch_retry.md) — 11511 marker fix; retry spec mirrors official app + sleep tracking.
-- [Manual operation command targeting](xbloom_manual_operation_command_targeting.md) — pause/cancel must branch on _active_operation, not assume recipe.
+- [Manual operation command targeting](xbloom_manual_operation_command_targeting.md) — pause/cancel must branch on _active_operation; manual pour's 8007 prelude removed (raced 4506, needed manual touchscreen tap).
 - [Dismiss pod prompt (8017)](xbloom_dismiss_pod_prompt_8017.md) — folded into cancel button via _pod_prompt_active.
 - [Grinder calibration completion saga](xbloom_grinder_calibration_completion_signal_saga.md) — 6-round saga; only RD_CurrentGrinder==85/timeout may clear calibrating.
 - [Service config_entry targeting](xbloom_service_config_entry_targeting.md) — selector migration + string-iteration bug broke every targeted service call.
