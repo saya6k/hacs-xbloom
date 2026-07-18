@@ -10,8 +10,9 @@
 > 통합 자체의 실제 하드웨어 캡처와, 공식 안드로이드 앱
 > (`xbloom_coffee_release.apk`)을 `androguard`/`jadx`로 정적 디컴파일한
 > 결과(zip/dex/소스 덤프로만 확인 — 배포되거나 재배포된 적 없음)를 바탕으로
-> 새로 작성되었습니다. 벤더 문서인 `src/xbloom-ble/PROTOCOL.md`를 1차
-> 레퍼런스로 삼던 방식을 대체합니다 — 이유는
+> 새로 작성되었습니다. upstream 문서인 `xbloom-ble/PROTOCOL.md`를 1차
+> 레퍼런스로 삼던 방식을 대체합니다(이 upstream은 예전에 저장소에 벤더링되어
+> 있었으나 이후 제거됨) — 이유는
 > [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고.
 > 아래 모든 주장은 실기 캡처 또는 특정 디컴파일된 클래스/메서드로 추적
 > 가능하며, 독립적으로 확인되지 않은 내용은 사실처럼 서술하지 않고 그렇게

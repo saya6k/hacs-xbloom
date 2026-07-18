@@ -11,8 +11,6 @@ This file briefs Claude / GPT / other coding agents on the conventions and load-
 ```
 ha_xbloom/
 ├── custom_components/xbloom/      ← the HA integration (edit this)
-│   ├── src/xbloom/                ← REFERENCE COPY of upstream #1 (fhenwood/PyBloom) — DO NOT MODIFY, not imported at runtime
-│   ├── src/xbloom-ble/            ← REFERENCE COPY of upstream #2 (brAzzi64/xbloom-ble) — DO NOT MODIFY, not imported at runtime
 │   ├── llm/                       ← LLM tools platform (entry point + catalog + tools)
 │   ├── translations/              ← per-locale entity/config UI strings
 │   ├── strings.json               ← English source-of-truth for translations
@@ -34,7 +32,7 @@ ha_xbloom/
 
 ## Hard rules
 
-1. **`src/xbloom` and `src/xbloom-ble` are reference/attribution copies, not runtime dependencies.** Both mirror their upstreams (`fhenwood/PyBloom`, `brAzzi64/xbloom-ble`) byte-for-byte and must never be modified. Per [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md), this integration's BLE client, framing, and command table are a clean-room native implementation in `custom_components/xbloom/ble/` (`constants.py`/`framing.py`/`models.py`/`connection.py`/`client.py`/`components.py`/`scanner.py`) — built from this integration's own hardware findings and `docs/en/protocol.md`, not by importing or patching the vendored source. Nothing outside `tests/` imports from `xbloom.*` — a handful of tests still import the vendored package directly as a parity oracle (proving the native package is byte-exact with what it replaced), which is the one place that's still expected.
+1. **The BLE client is a clean-room native implementation; the reverse-engineered upstreams are no longer vendored.** This integration's BLE client, framing, and command table live in `custom_components/xbloom/ble/` (`constants.py`/`framing.py`/`models.py`/`connection.py`/`client.py`/`components.py`/`scanner.py`) — built from this integration's own hardware findings and `docs/en/protocol.md`, not by copying or patching any upstream. The two upstreams it originally replaced (`fhenwood/PyBloom`, `brAzzi64/xbloom-ble`, both MIT) were once vendored under `custom_components/xbloom/src/` as byte-for-byte reference copies; per [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md) (amended 2026-07-18) they have been **removed** and are now credited by link only (see README). No runtime or test code imports `xbloom.*` anymore — the former parity tests were converted to golden-vector tests (frozen wire bytes captured from the vendored oracle before removal; see `tests/test_ble_framing.py`). Do not re-add the vendored trees or reintroduce an `xbloom.*` import.
 2. **Never set `_attr_name` on an entity that has `_attr_translation_key`.** HA's `Entity._name_internal` returns `_attr_name` first and never consults the translation map afterwards — this silently breaks every non-English UI. Pick one or the other.
 3. **Translations live in two places.** `strings.json` is the English source of truth; `translations/<lang>.json` files are the localized copies. They must share the same key tree. Add a Korean entry to `translations/ko.json` whenever you add an English entry to `strings.json`.
 4. **Icons live in `icons.json`, not in entity classes.** Don't set `_attr_icon` unless the icon is dynamic (e.g. `XBloomErrorSensor` flips based on string content). Static icons go in `icons.json` keyed by `entity.<platform>.<translation_key>.default` (with optional `.state` map).
@@ -43,7 +41,7 @@ ha_xbloom/
 
 ## BLE protocol
 
-**Full reference**: [`docs/en/protocol.md`](docs/en/protocol.md) (Korean: [`docs/ko/protocol.md`](docs/ko/protocol.md)) — packet framing, the complete command table (every `APP_*`/`RD_*` id this integration sends or handles, with status/payload/notes), and a summary of known transport quirks. Written fresh from this integration's own captures and APK decompilation (`androguard`/`jadx` against the official Android app) — treat it as more authoritative than the vendored `src/xbloom-ble/PROTOCOL.md`.
+**Full reference**: [`docs/en/protocol.md`](docs/en/protocol.md) (Korean: [`docs/ko/protocol.md`](docs/ko/protocol.md)) — packet framing, the complete command table (every `APP_*`/`RD_*` id this integration sends or handles, with status/payload/notes), and a summary of known transport quirks. Written fresh from this integration's own captures and APK decompilation (`androguard`/`jadx` against the official Android app) — treat it as the authoritative protocol reference (it superseded the upstream `xbloom-ble/PROTOCOL.md`, which is no longer vendored).
 
 Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | const(0x01) | payload | crc(2)`. Type-2 commands (`11506`–`11512` family — mode switch, Easy Mode slots, pour radius/vibration amplitude) need `type_code=2` and a `0xC2` response marker instead of the usual `0xC1`, plus ≥0.8s spacing between back-to-back type-2 sends. The `8100` MTU handshake gates every other command.
 

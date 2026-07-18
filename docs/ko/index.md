@@ -4,10 +4,10 @@
 
 [XBloom Studio](https://xbloom.com/) 커피머신을 Home Assistant에서 로컬 블루투스로 제어. 추출, 그라인딩, 저장된 레시피 실행, Assist(LLM) 노출 — 모두 클라우드 없이.
 
-두 개의 리버스 엔지니어링된 BLE upstream이 밝혀낸 프로토콜 작업 위에서 구축 — 저장소에는 수정하지 않은 레퍼런스/저작권 표시용 사본으로만 남아 있음([ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고 — BLE 클라이언트 자체는 둘 중 어느 쪽에도 런타임 의존하지 않는 클린룸 네이티브 구현):
+두 개의 리버스 엔지니어링된 BLE upstream이 밝혀낸 프로토콜 작업 위에서 구축. BLE 클라이언트 자체는 어느 upstream도 import·복사하지 않는 클린룸 네이티브 구현이며([ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고), 이 upstream들은 예전에 저장소에 벤더링된 레퍼런스 사본이었으나 이후 제거되어 이제는 링크로만 크레딧을 표기함:
 
-- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) — `custom_components/xbloom/src/xbloom/`.
-- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) — `custom_components/xbloom/src/xbloom-ble/`.
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) (MIT).
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) (MIT).
 
 이 통합을 가능하게 한 프로토콜 작업에 Frederic, PyBloom 기여자들, Bruno Azzinnari에게 큰 감사를.
 
@@ -198,4 +198,4 @@ scripts/develop
 
 ## 라이선스
 
-[MIT](../../LICENSE) — vendored upstream 양쪽의 저작권(`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, 각자 MIT `LICENSE` 파일 보유)을 보존하고 통합 자체의 저작권 행을 추가.
+[MIT](../../LICENSE). 이 통합의 프로토콜 작업이 참고한 두 리버스 엔지니어링 upstream — [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom)과 [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble), 둘 다 MIT — 은 예전에 저장소에 벤더링되어 있었으나 이후 제거되었으며([ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고), 이제는 벤더 사본이 아니라 링크로 크레딧을 표기함. upstream 코드는 이 저장소 자체의 MIT 라이선스 소스에 복사되지 않았음.
