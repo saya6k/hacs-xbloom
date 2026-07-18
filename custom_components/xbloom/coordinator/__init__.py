@@ -215,6 +215,28 @@ class XBloomCoordinator(
         # the matching completion event.
         self._active_operation: Optional[str] = None
 
+        # Two-stage arm/confirm manual button flow (2026-07-18) — a first
+        # button press queues the operation on the machine (enter grinder/
+        # pour mode, or queue a recipe) without starting anything
+        # irreversible, giving the user time to place a cup etc.; a second
+        # press on the SAME button sends the actual go/start command.
+        # HA-button-only by design (button.py) — the execute_recipe /
+        # execute_tea_recipe services, async_grind()/async_pour(), and
+        # every LLM tool still act in one call, unchanged. One of "grind" /
+        # "pour" / "recipe" / None. No timeout: stays armed until confirmed
+        # or cancelled (async_cancel() clears it via a Back to Home reset).
+        # sensor.state surfaces it as "armed_grind"/"armed_pour"/
+        # "armed_recipe" (see state.py) so the user knows a second press is
+        # needed.
+        self._armed_operation: Optional[str] = None
+        # Only meaningful while _armed_operation == "recipe" — which go
+        # command async_confirm_recipe() must send, and (tea only) the
+        # exact payload bytes 4512 must re-send (brewing.async_confirm_recipe
+        # can't rebuild them itself; the firmware expects the identical
+        # bytes from the matching 4513).
+        self._armed_recipe_is_tea: bool = False
+        self._armed_recipe_tea_payload: Optional[bytes] = None
+
         # Track whether we temporarily switched to Pro Mode for an HA
         # operation.  When the operation completes we switch back to the
         # default (Easy) mode so the physical slot buttons work again.

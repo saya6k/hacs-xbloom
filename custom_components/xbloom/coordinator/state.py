@@ -64,10 +64,20 @@ class StateMixin:
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
                 raw_label = s.raw_state_label
-                if self.client.is_calibrating_grinder():
-                    # Highest priority — a deliberate, HA-triggered action
-                    # (see async_calibrate_grinder()) we know is actually
-                    # running, not inferred from ambiguous telemetry.
+                if self._armed_operation:
+                    # Highest priority of all — the two-stage arm/confirm
+                    # manual button flow's armed state (2026-07-18) is
+                    # pure HA-side bookkeeping, not inferred from
+                    # telemetry at all, so it's even more certain than
+                    # is_calibrating_grinder() below. armed_grind /
+                    # armed_pour / armed_recipe — see _armed_operation's
+                    # docstring in __init__.py.
+                    state_str = f"armed_{self._armed_operation}"
+                elif self.client.is_calibrating_grinder():
+                    # Next-highest priority — a deliberate, HA-triggered
+                    # action (see async_calibrate_grinder()) we know is
+                    # actually running, not inferred from ambiguous
+                    # telemetry.
                     state_str = "calibrating"
                 elif self._no_beans:
                     state_str = "no_beans"

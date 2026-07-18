@@ -189,7 +189,10 @@
           "water_shortage": "Water Shortage",
           "ready": "Ready",
           "starting": "Starting",
-          "calibrating": "Calibrating"
+          "calibrating": "Calibrating",
+          "armed_grind": "Armed (Grind)",
+          "armed_pour": "Armed (Pour)",
+          "armed_recipe": "Armed (Recipe)"
         }
       },
       "weight": {

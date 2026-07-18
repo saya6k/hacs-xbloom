@@ -46,6 +46,18 @@ class GrinderController:
         await asyncio.sleep(2.0)
         return await self._client._send_command(Command.GRINDER_START)
 
+    async def confirm_start(self) -> bool:
+        """Send the bare start command only — no enter_mode()/sleep.
+
+        For the two-stage arm/confirm manual-grind button flow (2026-07-18):
+        enter_mode() is sent alone as the "arm" press (size/speed set,
+        burrs adjust), and this is sent alone as the second "confirm"
+        press once the user is ready — the real user-paced gap between
+        presses replaces the fixed 2.0s sleep start() uses for its
+        single-shot form.
+        """
+        return await self._client._send_command(Command.GRINDER_START)
+
     async def stop(self) -> bool:
         return await self._client._send_command(Command.GRINDER_STOP)
 
@@ -75,6 +87,20 @@ class GrinderController:
 class BrewerController:
     def __init__(self, client: "XBloomClient") -> None:
         self._client = client
+
+    async def enter_mode(self) -> bool:
+        """RD_BREWER_IN (8007) — "enter pour page", bare, no payload.
+
+        For the two-stage arm/confirm manual-pour button flow (2026-07-18)
+        only — the "arm" press. NOT sent automatically before start(); an
+        earlier attempt at that sent this immediately before start() with
+        no gap and raced the machine's screen transition, dropping the
+        start command (see AGENTS.md / project memory
+        xbloom-manual-operation-command-targeting). Safe here because a
+        real user-paced gap (waiting for the second button press)
+        separates the two.
+        """
+        return await self._client._send_command(Command.BREWER_IN)
 
     async def start(
         self,
