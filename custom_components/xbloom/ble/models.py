@@ -1,7 +1,7 @@
 """XBloom device status and recipe payload models.
 
-Native replacement for ``src/xbloom/models/types.py`` and
-``src/xbloom/models/recipes.py``. The status dataclasses fold in fields
+Native replacement for the upstream PyBloom's ``models/types.py`` and
+``models/recipes.py``. The status dataclasses fold in fields
 that were previously bolted onto the vendored ``DeviceStatus`` instance as
 untyped ad-hoc attributes at runtime (``is_calibrating_grinder``,
 ``is_sleeping``, ``mode_ack_hex``, ``mode_bytes``, ``raw_state_label``,

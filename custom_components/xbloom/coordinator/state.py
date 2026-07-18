@@ -90,7 +90,7 @@ class StateMixin:
                     if state_str == "unknown":
                         # Vendored DeviceState defaults to UNKNOWN and only
                         # ever transitions to IDLE on a Grinder/Brewer
-                        # Begin/Stop event (src/xbloom/core/client.py) — on
+                        # Begin/Stop event (the upstream PyBloom's core/client.py) — on
                         # a connection where the machine has never
                         # ground/brewed yet, nothing ever sets it, so a
                         # genuinely idle, connected machine reports

@@ -1,11 +1,11 @@
 """HA-side brew orchestration.
 
-Cherry-picks BLE sequences from ``src/xbloom-ble/python/xbloom.py``
-(brAzzi64/xbloom-ble) without modifying either vendored upstream.
+Cherry-picks BLE sequences from the upstream brAzzi64/xbloom-ble's
+``python/xbloom.py`` (no upstream code is copied or vendored — see ADR-001).
 
 Coffee brews go through ``_async_brew_coffee`` (inline sequence) rather
-than the vendored ``XBloomClient.brew`` / ``brew_without_grinding``,
-because we need two things the vendored API doesn't expose:
+than the upstream PyBloom's ``XBloomClient.brew`` / ``brew_without_grinding``,
+because we need two things that upstream API doesn't expose:
   - an 8022 (Back to Home) prelude — without it a coffee brew after a
     previous tea brew (4513) falls back to a center pour instead of the
     recipe's pattern
@@ -43,26 +43,25 @@ from .ble.constants import Command
 
 _LOGGER = logging.getLogger(__name__)
 
-# Cherry-picked from src/xbloom-ble/python/xbloom.py CUP_TYPE_RANGES.
-# Min is forced to 0.0 to match the safety-bypass pattern the vendored
-# src/xbloom uses for the coffee cup types (see
-# src/xbloom/core/client.py ``brew_without_grinding`` cup_bounds — the
-# upstream PyBloom comment explains the 0 g telemetry issue that drives
-# the bypass).
+# Cherry-picked from the upstream xbloom-ble's python/xbloom.py CUP_TYPE_RANGES.
+# Min is forced to 0.0 to match the safety-bypass pattern the upstream
+# PyBloom uses for the coffee cup types (see its
+# core/client.py ``brew_without_grinding`` cup_bounds — the upstream
+# comment explains the 0 g telemetry issue that drives the bypass).
 _TEA_CUP_BOUNDS = (200.0, 0.0)
 
-# 8022 — RD_BackToHome. Constant lives in XBloomResponse in our vendored
-# upstream because the HCI capture only confirmed inbound use, but the
+# 8022 — RD_BackToHome. The upstream PyBloom kept this constant in
+# XBloomResponse because the HCI capture only confirmed inbound use, but the
 # brAzzi64 capture shows the official app sends it outbound at brew
 # start. Hardcoded here as an int to avoid coupling to either enum.
 _CMD_BACK_TO_HOME = 8022
 
-# 8500 — Scale tare/zero. Cherry-picked from
-# src/xbloom-ble/python/xbloom.py (CMD_TARE).
+# 8500 — Scale tare/zero. Cherry-picked from the upstream
+# xbloom-ble's python/xbloom.py (CMD_TARE).
 _CMD_TARE = 8500
 
-# 11510 — Easy Mode recipe send. Type-2 packet. See
-# src/xbloom-ble/PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
+# 11510 — Easy Mode recipe send. Type-2 packet. See the upstream
+# xbloom-ble's PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
 _CMD_EASY_RECIPE_SEND = 11510
 
 # 11512 — Easy Mode slot order. Type-2 packet, hex-string payload.
@@ -72,8 +71,8 @@ _CMD_EASY_RECIPE_SEND = 11510
 # entry for the full validation sweep.
 _CMD_EASY_RECIPE_ORDER = 11512
 
-# Easy Mode slot flag byte. Cherry-picked from
-# src/xbloom-ble/python/xbloom.py (slot_flags / SLOT_GRINDER_*).
+# Easy Mode slot flag byte. Cherry-picked from the upstream
+# xbloom-ble's python/xbloom.py (slot_flags / SLOT_GRINDER_*).
 # Bit 4 (0x10) = scale ON; lower nibble = grinder (0x02 ON / 0x04 OFF).
 _SLOT_GRINDER_OFF = 0x04
 _SLOT_GRINDER_ON = 0x02
@@ -83,7 +82,7 @@ _SLOT_INDEX_BY_LETTER = {"A": 0, "B": 1, "C": 2}
 
 
 def slot_flags(scale_on: bool, grinder_on: bool) -> int:
-    """Mirrors src/xbloom-ble/python/xbloom.py:slot_flags()."""
+    """Mirrors the upstream xbloom-ble's python/xbloom.py:slot_flags()."""
     flags = _SLOT_GRINDER_ON if grinder_on else _SLOT_GRINDER_OFF
     if scale_on:
         flags |= _SLOT_SCALE_BIT
@@ -500,7 +499,7 @@ async def async_confirm_recipe(
 async def async_tare(client) -> None:
     """Zero the scale (cmd 8500).
 
-    Mirrors ``send_command.py tare`` in src/xbloom-ble. No payload.
+    Mirrors ``send_command.py tare`` in the upstream xbloom-ble. No payload.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -549,7 +548,7 @@ async def async_write_easy_slots(
     didn't ask to change from its own local record of what HA last wrote.
 
     Mirrors ``send_command.py slot`` plus ``build_slot_packet`` /
-    ``slot_flags`` in src/xbloom-ble. The ``grinder_on`` flag is derived
+    ``slot_flags`` in the upstream xbloom-ble. The ``grinder_on`` flag is derived
     per-recipe (any positive grind_size + bean_weight implies the slot
     should grind).
 

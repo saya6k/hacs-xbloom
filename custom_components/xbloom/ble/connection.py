@@ -1,8 +1,8 @@
 """HA-aware BLE transport for the native XBloom client.
 
 Native replacement for ``_client.py``'s ``HABleakConnection`` (which
-subclassed the vendored ``xbloom.connection.XBloomConnection`` ABC) and
-``src/xbloom/connection/bleak_impl.py``'s bare ``BleakClient`` connector.
+subclassed the upstream PyBloom's ``xbloom.connection.XBloomConnection`` ABC) and
+its ``connection/bleak_impl.py`` bare ``BleakClient`` connector.
 
 Connects through HA's Bluetooth integration
 (``bluetooth.async_ble_device_from_address`` + ``bleak_retry_connector.

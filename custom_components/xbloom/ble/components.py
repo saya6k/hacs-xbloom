@@ -1,6 +1,6 @@
 """Grinder/brewer command senders.
 
-Native replacement for ``src/xbloom/components/grinder.py`` and
+Native replacement for the upstream PyBloom's ``components/grinder.py`` and
 ``brewer.py``. ``ScaleController`` has no native equivalent — nothing in
 this integration calls ``client.scale.*`` (scale weight is read from
 ``client.status.scale.weight`` instead), and the vendored ``ScaleController``

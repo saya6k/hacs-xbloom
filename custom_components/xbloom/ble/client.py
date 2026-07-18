@@ -1,6 +1,6 @@
 """Native XBloom Studio BLE client.
 
-Replaces both the vendored ``src/xbloom/core/client.py`` (base connection/
+Replaces both the upstream PyBloom's ``core/client.py`` (base connection/
 send/receive) and ``_client.py``'s ``XBloomClientWithEvents`` (the override
 layer that had grown to dominate actual runtime behavior) with one
 consolidated implementation — see
@@ -40,7 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 EventCallback = Callable[[str, str, dict], None]
 StatusCallback = Callable[[DeviceStatus], None]
 
-# MachineInfo payload byte offsets (from src/xbloom-ble/PROTOCOL.md's field
+# MachineInfo payload byte offsets (from the upstream xbloom-ble's PROTOCOL.md field
 # map, plus two more cross-referenced against a third-party HA integration
 # — see docs/en/protocol.md and project memory for provenance).
 _MACHINE_INFO_MODE_OFFSET = 51
@@ -104,7 +104,7 @@ _ERROR_MAP = {
 def strict_ascii(data: bytes) -> str:
     """Printable-ASCII (0x20-0x7E) bytes only, trimmed.
 
-    Cherry-picked from ``src/xbloom-ble/python/xbloom.py``
+    Cherry-picked from the upstream xbloom-ble's ``python/xbloom.py``
     ``_handshake_notify._hex_ascii``. MachineInfo string fields are
     0xFF-padded, not NUL-padded — a naive UTF-8 decode lets 0xFF runs
     through whenever they form a valid sequence with neighboring bytes.
