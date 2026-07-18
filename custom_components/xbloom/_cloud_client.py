@@ -1,7 +1,7 @@
 """HTTP client for the XBloom cloud account API (recipe sync).
 
-Separate from the vendored ``src/xbloom`` / ``src/xbloom-ble`` BLE
-libraries — this talks to XBloom's own cloud REST API over HTTPS, the
+Separate from the native ``ble/`` BLE stack — this talks to XBloom's own
+cloud REST API over HTTPS, the
 same one the official iOS app uses to store/share recipes. Endpoint
 paths, payload shapes, and the RSA public key below were confirmed by
 reading the *raw source* of the reference MCP server

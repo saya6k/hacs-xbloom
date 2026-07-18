@@ -1,11 +1,13 @@
-"""Tests for the native ble/framing.py — Phase 2a of the de-vendoring
-refactor (see adr/001-clean-room-reimplementation-of-xbloom-ble.md).
+"""Tests for the native ble/framing.py (see
+adr/001-clean-room-reimplementation-of-xbloom-ble.md).
 
-Parity tests cross-check against the vendored src/xbloom implementation
-(a reference-only copy per the ADR, still safe to *import in tests* as an
-oracle even though runtime code no longer does) to prove byte-exact
-equivalence — the concrete form of "the existing pytest suite is the
-compatibility oracle" the ADR describes.
+The build_packet/crc16 tests below pin byte-exact wire output against
+*golden vectors* — hex strings captured from the former vendored src/xbloom
+oracle at de-vendoring time, while it still existed to generate them. The
+vendored tree has since been removed (it lived on only as a reference copy);
+these frozen vectors are what remains of "the existing pytest suite is the
+compatibility oracle" the ADR describes, and they still catch any drift in
+the native framing.
 
 Fuzz-style tests cover iter_frames' untrusted-input surface (the raw BLE
 notification buffer) per the plan's probatio-inspired mandate: this parser
@@ -21,45 +23,49 @@ import pytest
 
 from custom_components.xbloom.ble import framing
 
-xbloom_builder = pytest.importorskip("xbloom.protocol.builder")
-xbloom_constants = pytest.importorskip("xbloom.protocol.constants")
 
-
-def test_crc16_matches_vendor():
-    for data in (b"", b"\x00", b"\x58\x01\x01\x19\x1f", bytes(range(64))):
-        assert framing.crc16(data) == xbloom_constants.crc16(data)
+def test_crc16_matches_golden():
+    golden = {
+        b"": 0,
+        b"\x00": 0,
+        b"\x58\x01\x01\x19\x1f": 50138,
+        bytes(range(64)): 26673,
+    }
+    for data, expected in golden.items():
+        assert framing.crc16(data) == expected
 
 
 @pytest.mark.parametrize(
-    "command,data,type_code,device_id",
+    "command,data,type_code,device_id,expected",
     [
-        (8100, [185, 1], 1, 1),
-        (3500, [45, 90], 1, 1),
-        (40519, None, 1, 1),
-        (11511, [1], 2, 1),
-        (8002, [], 1, 3),
+        (8100, [185, 1], 1, 1, "580101a41f1400000001b900000001000000bdd1"),
+        (3500, [45, 90], 1, 1, "580101ac0d14000000012d0000005a0000008b38"),
+        (40519, None, 1, 1, "580101479e0c00000001553e"),
+        (11511, [1], 2, 1, "580102f72c100000000101000000918c"),
+        (8002, [], 1, 3, "580301421f0c000000018554"),
     ],
 )
-def test_build_packet_matches_vendor(command, data, type_code, device_id):
+def test_build_packet_matches_golden(command, data, type_code, device_id, expected):
     ours = framing.build_packet(command, data, type_code=type_code, device_id=device_id)
-    theirs = xbloom_builder.build_command(
-        command, data, type_code=type_code, device_id=device_id
-    )
-    assert ours == theirs
+    assert ours.hex() == expected
 
 
 @pytest.mark.parametrize(
-    "command,data,type_code",
+    "command,data,type_code,expected",
     [
-        (8004, b"\x01\x02\x03", 1),
-        (4513, bytes(range(20)), 1),
-        (11510, b"", 1),
+        (8004, b"\x01\x02\x03", 1, "580101441f0f0000000101020388ba"),
+        (
+            4513,
+            bytes(range(20)),
+            1,
+            "580101a1112000000001000102030405060708090a0b0c0d0e0f10111213a317",
+        ),
+        (11510, b"", 1, "580101f62c0c00000001f33b"),
     ],
 )
-def test_build_packet_raw_matches_vendor(command, data, type_code):
+def test_build_packet_raw_matches_golden(command, data, type_code, expected):
     ours = framing.build_packet_raw(command, data, type_code=type_code)
-    theirs = xbloom_builder.build_command_raw(command, data, type_code=type_code)
-    assert ours == theirs
+    assert ours.hex() == expected
 
 
 def _response_frame(

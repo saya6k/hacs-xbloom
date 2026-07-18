@@ -1,7 +1,7 @@
 # ADR-001: Clean-room reimplementation of the XBloom BLE client
 
 **Date**: 2026-07-17
-**Status**: Accepted
+**Status**: Accepted — amended 2026-07-18 (vendored reference copies removed; see Amendment below)
 
 **Context**: This integration vendors two reverse-engineered upstreams —
 [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) at `src/xbloom/`
@@ -79,3 +79,30 @@ neither is imported by any runtime code once this migration completes.
   from this point on.
 - Hard rule #1 in `AGENTS.md` is updated to describe this as the current
   state rather than "wrap or override."
+
+## Amendment (2026-07-18): vendored reference copies removed
+
+The original decision kept `src/xbloom` and `src/xbloom-ble` checked in as
+byte-for-byte reference/attribution copies. With the native `ble/` package
+fully established and nothing but a handful of tests still importing the
+vendored `xbloom.*` package as a parity oracle, keeping ~440 KB of
+never-imported source in-tree stopped earning its place. The two trees have
+now been **deleted** from the repository.
+
+What changes:
+
+- **`custom_components/xbloom/src/` is gone.** The reverse-engineered
+  upstreams are credited by link only — see the README's attribution and
+  License sections for the repo URLs and each project's MIT license.
+- **The parity tests no longer import the vendored package.** The three
+  vendor-cross-check tests in `tests/test_ble_framing.py` and
+  `tests/test_ble_models.py` were converted to **golden-vector** tests: the
+  exact wire bytes were captured from the vendored oracle while it still
+  existed, and are now frozen as hex literals in those tests. This preserves
+  the byte-exact regression signal without the dependency.
+
+What does **not** change: the native `ble/` package is still clean-room (no
+vendor code was ever copied into it), so removing the reference copies has no
+effect on the integration's own licensing. This amendment supersedes only the
+"remain in the repo" consequence above; the decision to reimplement natively
+stands unchanged.

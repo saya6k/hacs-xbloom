@@ -4,10 +4,10 @@
 
 Local Bluetooth control of an [XBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
 
-Built on the protocol work of two reverse-engineered BLE upstreams, kept in the repo as unmodified reference/attribution copies (see [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) — the BLE client itself is a clean-room native implementation, not a runtime dependency on either):
+Built on the protocol work of two reverse-engineered BLE upstreams. Its BLE client is a clean-room native implementation (see [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md)) that does not import or copy either upstream; the upstreams were formerly vendored in-tree as reference copies and have since been removed, so they are credited by link only:
 
-- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) at `custom_components/xbloom/src/xbloom/`.
-- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) at `custom_components/xbloom/src/xbloom-ble/`.
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) (MIT).
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) (MIT).
 
 Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the protocol work that makes this integration possible.
 
@@ -178,7 +178,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 ## Known limitations
 
-- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
+- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi + cloud IoT protocol (mapped out in [`protocol-original-j20.md`](./protocol-original-j20.md)), and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
 - **MachineInfo on some firmwares**: certain firmware revisions never push `RD_MachineInfo`, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection on those firmwares.
 - **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `execute_xbloom_recipe` tool asks for explicit confirmation when this happens.
 - **Recipe water source**: the manual pour entity respects the water source configured under Settings → Devices & Services → XBloom → Configure → Settings (tank vs. direct plumbed); recipe execution does not — the firmware runs its own pour sequence internally.
@@ -186,7 +186,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 ## Development
 
-See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md); for the full packet framing and command-id reference see [`protocol.md`](./protocol.md). See [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) for why the BLE client is a clean-room native implementation rather than a vendored-and-patched one.
+See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md); for the full packet framing and command-id reference see [`protocol.md`](./protocol.md). For the decompile-derived (unverified) map of the XBloom **Original** Wi-Fi/cloud protocol see [`protocol-original-j20.md`](./protocol-original-j20.md). See [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) for why the BLE client is a clean-room native implementation rather than a vendored-and-patched one.
 
 A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA **dev-nightly** Docker image (pinned in `.devcontainer/devcontainer.json` to the same version as `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 
@@ -198,4 +198,4 @@ HA binds the standard port 8123 inside the container. The container's hostname i
 
 ## License
 
-[MIT](../../LICENSE) — preserves both vendored upstream copyrights (`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, each carrying its own MIT `LICENSE` file) and adds the integration's own copyright line.
+[MIT](../../LICENSE). The two reverse-engineered upstreams this integration's protocol work draws on — [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) and [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble), both MIT — were formerly vendored in-tree and have since been removed (see [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md)); they are credited by link rather than by vendored copy. No upstream code is copied into this repository's own MIT-licensed source.

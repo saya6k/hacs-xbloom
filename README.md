@@ -11,12 +11,12 @@
 
 Local Bluetooth control of an [XBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
 
-Built on two reverse-engineered BLE upstreams, both vendored:
+Built on the protocol work of two reverse-engineered BLE upstreams. The BLE client here is a **clean-room native implementation** ([`custom_components/xbloom/ble/`](custom_components/xbloom/ble/), see [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md)) — it does not import or copy either upstream. Both were formerly vendored under `custom_components/xbloom/src/` as unmodified reference copies and have since been removed; they are credited by link only:
 
-- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) at `custom_components/xbloom/src/xbloom/` — the class-based client library powering connection, status, grinder/brewer/scale components, and the coffee brew flow.
-- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) at `custom_components/xbloom/src/xbloom-ble/` — HCI-snoop-confirmed protocol decode (`PROTOCOL.md`) that the tea recipe flow in `brewing.py` cherry-picks from.
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) (MIT) — the class-based client library whose connection/status/grinder/brewer/scale design informed the native client and coffee brew flow.
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) (MIT) — HCI-snoop-confirmed protocol decode (`PROTOCOL.md`) that the tea recipe flow in `brewing.py` drew from.
 
-Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the protocol work that makes this integration possible.
+This integration's own protocol reference now lives in [`docs/en/protocol.md`](docs/en/protocol.md), written from its own captures and APK decompilation. Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the protocol work that makes this integration possible.
 
 ## Features
 
@@ -240,4 +240,9 @@ HA binds the standard port 8123 inside the container. The container's hostname i
 
 ## License
 
-[MIT](LICENSE) — preserves both vendored upstream copyrights (`fhenwood/PyBloom` at `src/xbloom/`, `brAzzi64/xbloom-ble` at `src/xbloom-ble/`, each carrying its own MIT `LICENSE` file) and adds the integration's own copyright line.
+[MIT](LICENSE). This integration draws on the protocol work of two reverse-engineered upstreams, both MIT-licensed and both credited by link (they were formerly vendored in-tree and have since been removed — see [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md)):
+
+- [`fhenwood/PyBloom`](https://github.com/fhenwood/PyBloom) — MIT.
+- [`brAzzi64/xbloom-ble`](https://github.com/brAzzi64/xbloom-ble) — MIT, © Bruno Azzinnari.
+
+No upstream code is copied into this repository's own clean-room source; the native BLE client was built independently (see ADR-001). The MIT terms of both upstreams are satisfied by attribution to their repositories, where each project's own `LICENSE` lives.

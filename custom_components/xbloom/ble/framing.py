@@ -1,6 +1,6 @@
 """XBloom Studio BLE packet framing.
 
-Native replacement for ``src/xbloom/protocol/builder.py``/``parser.py`` and
+Native replacement for the upstream PyBloom's ``protocol/builder.py``/``parser.py`` and
 the framing loop previously duplicated between the vendored
 ``XBloomClient._on_notification`` and its override in ``_client.py``
 (``_split_and_parse``). See ``docs/en/protocol.md`` for the wire-level

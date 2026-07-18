@@ -5,6 +5,8 @@
 - [Additive variant split](feedback_additive_variant_split.md) — splitting a service/entity for a variant (coffee/tea): add a leaner sibling, don't restructure the original, keep shared field names.
 - [Commit incrementally](feedback_commit_incrementally.md) — commit each discrete change as it lands, don't batch a whole session into one uncommitted diff.
 - [rc.19 hardware verification](project_rc19_hardware_verification.md) — PRs #80-83 (8015/4508 sync, split writes, tea events) decompile-derived, pending real-hardware checks via prerelease.
+- [Original J20 cloud protocol](xbloom_original_j20_cloud_protocol.md) — Original = J20 = Wi-Fi + AWS IoT thing-shadow, no BLE control path; mapped in docs/*/protocol-original-j20.md; support = separate cloud-only integration.
+- [Vendored src/ trees removed](project_src_vendored_trees_removed.md) — src/xbloom + src/xbloom-ble deleted 2026-07-18; parity tests → golden vectors; older `src/xbloom*` path citations are now stale/upstream-only.
 
 ## xbloom project history (extracted from AGENTS.md 2026-07-17, see ADR-001)
 - [8100 handshake + firmware history](xbloom_8100_handshake_and_firmware_history.md) — MTU handshake gates all commands; D122→D500 firmware version table.

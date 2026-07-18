@@ -303,7 +303,7 @@ class ConnectionMixin:
                     self.hass.async_create_task(self._async_refresh_advanced_settings())
                 return
 
-            # Re-send the 8100 MTU handshake — per src/xbloom-ble/PROTOCOL.md
+            # Re-send the 8100 MTU handshake — per the upstream xbloom-ble's PROTOCOL.md
             # this is what actually triggers RD_MachineInfo on the wire.
             # APP_RECIPE_STOP (used previously) does not provoke it; brAzzi64's
             # connect() retries the handshake when MachineInfo doesn't arrive.

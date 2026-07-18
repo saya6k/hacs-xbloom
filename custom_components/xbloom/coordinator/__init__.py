@@ -275,7 +275,7 @@ class XBloomCoordinator(
 
         ``model`` is intentionally omitted: the firmware fills the
         ``theModel`` slice of RD_MachineInfo with 0xFF padding (per
-        src/xbloom-ble/PROTOCOL.md), so any value would be misleading.
+        the upstream xbloom-ble's PROTOCOL.md), so any value would be misleading.
         """
         data = self.data or {}
         serial = data.get("serial_number") or self.mac_address

@@ -1,6 +1,6 @@
 """Best-effort XBloom device discovery for the config flow's MAC pre-fill.
 
-Native replacement for ``src/xbloom/scanner.py``. Uses a bare
+Native replacement for the upstream PyBloom's ``scanner.py``. Uses a bare
 ``BleakScanner`` (not routed through HA's Bluetooth integration) — this
 is a pre-existing, deliberately low-stakes shortcut: it only pre-fills a
 text field the user can freely overwrite, unlike the actual connect path

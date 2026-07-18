@@ -1,6 +1,6 @@
 """XBloom Studio BLE command table.
 
-Native replacement for ``src/xbloom/protocol/constants.py``'s
+Native replacement for the upstream PyBloom's ``protocol/constants.py``
 ``XBloomCommand``/``XBloomResponse`` plus the outbound command constants
 previously scattered across ``brewing.py``/``coordinator.py``/``_client.py``.
 Mirrors ``docs/en/protocol.md``'s command table exactly — keep both in sync;
