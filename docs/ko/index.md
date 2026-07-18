@@ -178,7 +178,7 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 
 ## 알려진 제한사항
 
-- **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조) — Original은 완전히 다른 Wi-Fi 프로토콜을 쓰며, 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original 전용 계정에서는 계정 레시피 시드와 `cloud_export_recipe`가 검증되지 않았습니다.
+- **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조) — Original은 완전히 다른 Wi-Fi + 클라우드 IoT 프로토콜을 쓰며([`protocol-original-j20.md`](./protocol-original-j20.md)에 정리), 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original 전용 계정에서는 계정 레시피 시드와 `cloud_export_recipe`가 검증되지 않았습니다.
 - **일부 펌웨어의 MachineInfo**: 특정 펌웨어 리비전은 `RD_MachineInfo`를 아예 푸시하지 않아 Model / Serial / Firmware 센서가 `unknown`으로 남을 수 있음. 이런 펌웨어에서 수위 binary sensor는 이벤트 기반 감지로 fallback.
 - **수동 컵 감지**: 저울은 전원 인가 시 존재하는 모든 무게를 자동 영점화하므로, 부팅 전에 놓인 컵은 0 g으로 읽힘 — 이 경우 LLM `execute_xbloom_recipe` 도구가 명시적 확인을 요청.
 - **레시피 물 출처**: 수동 pour 엔티티는 설정 → 기기 및 서비스 → XBloom → 구성 → 설정에서 지정한 급수 방식(탱크 vs. 직수)을 따르지만, 레시피 실행은 그렇지 않음 — 펌웨어가 자체 추출 시퀀스를 내부적으로 제어.
@@ -186,7 +186,7 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 
 ## 개발
 
-이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조. 패킷 프레이밍과 명령 id 전체 레퍼런스는 [`protocol.md`](./protocol.md) 참조. BLE 클라이언트가 왜 벤더-패치 방식이 아닌 클린룸 네이티브 구현인지는 [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고.
+이 repo의 아키텍처와 코딩 컨벤션은 `AGENTS.md` 참조. 추출 시퀀스의 BLE 세부 사항, 펌웨어 거동, Tea Brewer 사이펀 동작은 [`brewing-notes.md`](./brewing-notes.md) 참조. 패킷 프레이밍과 명령 id 전체 레퍼런스는 [`protocol.md`](./protocol.md) 참조. XBloom **Original**의 Wi-Fi/클라우드 프로토콜을 디컴파일로 추출한(미검증) 지도는 [`protocol-original-j20.md`](./protocol-original-j20.md) 참조. BLE 클라이언트가 왜 벤더-패치 방식이 아닌 클린룸 네이티브 구현인지는 [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) 참고.
 
 실제 Home Assistant 설치에 대해 통합을 테스트하기 위한 devcontainer가 제공됩니다. 베이스 이미지는 공식 HA **dev 나이틀리** Docker 이미지(`.devcontainer/devcontainer.json`에 `hacs.json` 플로어와 같은 버전으로 고정)라 HA core와 모든 런타임 의존성이 내장돼 있고, `scripts/setup`은 개발 도구만 설치합니다. VS Code에서 Dev Containers 확장으로 폴더를 열고 실행:
 

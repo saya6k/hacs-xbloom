@@ -1,5 +1,10 @@
 # XBloom Studio BLE 프로토콜 레퍼런스
 
+> **이 문서는 XBloom Studio(BLE)만 다룹니다.** XBloom Original은 BLE 제어 경로가
+> 없는 Wi-Fi + 클라우드 IoT 프로토콜의 다른 기기입니다 —
+> [`protocol-original-j20.md`](./protocol-original-j20.md)의 (디컴파일 전용,
+> 미검증) 지도를 참조하세요.
+
 > 이 페이지는 [`en/protocol.md`](../en/protocol.md)의 번역본입니다. 영문판이
 > source of truth이며, 한글본은 뒤늦게 동기화될 수 있습니다. 이 문서는 이
 > 통합 자체의 실제 하드웨어 캡처와, 공식 안드로이드 앱
