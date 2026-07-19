@@ -41,8 +41,34 @@ per-integration runtime deps must be added by hand — `aiousbwatcher`,
 tests gate on `importorskip("homeassistant.components.llm")`, not a
 version string, so `2026.8.0.dev0` satisfies them).
 
-**Where full-stack native testing actually stops** — not where previously
-assumed:
+**Full-stack native testing now WORKS, with a 2-line shim** (2026-07-19).
+Real HA + real machine + real entities/services, 30/30 checks. Driver kept at
+`scratchpad/verify_all.py` (session-local). Two macOS-only seams must be
+bridged, both symptoms of the same root cause (habluetooth never sees an
+advertisement on macOS):
+
+1. `bluetooth.async_ble_device_from_address` → fall back to a bare
+   `BleakScanner.discover()` cache. **Rebuild the `BLEDevice`**: CoreBluetooth
+   hands back an `objc.pyobjc_unicode` address that `establish_connection`
+   rejects with "incorrect type (expected str)". bleak 3.x's constructor is
+   `BLEDevice(address, name, details)` — passing a 4th positional `rssi`
+   raises `TypeError` (silently, if your scan loop swallows exceptions).
+2. `bleak_retry_connector.establish_connection` → falls back to a direct
+   `BleakClient.connect()`. Its slot manager refuses first with
+   "No backend with an available connection slot … never seen by any
+   scanner", since habluetooth's registry is empty.
+
+So the bleak-retry-connector layer specifically is the *only* thing that
+stays unexercised natively; everything above it is real.
+
+Harness gotchas that cost a rerun each: HA refuses to start if a previous
+instance is alive (`pkill -9 -f <script>` and confirm with `pgrep` before
+relaunching, or you will read a stale process's output and think your edits
+did nothing), and `button.execute_recipe` correctly refuses to arm with no
+recipe selected — select one first or you get a false failure.
+
+**Earlier finding, now superseded by the shim above** — kept because the
+underlying HA behavior is unchanged:
 
 - `config_flow.py`'s `MAC_RE` is NOT the blocker it looked like. Only the
   manual user step applies it; `async_step_bluetooth()` takes

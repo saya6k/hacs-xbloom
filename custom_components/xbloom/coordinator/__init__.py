@@ -285,6 +285,11 @@ class XBloomCoordinator(
         # Same overlap guard as _force_reconnect_pending, for the standby
         # drop's own awaited teardown.
         self._idle_standby_pending: bool = False
+        # Consecutive failed connects, and the monotonic time before which
+        # the reconnect supervisor should not try again (see
+        # _RECONNECT_BACKOFF_BASE_S).
+        self._reconnect_failures: int = 0
+        self._reconnect_blocked_until: float = 0.0
 
     # ------------------------------------------------------------------
     # Helpers

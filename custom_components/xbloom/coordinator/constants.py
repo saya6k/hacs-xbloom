@@ -21,6 +21,16 @@ _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
 # always-running HA integration than for a foregrounded phone app.
 _BLE_SILENCE_TIMEOUT_S = 15.0
 
+# Reconnect-supervisor backoff. Without it the supervisor retries on every
+# poll tick forever, which floods the log with an ERROR every ~5s for as long
+# as the machine is off or out of range (observed 2026-07-19 on a real HA run).
+# The nth consecutive failure blocks the *supervisor* for
+# min(5 * 2**(n-1), _RECONNECT_BACKOFF_MAX_S) seconds; on-demand connects
+# (_async_ensure_connected) deliberately ignore the gate, so a user action
+# still reconnects immediately. Reset on any successful connect.
+_RECONNECT_BACKOFF_BASE_S = 5.0
+_RECONNECT_BACKOFF_MAX_S = 300.0
+
 # Firmware version gates for BLE features that don't exist on older
 # firmware — the machine silently ignores commands it doesn't understand
 # rather than refusing cleanly, so we check first and give a clear error.
