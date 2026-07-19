@@ -204,14 +204,6 @@ class XBloomCoordinator(
         # distinct sensor.state value instead of leaving it generic.
         self._no_beans: bool = False
 
-        # One-shot machine alarms (8203/8204) latched only so a "_cleared"
-        # error event can be synthesized when the machine demonstrably
-        # works again — unlike the two flags above they do NOT feed
-        # sensor.state (the app itself only toasts them, with no payload
-        # and no wire-level resolution signal).
-        self._abnormal_gear_position: bool = False
-        self._abnormal_dose_or_water: bool = False
-
         # Whether the machine is currently showing its own local "start
         # this pod?" prompt (RD_Pods/pod_detected, cmd 40501) — nothing has
         # been armed/executed yet. async_cancel() branches on this to send

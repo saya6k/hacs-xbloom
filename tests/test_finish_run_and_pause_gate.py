@@ -35,8 +35,6 @@ class _Coordinator(StateMixin, OperationsMixin):
         self._pod_prompt_active = False
         self._water_shortage = False
         self._no_beans = False
-        self._abnormal_gear_position = False
-        self._abnormal_dose_or_water = False
         self._auto_switched_to_pro = False
         self._event_listeners: list = []
 

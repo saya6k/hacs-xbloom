@@ -244,21 +244,12 @@ class StateMixin:
             return
 
         # Drive the water-shortage / no-beans flags from the BLE event stream.
-        # The abnormal_* alarms (8203/8204) are latched alongside them purely
-        # so a "_cleared" counterpart event can be synthesized on resolution
-        # (see _cleared_events below); they never feed sensor.state.
         prev_shortage = self._water_shortage
         prev_no_beans = self._no_beans
-        prev_abnormal_gear = self._abnormal_gear_position
-        prev_abnormal_dose = self._abnormal_dose_or_water
         if category == "error" and event_type == "water_shortage":
             self._water_shortage = True
         elif category == "error" and event_type == "no_beans":
             self._no_beans = True
-        elif category == "error" and event_type == "abnormal_gear_position":
-            self._abnormal_gear_position = True
-        elif category == "error" and event_type == "abnormal_dose_or_water":
-            self._abnormal_dose_or_water = True
         elif category == "notification" and event_type == "water_refilled":
             # The firmware's own "tank refilled" notification (cmd 40522
             # with value=1 — see ble/client.py). Without this, the only clear
@@ -269,26 +260,17 @@ class StateMixin:
         elif category == "notification" and event_type in (
             "brewing_started", "pour_complete", "recipe_complete",
         ):
-            # A successful brew implies water and beans were both available —
-            # and that the one-shot abnormal_* alarms, whatever caused them,
-            # are no longer blocking the machine.
+            # A successful brew implies water and beans were both available.
             self._water_shortage = False
             self._no_beans = False
-            self._abnormal_gear_position = False
-            self._abnormal_dose_or_water = False
-        # Synthesize "_cleared" error events for every latched condition
-        # that just resolved, dispatched to the event entities after the
-        # real event below. Only water_shortage has a wire-level resolution
-        # signal; the others clear on demonstrated recovery.
+        # Synthesize "water_shortage_cleared" when the latched shortage
+        # resolves, dispatched to the event entities after the real event
+        # below. Deliberately the only "_cleared" event — water shortage is
+        # the one error with a wire-level resolution signal (40522 value=1);
+        # deriving "cleared" for the others would be a guess.
         _cleared_events: list[str] = []
         if prev_shortage and not self._water_shortage:
             _cleared_events.append("water_shortage_cleared")
-        if prev_no_beans and not self._no_beans:
-            _cleared_events.append("no_beans_cleared")
-        if prev_abnormal_gear and not self._abnormal_gear_position:
-            _cleared_events.append("abnormal_gear_position_cleared")
-        if prev_abnormal_dose and not self._abnormal_dose_or_water:
-            _cleared_events.append("abnormal_dose_or_water_cleared")
         if (
             (prev_shortage != self._water_shortage or prev_no_beans != self._no_beans)
             and self.hass and self.hass.loop

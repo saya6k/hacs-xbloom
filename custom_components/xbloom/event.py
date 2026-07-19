@@ -21,15 +21,12 @@ ERROR_EVENT_TYPES = [
     "no_beans",
     "abnormal_dose_or_water",
     "abnormal_gear_position",
-    # "_cleared" counterparts, synthesized by the coordinator when a
-    # latched error condition resolves (see coordinator/state.py's
-    # _handle_ble_event). Only water_shortage has a wire-level resolution
-    # signal (40522 value=1); the rest clear when the machine demonstrably
-    # works again (brewing_started / pour_complete / recipe_complete).
+    # Synthesized by the coordinator when the latched water-shortage
+    # condition resolves. Deliberately the ONLY "_cleared" event type:
+    # water shortage is the one error with a wire-level resolution signal
+    # (40522 value=1); the other errors have none (the official app just
+    # toasts them, payload-less), so a derived "cleared" would be a guess.
     "water_shortage_cleared",
-    "no_beans_cleared",
-    "abnormal_dose_or_water_cleared",
-    "abnormal_gear_position_cleared",
 ]
 
 NOTIFICATION_EVENT_TYPES = [
