@@ -123,7 +123,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모드 전환 재시도를 게이팅 |
 | 8011 | `RD_MachineNotSleeping` | — | Active | sleep 플래그 해제 |
 | 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨 |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제; `index` 자체는 미사용 |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용 |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` 오프셋 | Telemetry | 실시간 그라인딩 굵기 노브 |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | 실시간 RPM; 그라인딩 정지 시 명시적으로 0 처리(0은 실제 값이지 "알 수 없음"이 아님) |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | 실시간 추출 패턴 노브 |
@@ -146,6 +146,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | 핸들러 없음 |
+| 40506 | *(APK 상수 테이블에 없음)* | — | Observed, unconfirmed | 2026-07-19 라이브 캡처에서 머신이 `starting`(상태 `0x22`, 분쇄 시작)에 진입하는 순간 정확히 발화 — 40507의 분쇄-시작 카운터파트 후보이며, 레시피 분쇄 중 9003이 발화하지 않는 이유를 설명할 수 있음. 관측 1회; 핸들러 없음 |
 | 40507 | `RD_Grinder_Stop` | — | Active | 그라인딩 종료; 실시간 RPM을 0으로 설정; 캘리브레이션의 홈 이동 중에도 발생하므로 **캘리브레이션 완료 신호로 유효하지 않음** |
 | 40510 | `RD_BLOOM` | — | Active | 블룸 알림 |
 | 40511 | `RD_Brewer_Stop` | — | Active | 추출 종료 |

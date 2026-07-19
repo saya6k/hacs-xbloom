@@ -127,7 +127,7 @@ from the name alone.
 | 8009 | `RD_MachineSleeping` | — | Active | sets sleep flag; gates mode-switch retry |
 | 8011 | `RD_MachineNotSleeping` | — | Active | clears sleep flag |
 | 8015 | `RD_UNIT_CHANGE` | 3× LE u32 (weight/temp/water-source unit) | Active | pushed when units are changed on the machine's own touchscreen |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally; `index` itself unused |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally. `index` mirrors the raw status-heartbeat state code byte-for-byte (live-confirmed 2026-07-19: `0x01` home, `0x1F` recipe loaded, `0x1E` awaiting confirm, `0x22` starting arrived in lock-step on both channels) — this integration reads the state from the heartbeat frames and leaves `index` unused |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` offset | Telemetry | live grind-size knob |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | live RPM; zeroed explicitly on grind-stop (0 is a real reading, not "unknown") |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | live pour-pattern knob |
@@ -151,6 +151,7 @@ from the name alone.
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC pod detected; app hex-decodes 12 hex chars = 6 bytes, not 12 raw bytes |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | alternate "brewing started" signal |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | no handler |
+| 40506 | *(not in the APK's constant table)* | — | Observed, unconfirmed | fired exactly as the machine entered `starting` (status `0x22`, grind stage begin) on a live 2026-07-19 capture — candidate grind-begin counterpart of 40507, and would explain why 9003 never fires during recipe grinds. Single observation; no handler yet |
 | 40507 | `RD_Grinder_Stop` | — | Active | grind end; zeroes live RPM; **not** a valid calibration-complete signal despite firing during calibration's homing move |
 | 40510 | `RD_BLOOM` | — | Active | bloom notification |
 | 40511 | `RD_Brewer_Stop` | — | Active | pour end |
