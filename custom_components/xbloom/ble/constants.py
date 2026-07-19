@@ -124,6 +124,14 @@ class Response(IntEnum):
     PODS = 40501
     BREWER_COFFEE_START = 40502
     GEAR_REPORT = 40505
+    # 40506 is absent from the official app's own constant table (firmware
+    # newer than app) but hardware-confirmed 2026-07-19 as the real
+    # grinder-begin notification: fires at the exact instant the grinder
+    # starts, hopper-independent, on recipe AND manual grinds, with
+    # GRINDER_STOP (40507) answering every stop/cancel. The reliable
+    # counterpart GRINDER_BEGIN (9003) never was — that one has never been
+    # seen firing on this firmware.
+    GRINDER_RUN_BEGIN = 40506
     GRINDER_STOP = 40507
     BLOOM = 40510
     BREWER_STOP = 40511

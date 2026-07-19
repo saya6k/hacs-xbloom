@@ -441,3 +441,25 @@ def test_is_calibrating_grinder_accessor():
     assert client.is_calibrating_grinder() is False
     client._handle_response(Response.CALIBRATE_START, _frame_notag(b""))
     assert client.is_calibrating_grinder() is True
+
+
+# ---------------------------------------------------------------------
+# 40506 — the hardware-confirmed grinder-begin signal (2026-07-19).
+# 9003 GRINDER_BEGIN has never been seen firing on real hardware; 40506
+# fires at the exact grind-start instant on recipe and manual grinds
+# alike, paired with 40507 GRINDER_STOP.
+# ---------------------------------------------------------------------
+
+
+def test_40506_fires_grinding_started_and_marks_the_grinder_running():
+    client, events = _client_with_events()
+    client._handle_response(Response.GRINDER_RUN_BEGIN, _frame_notag(b""))
+    assert ("notification", "grinding_started", {}) in events
+    assert client._status.grinder.is_running is True
+
+
+def test_40506_is_suppressed_during_calibration_like_9003():
+    client, events = _client_with_events()
+    client._status.is_calibrating_grinder = True
+    client._handle_response(Response.GRINDER_RUN_BEGIN, _frame_notag(b""))
+    assert events == []
