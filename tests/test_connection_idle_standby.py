@@ -52,6 +52,8 @@ class _Coordinator(StateMixin, ConnectionMixin):
         self._armed_operation = None
         self._active_operation = None
         self._pod_prompt_active = False
+        self._reconnect_failures = 0
+        self._reconnect_blocked_until = 0.0
 
     def _note_activity(self) -> None:
         self._last_activity_monotonic = time.monotonic()
@@ -123,4 +125,61 @@ def test_reconnect_supervisor_runs_when_not_in_standby():
     coordinator._connect_lock = asyncio.Lock()
     coordinator._maybe_schedule_reconnect()
 
+    assert coordinator.hass.tasks == ["async_connect"]
+
+
+def test_reconnect_backoff_grows_with_consecutive_failures():
+    coordinator = _Coordinator(_FakeClient())
+
+    delays = []
+    for _ in range(4):
+        before = time.monotonic()
+        coordinator._note_connect_failure()
+        delays.append(coordinator._reconnect_blocked_until - before)
+
+    # 5s, 10s, 20s, 40s — doubling, so a machine that stays away stops
+    # costing us a connect attempt (and a log line) every single tick.
+    assert [round(d) for d in delays] == [5, 10, 20, 40]
+
+
+def test_reconnect_backoff_is_capped():
+    coordinator = _Coordinator(_FakeClient())
+
+    for _ in range(30):
+        coordinator._note_connect_failure()
+
+    assert coordinator._reconnect_blocked_until - time.monotonic() <= 300.0
+
+
+def test_reconnect_supervisor_skips_ticks_while_backing_off():
+    coordinator = _Coordinator(_FakeClient())
+    coordinator._connect_lock = asyncio.Lock()
+    coordinator._note_connect_failure()
+
+    coordinator._maybe_schedule_reconnect()
+
+    assert coordinator.hass.tasks == []
+
+
+def test_reconnect_backoff_expires():
+    coordinator = _Coordinator(_FakeClient())
+    coordinator._connect_lock = asyncio.Lock()
+    coordinator._note_connect_failure()
+    coordinator._reconnect_blocked_until = time.monotonic() - 0.1
+
+    coordinator._maybe_schedule_reconnect()
+
+    assert coordinator.hass.tasks == ["async_connect"]
+
+
+def test_successful_connect_clears_the_backoff():
+    coordinator = _Coordinator(_FakeClient())
+    coordinator._connect_lock = asyncio.Lock()
+    for _ in range(5):
+        coordinator._note_connect_failure()
+
+    coordinator._note_connect_success()
+    coordinator._maybe_schedule_reconnect()
+
+    assert coordinator._reconnect_failures == 0
     assert coordinator.hass.tasks == ["async_connect"]

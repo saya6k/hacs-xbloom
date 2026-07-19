@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Awaitable, Callable, Dict, TypeVar
 
 from homeassistant.helpers import device_registry as dr
@@ -25,6 +26,8 @@ from .constants import (
     _MODE_SWITCH_MAX_ATTEMPTS,
     _RAW_TO_TEMP_UNIT,
     _RAW_TO_WEIGHT_UNIT,
+    _RECONNECT_BACKOFF_BASE_S,
+    _RECONNECT_BACKOFF_MAX_S,
     _WAKE_RETRY_DELAY_S,
     _WAKE_RETRY_MAX_ATTEMPTS,
     TEMP_UNIT_OPTIONS,
@@ -65,13 +68,39 @@ class ConnectionMixin:
         that flag in ``__init__.py``) — that link was dropped deliberately
         and stays down until an action needs it again, which is the whole
         point of the timeout.
+
+        Backs off exponentially after consecutive failures so a machine
+        that is simply off or out of range doesn't have us retrying (and
+        logging) every tick indefinitely. Only this backstop is gated —
+        ``_async_ensure_connected()`` still connects on demand, so a user
+        action never waits out the backoff.
         """
         if self._manual_disconnect or self._idle_disconnected:
             return
         if self._connect_lock.locked():
             return
+        if time.monotonic() < self._reconnect_blocked_until:
+            return
         _LOGGER.debug("XBloom not connected — reconnect supervisor retrying")
         self.hass.async_create_task(self.async_connect())
+
+    def _note_connect_failure(self) -> int:
+        """Record a failed connect and arm the supervisor's backoff.
+
+        Returns the consecutive-failure count so the caller can log the
+        first failure loudly and the rest quietly.
+        """
+        self._reconnect_failures += 1
+        delay = min(
+            _RECONNECT_BACKOFF_BASE_S * (2 ** (self._reconnect_failures - 1)),
+            _RECONNECT_BACKOFF_MAX_S,
+        )
+        self._reconnect_blocked_until = time.monotonic() + delay
+        return self._reconnect_failures
+
+    def _note_connect_success(self) -> None:
+        self._reconnect_failures = 0
+        self._reconnect_blocked_until = 0.0
 
     async def _async_drop_stale_link(self) -> None:
         """Tear down a link that has gone silent, and let the supervisor
@@ -217,6 +246,7 @@ class ConnectionMixin:
 
                 connected = await client.connect(timeout=20.0)
                 if connected:
+                    self._note_connect_success()
                     _LOGGER.info("XBloom connected ✓")
                     await self._log_gatt_inventory()
                     # Only push if a Settings-step change couldn't reach the
@@ -244,14 +274,31 @@ class ConnectionMixin:
                     self.client = client
                     return True
 
-                _LOGGER.error("XBloom connect returned False")
+                self._log_connect_failure("XBloom connect returned False")
                 self.client = None
                 return False
 
             except Exception as exc:
-                _LOGGER.error("XBloom connection error: %s", exc)
+                self._log_connect_failure("XBloom connection error: %s", exc)
                 self.client = None
                 return False
+
+    def _log_connect_failure(self, msg: str, *args: Any) -> None:
+        """Log a failed connect loudly once, then quietly while it persists.
+
+        A machine that is off or out of range would otherwise emit an ERROR
+        on every supervisor tick for as long as it stays away.
+        """
+        failures = self._note_connect_failure()
+        if failures == 1:
+            _LOGGER.error(msg, *args)
+        else:
+            _LOGGER.debug(
+                "%s (consecutive failure %d; next supervisor retry in ≤%.0fs)",
+                msg % args if args else msg,
+                failures,
+                max(0.0, self._reconnect_blocked_until - time.monotonic()),
+            )
 
     async def async_disconnect(self) -> None:
         """Disconnect from the BLE device."""
