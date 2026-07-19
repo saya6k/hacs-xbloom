@@ -210,7 +210,7 @@ This repo (and other `ha-*` HACS components, excluding `ha-app*`) ships on a two
 - Localization broken? Check hard rule #2/#3 above before anything else.
 - Sensor stuck `unknown`? Check the BLE protocol checklist above, especially [[xbloom-machineinfo-reliability-and-padding]] and [[xbloom-raw-state-heartbeat-vs-cmd-tagged]].
 - Sensor shows a raw untranslated word instead of localized Unknown? See "A recurring bug shape" in Entity translation flow.
-- Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. See `docs/en/protocol.md` and `docs/en/brewing-notes.md`.
+- Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. Every step up to 4513 is ACK-gated (`send_and_wait`), so a chain that dies partway raises `AckTimeout` instead of silently reaching 4512. See `docs/en/protocol.md` and `docs/en/brewing-notes.md`.
 - `sensor.state` looks wrong specifically during/right after a real grind? See [[xbloom-raw-state-heartbeat-vs-cmd-tagged]] before assuming a new bug.
 - Adding a new entity? Update `strings.json` AND every file under `translations/`. Add an `icons.json` entry. Don't set `_attr_name` or `_attr_icon` on the class.
 - Adding a new **device** (not entity)? Same idea, one level up — see the Device registry section.

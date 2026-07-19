@@ -17,6 +17,7 @@ import asyncio
 import pytest
 
 from custom_components.xbloom import brewing
+from custom_components.xbloom.ble.client import XBloomClient
 from custom_components.xbloom.ble.models import CupType, PourStep, XBloomRecipe
 
 
@@ -46,6 +47,23 @@ class _FakeClient:
 
     async def execute_coffee_recipe(self, device_id=None):
         self.executed = True
+
+    # The arm chains are ACK-gated (2026-07-19), so they go through
+    # send_and_wait rather than the bare senders. Route both forms into
+    # the same recorders and reuse the real argument packing, so these
+    # tests keep asserting on the actual wire payloads.
+    _bypass_args = staticmethod(XBloomClient._bypass_args)
+    _cup_args = staticmethod(XBloomClient._cup_args)
+
+    async def send_and_wait(
+        self, command, data=None, *, raw=None, timeout=1.5,
+        device_id=None, type_code=0x01,
+    ):
+        if raw is not None:
+            await self._send_command_raw(command, raw, device_id, type_code)
+        else:
+            await self._send_command(command, data, device_id)
+        return b""
 
 
 def _coffee_recipe() -> XBloomRecipe:

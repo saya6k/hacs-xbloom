@@ -408,12 +408,28 @@ class XBloomClient:
     async def stop_recipe(self, type_code: int = 1, device_id: Optional[int] = None) -> bool:
         return await self._send_command(Command.RECIPE_STOP, type_code=type_code, device_id=device_id)
 
+    # Argument packing is split out from the send so an ACK-gated caller
+    # (``brewing``'s recipe chains) can reuse it with ``send_and_wait``
+    # instead of duplicating the float encoding.
+    @staticmethod
+    def _cup_args(f1: float, f2: float) -> list:
+        b1 = struct.unpack("<I", struct.pack("<f", f1))[0]
+        b2 = struct.unpack("<I", struct.pack("<f", f2))[0]
+        return [b1, b2]
+
+    @staticmethod
+    def _bypass_args(volume: float, temp: float, dose: int) -> list:
+        vol_bits = struct.unpack("<I", struct.pack("<f", volume))[0]
+        temp_bits = struct.unpack("<I", struct.pack("<f", float(temp * 10)))[0]
+        return [vol_bits, temp_bits, int(dose)]
+
     async def set_cup(
         self, f1: float, f2: float, type_code: int = 1, device_id: Optional[int] = None
     ) -> bool:
-        b1 = struct.unpack("<I", struct.pack("<f", f1))[0]
-        b2 = struct.unpack("<I", struct.pack("<f", f2))[0]
-        return await self._send_command(Command.SET_CUP, [b1, b2], type_code=type_code, device_id=device_id)
+        return await self._send_command(
+            Command.SET_CUP, self._cup_args(f1, f2),
+            type_code=type_code, device_id=device_id,
+        )
 
     async def set_bypass(
         self,
@@ -423,10 +439,8 @@ class XBloomClient:
         type_code: int = 1,
         device_id: Optional[int] = None,
     ) -> bool:
-        vol_bits = struct.unpack("<I", struct.pack("<f", volume))[0]
-        temp_bits = struct.unpack("<I", struct.pack("<f", float(temp * 10)))[0]
         return await self._send_command(
-            Command.SET_BYPASS, [vol_bits, temp_bits, int(dose)],
+            Command.SET_BYPASS, self._bypass_args(volume, temp, dose),
             type_code=type_code, device_id=device_id,
         )
 
