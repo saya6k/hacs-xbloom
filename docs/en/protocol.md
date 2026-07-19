@@ -90,10 +90,10 @@ from the name alone.
 | 8004 | `APP_RECIPE_SEND_MANUAL` | recipe blob | Active | coffee recipe, no grinding (bypass) |
 | 8006 | `APP_GRINDER_IN` | — | Active | "enter grind screen"; sent internally before manual/recipe grind |
 | 8007 | `APP_BREWER_IN` (enum name `RD_BREWER_IN`) | — | Active | "enter pour screen"; sent for app parity before manual pour, not required |
-| 8012 | `APP_GRINDER_QUIT` | — | Present, unconfirmed | superseded by 3505/40519 in this integration's flows |
-| 8013 | `APP_BREWER_QUIT` | — | Present, unconfirmed | superseded by 4507/40519 |
+| 8012 | `APP_GRINDER_QUIT` | — | Active | leave the grind page — cancel from an armed manual grind |
+| 8013 | `APP_BREWER_QUIT` | — | Active | leave the pour page — cancel from an armed manual pour |
 | 8016 | `APP_BREWER_SET_PATTERN` | — | Present, unconfirmed | in vendored enum, no confirmed call site here |
-| 8017 | `APP_RECIPE_START_QUIT` | — | Active | dismiss the machine's own "insert pod" prompt |
+| 8017 | `APP_RECIPE_START_QUIT` | — | Active | dismiss the machine's own "insert pod" prompt, and cancel from an armed recipe |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | manual-grind pause only, not whole-recipe |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | manual-pour pause only |
 | 8020 | `APP_GRINDER_RESTART` | — | Active | manual-grind resume |

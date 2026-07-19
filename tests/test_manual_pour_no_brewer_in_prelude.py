@@ -51,7 +51,7 @@ class _Coordinator(OperationsMixin):
         self.pour_pattern = 2
         self._active_operation = None
 
-    def _check_connected(self) -> bool:
+    async def _async_ensure_connected(self) -> bool:
         return True
 
     async def _ensure_pro_mode(self) -> None:

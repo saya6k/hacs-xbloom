@@ -9,9 +9,28 @@ import asyncio
 import logging
 
 from .. import brewing
+from ..ble.constants import Command
 from .constants import _CMD_RECIPE_PAUSE, _CMD_RECIPE_RESTART
 
 _LOGGER = logging.getLogger(__name__)
+
+# Which command backs out of the machine screen each arm press opened.
+# Decompiled from the official app 2026-07-19 (see project memory): its
+# GrinderActivity/BrewerActivity onBackPressed() send APP_GRINDER_QUIT /
+# APP_BREWER_QUIT, and RecipeDetailActivity/PodsDetailActivity's start
+# dialog dismisses with APP_RECIPE_START_QUIT. RD_BackToHome (8022) — what
+# this used to send for all three — is only ever sent by the app from its
+# machine-settings screen, never to leave one of these.
+#
+# RECIPE_START_QUIT doubles as the dismissal for the machine's own local
+# "start this pod?" prompt (RD_Pods/40501, fired as pod_detected the
+# moment it reads the NFC tag, independent of anything HA armed) — the
+# same dialog, reached from the machine's side instead of ours.
+_ARMED_QUIT_COMMANDS = {
+    "grind": Command.GRINDER_QUIT,
+    "pour": Command.BREWER_QUIT,
+    "recipe": Command.RECIPE_START_QUIT,
+}
 
 
 class OperationsMixin:
@@ -42,7 +61,7 @@ class OperationsMixin:
         since the bare-4506 behavior it reverts to was the one actually
         confirmed working.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             await self._ensure_pro_mode()
@@ -71,7 +90,7 @@ class OperationsMixin:
         ``async_confirm_pour()`` sends the actual start command (with
         current slider values) on a second press of the same button.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             await self._ensure_pro_mode()
@@ -87,7 +106,7 @@ class OperationsMixin:
         the pour-start command (4506) queued by ``async_arm_pour()``,
         with the current slider values.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             self._active_operation = "manual_pour"
@@ -110,7 +129,7 @@ class OperationsMixin:
 
         See ``async_pour``'s docstring — same sleep-retry wrapping.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             await self._ensure_pro_mode()
@@ -128,7 +147,7 @@ class OperationsMixin:
         burr adjust) without starting. ``async_confirm_grind()`` sends
         the actual start command on a second press of the same button.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             await self._ensure_pro_mode()
@@ -143,7 +162,7 @@ class OperationsMixin:
         """Second press of the two-stage manual-grind button flow: send
         the bare grinder-start command queued by ``async_arm_grind()``.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             self._active_operation = "manual_grind"
@@ -176,7 +195,7 @@ class OperationsMixin:
         nor the whole-recipe pause command applies; use the confirm press
         or the cancel button instead.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         if self._armed_operation:
             return
@@ -216,29 +235,54 @@ class OperationsMixin:
         Also branches on ``_armed_operation`` (2026-07-18): this is the
         escape hatch for the two-stage arm/confirm manual button flow,
         which has no timeout — if the user armed an operation and never
-        confirmed it, cancel just backs out of whatever "enter mode"/
-        queued-recipe screen is showing (8022, Back to Home) rather than
-        running the heavier stop sequence below, since nothing has
-        actually started yet.
+        confirmed it, cancel backs out of whichever machine screen the arm
+        press opened (``_ARMED_QUIT_COMMANDS``) rather than running the
+        heavier stop sequence below, since nothing has actually started yet.
 
         Also branches on ``_active_operation``: a manual grind or pour
         must be stopped via the ``GrinderController``/``BrewerController``'s
         own ``stop()`` (cmds 3505/4507), not the whole-recipe stop/quit
         sequence below, which targets an actual recipe execution.
+
+        Local bookkeeping is cleared BEFORE any BLE work and regardless of
+        whether that work succeeds (2026-07-19, hardware-reported): cancel
+        used to return early when disconnected, leaving ``_armed_operation``
+        set, which made the *next* press of the same button confirm — i.e.
+        actually start a grind or pour — instead of arming. The official
+        app has the same ordering: both page ``onBackPressed()`` handlers
+        and the recipe start dialog's cancel tear down their UI
+        unconditionally (``finish()``/``dismiss()``) and fire the BLE
+        command with empty success/fail callbacks.
         """
-        if not self._check_connected():
-            return
         active_operation = self._active_operation
         armed_operation = self._armed_operation
+        pod_prompt_active = self._pod_prompt_active
         self._executing_recipe = False
         self._active_recipe_pours = None
         self.current_pour_index = None
+        self._active_operation = None
+        self._armed_operation = None
+        self._armed_recipe_is_tea = False
+        self._armed_recipe_tea_payload = None
+        self._pod_prompt_active = False
+
+        if not await self._async_ensure_connected():
+            self.async_update_listeners()
+            return
+
+        # The armed quit and the pod-prompt dismissal are separate machine
+        # screens that can both be up at once, and for an armed recipe they
+        # are the same command — so collect, dedupe, then send.
+        quit_commands: list[int] = []
+        if armed_operation:
+            quit_commands.append(_ARMED_QUIT_COMMANDS[armed_operation])
+        if pod_prompt_active and Command.RECIPE_START_QUIT not in quit_commands:
+            quit_commands.append(Command.RECIPE_START_QUIT)
+
         try:
-            if self._pod_prompt_active:
-                await brewing.async_dismiss_pod_prompt(self.client)
-                self._pod_prompt_active = False
-            elif armed_operation:
-                await self.client._send_command(brewing._CMD_BACK_TO_HOME)
+            if quit_commands:
+                for command in quit_commands:
+                    await self.client._send_command(command)
             elif active_operation == "manual_grind":
                 await self.client.grinder.stop()
             elif active_operation == "manual_pour":
@@ -255,10 +299,6 @@ class OperationsMixin:
                 await self.client._send_command(brewing._CMD_BACK_TO_HOME)
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
-        self._active_operation = None
-        self._armed_operation = None
-        self._armed_recipe_is_tea = False
-        self._armed_recipe_tea_payload = None
         # Restore the user's persisted mode if we had auto-switched to Pro
         # for an HA operation that is now cancelled.
         await self._restore_persisted_mode("cancel")
@@ -266,7 +306,7 @@ class OperationsMixin:
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500). See ``async_pour``'s docstring —
         same sleep-retry wrapping."""
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             await self._async_retry_while_sleeping(lambda: brewing.async_tare(self.client))

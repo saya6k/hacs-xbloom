@@ -52,7 +52,7 @@ class AdvancedSettingsMixin:
         before the real 85 reading arrives; treating it as "done" closed
         the gate early and made the genuine completion event unreachable.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             # Only the raw send is retried while asleep (see
@@ -221,7 +221,7 @@ class AdvancedSettingsMixin:
                 "error": "cloud_login_required",
                 "message": "pour_radius_level requires an XBloom cloud account login (Options → Account) — this integration has no other way to know the machine's factory-default pour-radius center.",
             }
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return {
                 "success": False,
                 "error": "not_connected",

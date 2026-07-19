@@ -13,6 +13,14 @@ platform migration spec):
 
 - PyPI `homeassistant` has **no `.dev` builds ever** (betas/stables only) — don't
   write a pip floor like `>=2026.8.0.devXXXX`, it can't resolve.
+- **This does NOT mean "no modern HA locally"** (correction 2026-07-19, prompted
+  by the user): recent stables *are* on PyPI and are perfectly installable here.
+  If pip resolves to something ancient, suspect the **Python version** first —
+  HA `2026.7.2` declares `requires_python >=3.14.2`, so the system Python 3.12
+  silently back-solves all the way to `2025.1.4`. Check
+  `curl -s https://pypi.org/pypi/homeassistant/json | jq '.info.requires_python'`
+  against the interpreter before concluding anything about release channels.
+  `/opt/homebrew/bin/python3.14` exists on this Mac; make a venv with it.
 - The current nightly version string comes from
   `https://version.home-assistant.io/dev.json` → `.homeassistant.default`,
   format `2026.8.0.dev + YYYYMMDDHHMM` (date **and time**, not just date).

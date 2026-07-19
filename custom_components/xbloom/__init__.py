@@ -786,6 +786,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     initial_mode = entry.options.get(CONF_MODE, DEFAULT_MODE)
     initial_weight_unit = entry.options.get(CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT)
     initial_temp_unit = entry.options.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)
+    # Idle disconnect timeout — how long the machine may sit doing nothing
+    # before the BLE link is dropped until the next action (0 = never drop).
+    # Collected by the config flow since the first release but not acted on
+    # until 2026-07-19; see the coordinator's _session_timeout.
+    session_timeout = entry.options.get(
+        CONF_SESSION_TIMEOUT,
+        entry.data.get(CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT),
+    )
 
     coordinator = XBloomCoordinator(
         hass=hass,
@@ -796,6 +804,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         initial_mode=initial_mode,
         initial_weight_unit=initial_weight_unit,
         initial_temp_unit=initial_temp_unit,
+        session_timeout=session_timeout,
         cloud_email=entry.data.get(CONF_EMAIL),
         cloud_password=entry.data.get(CONF_PASSWORD),
     )

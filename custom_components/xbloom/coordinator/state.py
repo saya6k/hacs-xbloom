@@ -6,6 +6,7 @@ constants.py's module docstring).
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable, Dict
 
 from .constants import _BLE_SILENCE_TIMEOUT_S, DEFAULT_STATE
@@ -22,16 +23,34 @@ class StateMixin:
         Also drives the connection supervisor, on the same tick cadence as
         the official Android app's AppDeviceManager poll loop (see
         AGENTS.md): reconnect if not connected (unless the user explicitly
-        disconnected this session), and force a reconnect if the link has
-        gone silent for too long (``_BLE_SILENCE_TIMEOUT_S``).
+        disconnected this session or we are in idle standby), drop the link
+        if it has gone silent for too long (``_BLE_SILENCE_TIMEOUT_S``), and
+        drop it after ``_session_timeout`` seconds of inactivity.
         """
         if self.client and self.client.is_connected:
             if (
                 not self._force_reconnect_pending
+                and not self.client.is_sleeping()
                 and self.client.seconds_since_last_notification() > _BLE_SILENCE_TIMEOUT_S
             ):
+                # Skipped while the machine reports itself asleep (cmds
+                # 8009/8011/8023): a sleeping machine going quiet is normal,
+                # not a wedged link, and treating it as one turned every
+                # overnight idle period into a disconnect/reconnect loop.
                 self._force_reconnect_pending = True
-                self.hass.async_create_task(self._async_force_reconnect())
+                self.hass.async_create_task(self._async_drop_stale_link())
+                return {**DEFAULT_STATE}
+            if (
+                self._session_timeout > 0
+                and not self._idle_standby_pending
+                and not self._armed_operation
+                and not self._active_operation
+                and not self._pod_prompt_active
+                and (time.monotonic() - self._last_activity_monotonic)
+                > self._session_timeout
+            ):
+                self._idle_standby_pending = True
+                self.hass.async_create_task(self._async_enter_idle_standby())
                 return {**DEFAULT_STATE}
             try:
                 s = self.client.status
@@ -141,6 +160,11 @@ class StateMixin:
                     "pour_radius": getattr(s, "pour_radius", None),
                     "vibration_amplitude": getattr(s, "vibration_amplitude", None),
                 }
+                if data["state"] != "idle":
+                    # The machine doing anything at all — including a brew
+                    # started from its own touchscreen — counts as activity,
+                    # so idle standby never drops the link mid-operation.
+                    self._note_activity()
                 # Mirror the physical temperature/pattern knobs onto the
                 # manual-pour setpoints so number.temperature and
                 # select.*_pour_pattern track knob turns in real time — but

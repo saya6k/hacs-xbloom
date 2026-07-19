@@ -63,7 +63,7 @@ STEP_SCHEMA = vol.Schema(
             int, vol.Range(min=1, max=60)
         ),
         vol.Optional(CONF_SESSION_TIMEOUT, default=DEFAULT_SESSION_TIMEOUT): vol.All(
-            int, vol.Range(min=10, max=3600)
+            int, vol.Range(min=0, max=3600)
         ),
     }
 )
@@ -443,7 +443,7 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                                 CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
                             ),
                         ),
-                    ): vol.All(int, vol.Range(min=10, max=3600)),
+                    ): vol.All(int, vol.Range(min=0, max=3600)),
                     vol.Optional(
                         CONF_WEIGHT_UNIT,
                         default=self._entry.options.get(
