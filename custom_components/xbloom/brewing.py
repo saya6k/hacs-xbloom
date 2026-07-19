@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import struct
 import time
 
@@ -71,14 +72,10 @@ _CMD_BACK_TO_HOME = 8022
 # reverted because "received" is not "applied", NOT because dropping them was
 # shown to break anything.
 #
-# UNRESOLVED (2026-07-19): a hardware test that same day ran a grind recipe
-# (18g, grind 35) and the machine poured 250ml with no grind stage — bloom
-# fired ~1.0s after brewing_started, where grinding takes 20-30s. Restoring
-# these floors did NOT change that: the second run, with the full 1.0s
-# spacing back in place, behaved identically. So the no-grind symptom is
-# still unexplained and these constants are not its fix. It was not
-# established whether beans were actually loaded for those runs, which would
-# explain the symptom without any code fault.
+# (A no-grind symptom initially blamed on dropping these floors turned out
+# to be unrelated: it was the ratio footer byte truncating — see
+# _build_coffee_recipe_payload. Restoring the floors did not change it;
+# fixing the footer did, hardware-bisected 2026-07-19.)
 _STEP_SETTLE_COFFEE_S = 1.0
 _STEP_SETTLE_TEA_S = 2.0
 
@@ -228,7 +225,20 @@ def _build_coffee_recipe_payload(recipe: XBloomRecipe) -> bytes:
     total_water = sum(p.volume for p in recipe.pours)
     dose = recipe.bean_weight
     ratio = (total_water / dose) if dose > 0 else 0
-    ratio_byte = int(ratio * 10) & 0xFF
+    # CEIL, never truncate (root-caused on hardware 2026-07-19): the firmware
+    # reconstructs the expected total as dose × ratio_byte/10, and if that
+    # lands BELOW the pours' actual sum it silently downgrades the whole brew
+    # to no-grind — 8001 is ACKed, the pours run, the grinder never starts,
+    # no error is reported. 18g/250ml truncated to 138 (18×13.8 = 248.4 <
+    # 250) and never ground; the same recipe with 139 (250.2) or 140 (252)
+    # grinds, so a small overshoot is tolerated while any undershoot is
+    # fatal. ceil keeps the overshoot under 0.1×dose ≤ 1.8ml. App-made
+    # recipes can't hit this because the app UI forces dose × grandWater to
+    # equal the pour sum exactly (Water_Powder_Error otherwise).
+    # min(…, 255) clamps instead of wrapping: a ratio over 25.5 (e.g. a
+    # 10g/300ml brew) used to alias to a tiny byte via & 0xFF, guaranteeing
+    # the downgrade above. 255 is the closest the wire format can express.
+    ratio_byte = min(math.ceil(ratio * 10), 0xFF)
 
     body_len = len(body_content)
     footer = struct.pack("BB", grind_byte, ratio_byte)
