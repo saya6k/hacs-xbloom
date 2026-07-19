@@ -83,7 +83,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 4506 | `APP_BREWER_START` | 용량, 온도, 유량, 패턴 | Active | 수동 추출 |
 | 4507 | `APP_BREWER_STOP` | — | Active | 수동 추출 정지 전용 |
 | 4508 | 급수원 설정 | LE u32 (0=탱크,1=직결) | Active | `WaterSourceType.ordinal()`; J20 전용 값(8/50)은 Studio에 해당 없음 |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화. 같은 날 하드웨어 확인: 880(88.0℃) 전송 시 ACK payload가 해석된 값을 float32로 echo (`00005c44` = 880.0) |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화. 같은 날 하드웨어 확인: 880(88.0℃) 전송 시 ACK payload가 해석된 값을 float32로 echo (`00005c44` = 880.0). RT/BP 엔드포인트 (jadx 2026-07-20): 앱 추출 페이지 슬라이더 범위는 39–96℃ (`CoffeeConstantUtil.getTemperatureJ15RTBP`; 화씨 103–204°F); 최소 위치에서는 `TemperatureConstant.RT` = 20.0℃, 최대 위치에서는 `BP` = 98.0℃를 전송하고 그 사이는 리터럴 값 — 같은 분기가 4506의 온도 필드에도 쓰임 |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | 큐에 넣은 티 레시피 실행 |
 | 4513 | `APP_TEA_RECIP_CODE` | 티 레시피 블롭 | Active | 티 레시피 큐잉; **8004가 아님** — brewing-notes.md 참고 |
 | 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피; 앱은 `recipe.isSetGrinderSize`로 8001/8004를 선택 (1 → 8001, 그 외 → 8004). 앱의 실행 체인(`8102` 바이패스 → `8104` 컵 → `8001`/`8004` → `8002`)에는 **모드 관문이 없음** — 하드웨어도 불필요함을 확인 (2026-07-19 라이브: Easy 모드 상태에서 전체 체인이 ACK되고 분쇄 단계가 시작됨; 과거의 "Easy 모드는 추출 명령 무시, 물만 나옴" 관측은 ratio footer 버그의 오귀속이었음) |
@@ -162,7 +162,8 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40525 | `RD_EASYMODE_RECIPE_NUM` | — | Present, unconfirmed | 핸들러 없음 |
 | 40526 | `RD_CurrentGrinder` | LE u32, `-30` 오프셋 | Active | 8105와 동일 값; `is_calibrating_grinder` 중 `raw == 85`가 실제 캘리브레이션 완료 신호 |
 | 40527 | `RD_BeforeVibration` | — | Present, 페이로드 없음 확인 | 디컴파일로 확인된 페이로드 없는 펄스 |
-| 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 캘리브레이션 시작/진행 펄스; 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
+| 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 그라인더 기어 영점 재설정 알림 ("The machine gear is being reset to zero, please try again later" — jadx 2026-07-20: 둘 다 `Device_GrindSize_Reset_Zero`를 토스트하고 `clearAllCode()`로 앱의 대기 명령 큐를 비움); 머신 쪽에서 진입한 그라인더 캘리브레이션 감지 신호 후보이나 발화 시점은 하드웨어 미검증. 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
+| 65534 (`0xFFFE`) | 머신 알람 채널 (`ErrorBle1Model`) | LE u32 알람 코드 (payload 첫 4바이트) | 디컴파일 확인, 하드웨어 미관측 | 마커 바이트 `0xCD` 필요 (통상 `0xC1` 응답 마커와 같은 오프셋; 이 id의 `0xC1` 프레임과 `0xFFFD` 전체는 앱이 명시적으로 무시). 알람 코드 → 분류 (jadx 2026-07-20, `ErrorBle1Model` 코드 리스트 + `Alarm_*` 문자열): **전원 불일치(mismatched power)** 8449, 8450, 4355–4362; **추출 오류(brewing error)** 513, 4610, 5633, 5637, 6148, 6401–6405, 9730, 9732, 10241–10243, 10245, 13827, 14342, 14598–14603; **도크 이동 오류(dock moving error)** 8961–8963, 4868, 4869, 4871, 4873–4875, 13062, 13064; **분쇄 오류(grinding error)** 1025, 5123, 5124, 5379, 9218, 9473, 9474, 9477, 9478, 13317, 13572; **저울 과부하(scale overload)** 1793, 1795, 1796, 5890; **펌웨어 업그레이드 실패** 7169, 7170 (앱의 `FwUpgradeFailEvent` 발행); **무음 처리** 2562, 2563, 2820, 2821, 6657, 6913–6915, 그리고 9479 (앱의 클라우드 에러 로그에서도 제외). 앱 문제 해결표의 "Grinder Overload", "Water Intake Alert", "Overflow Trigger" 항목은 **별도 wire id가 없음** — 그라인더/브루어 분류 안에 포함된, 머신 디스플레이 전용 구분임 |
 | Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x03` 추출 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백). 수동 추출은 `0x03` → `0x23`(brewing) → 4507 정지 시 `0x03` 복귀로 진행하며, 4506/4507 ACK는 용량을 float32로 echo |
 
 두 개의 id는 문맥에 따라 방향과 의미가 다르며 **동일 명령이 아닙니다**:
@@ -189,3 +190,8 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 - 그라인딩 없는(바이패스) 커피 레시피는 `8102` 페이로드에 실제 0이 아닌
   `dose` 값이 필요합니다 — `dose=0`이면 에러 알림 없이 조용히 arm 단계에서
   멈춥니다.
+- 디스케일링과 저울 캘리브레이션에는 **BLE 명령 계열이 없습니다** (jadx
+  2026-07-20): 앱의 `DescaleActivity`와 `CalibrateScaleJ15Activity`는 순수
+  안내 슬라이드쇼입니다 — 두 절차 모두 머신 자체 노브로만 진행되므로, HA
+  쪽 가시성은 명령이 아닌 수동 텔레메트리(하트비트/8023 코드)로만 얻을 수
+  있습니다.
