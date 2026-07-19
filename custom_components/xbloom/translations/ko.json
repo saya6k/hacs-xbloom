@@ -285,7 +285,11 @@
               "water_shortage": "물 부족",
               "no_beans": "원두 없음",
               "abnormal_dose_or_water": "도징/물 양 이상",
-              "abnormal_gear_position": "그라인더 기어 위치 이상"
+              "abnormal_gear_position": "그라인더 기어 위치 이상",
+              "water_shortage_cleared": "물 부족 해소",
+              "no_beans_cleared": "원두 없음 해소",
+              "abnormal_dose_or_water_cleared": "도징/물 양 이상 해소",
+              "abnormal_gear_position_cleared": "그라인더 기어 위치 이상 해소"
             }
           }
         }

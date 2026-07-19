@@ -285,7 +285,11 @@
               "water_shortage": "Water Shortage",
               "no_beans": "No Beans",
               "abnormal_dose_or_water": "Abnormal Dose / Water",
-              "abnormal_gear_position": "Abnormal Gear Position"
+              "abnormal_gear_position": "Abnormal Gear Position",
+              "water_shortage_cleared": "Water Shortage Cleared",
+              "no_beans_cleared": "No Beans Cleared",
+              "abnormal_dose_or_water_cleared": "Abnormal Dose / Water Cleared",
+              "abnormal_gear_position_cleared": "Abnormal Gear Position Cleared"
             }
           }
         }
