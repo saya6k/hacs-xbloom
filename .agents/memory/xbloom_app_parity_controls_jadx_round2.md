@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9df22f00-e12a-4774-8845-697ce76887a4
-  modified: 2026-07-19T11:59:23.197Z
+  modified: 2026-07-19T12:09:29.595Z
 ---
 
 Second jadx sweep of `xbloom_coffee_release.apk` (2026-07-19), answering the
@@ -64,11 +64,17 @@ with NO raw heartbeat frame, so 8023 is the more complete page-change
 channel). `connection._ensure_pro_mode`'s rationale ("Easy Mode silently
 ignores the Pro brew commands — hot water only") is therefore **refuted**:
 the original symptom was the ratio-footer grind-gate bug
-([[xbloom-ratio-footer-grind-gate]]). The auto Pro-switch and post-brew
-Easy restore (`_auto_switched_to_pro`/`_restore_persisted_mode`) are now
-removable — a user-visible behavior change, so get a go-ahead first;
-3500/4506 (the actual manual start commands) in Easy Mode remain
-untested.
+([[xbloom-ratio-footer-grind-gate]]). A follow-up with-beans probe
+(`probe_beans_confirm.py`) also ran a **manual grind in Easy Mode**
+(8006 → 3500 → `0x22` + 40506 fired, grinder ran → 3505 → 40507), closing
+the last gap, and the user approved removal — **`_ensure_pro_mode`,
+`_restore_persisted_mode`, and `_auto_switched_to_pro` are deleted**
+(PR #127). Only 4506 manual pour in Easy Mode remains formally untested.
+The Easy-slot batch write keeps its own Pro switch
+(`recipes.async_write_easy_slots`, separate hardware-established
+requirement). Bonus from that probe: the vendored `grinder.is_running`
+stayed False through a real grind — yet another cmd-tagged-path
+unreliability datapoint; trust the heartbeat/40506, not it.
 
 **Error resolution signals** (basis for PR #127's cleared event):
 only 40522 is bidirectional (value 1 = refilled). 8203/8204

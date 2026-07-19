@@ -72,14 +72,16 @@ screen — turning the knob on `→` flips it to `X` (cancel), so a stalled
 awaiting_confirm screen may show either depending on whether the knob was
 touched.
 
-**cmd 40506 disambiguation nearly settled**: confirmed absent from the
-APK's CommandParams (40505 GearReport → 40507 Grinder_Stop gap). Now
-observed **twice** (second: the 2026-07-19 Easy-mode probe), both times at
-the exact same instant as `0x22 starting` — zero detection latency argues
-against a no-beans alarm (the app's actual no-beans alarm is 40517
-RD_ErrorIdling "空磨提醒") — and the second run's 40519 cancel was answered
-by 40507, making a 40506/40507 begin/stop pairing the leading reading. A
-grind with a confirmed-full hopper would finish the confirmation.
+**cmd 40506 = grinder begin, CONFIRMED** (2026-07-19, three observations):
+absent from the APK's CommandParams (40505 GearReport → 40507
+Grinder_Stop gap) but real on the wire. Fires at the exact `0x22
+starting` instant on recipe grinds with an empty hopper (×2) AND a full
+one (×1) — hopper-independent, so not a no-beans alarm (that's 40517
+RD_ErrorIdling) — and also fires on **manual** grind start (3500), with
+40507 answering every stop/cancel. It is the reliable grinder-begin
+counterpart 9003 RD_GRINDER_BEGIN never was. No handler in the
+integration yet — candidate future source for a reliable
+`grinding_started` event.
 
 **Cancel slimmed** (`operations.async_cancel` recipe branch): bare 40519
 only, matching `AppJ15AutoManager.stop()`. The old chasers (3505, 4507,
