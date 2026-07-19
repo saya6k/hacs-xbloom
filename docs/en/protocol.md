@@ -87,17 +87,19 @@ from the name alone.
 | 4506 | `APP_BREWER_START` | volume, temp, flow, pattern | Active | manual pour |
 | 4507 | `APP_BREWER_STOP` | — | Active | manual-pour stop only |
 | 4508 | water-source set | LE u32 (0=tank,1=direct) | Active | `WaterSourceType.ordinal()`; J20-only values (8/50) don't apply to Studio |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | — | Present, unconfirmed | in vendored enum, no confirmed call site here |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(temp_c × 10)` | Active (app-confirmed) | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature` sends it live from the pour page whenever the temperature slider changes; the app disables the slider while a pour is actually running |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | execute queued tea recipe |
 | 4513 | `APP_TEA_RECIP_CODE` | tea recipe blob | Active | queues a tea recipe; **not** 8004 — see brewing-notes.md |
-| 8001 | `APP_RECIPE_SEND_AUTO` | recipe blob | Active | coffee recipe, with grinding |
+| 8001 | `APP_RECIPE_SEND_AUTO` | recipe blob | Active | coffee recipe, with grinding; the app picks 8001 vs 8004 on `recipe.isSetGrinderSize` (1 → 8001, else 8004). Its execute chain (`8102` bypass → `8104` cup → `8001`/`8004` → `8002`) has **no mode gate** — it is sent as-is even with the machine in Easy Mode |
 | 8002 | `APP_RECIPE_EXECUTE` | — | Active | commits/starts the queued recipe |
-| 8004 | `APP_RECIPE_SEND_MANUAL` | recipe blob | Active | coffee recipe, no grinding (bypass) |
-| 8006 | `APP_GRINDER_IN` | — | Active | "enter grind screen"; sent internally before manual/recipe grind |
+| 8003 | *(no enum name — raw literal in the app)* | — | Active (app-confirmed) | "电子秤功能进入指令" — show the scale screen on the machine; the app sends it ACK-gated before opening its own scale page (`HomeActivity.onClickOperator3`) |
+| 8004 | `APP_RECIPE_SEND_MANUAL` | recipe blob | Active | coffee recipe, no grinding (bypass) — see 8001 for how the app chooses between them |
+| 8006 | `APP_GRINDER_IN` | size, speed | Active | "enter grind screen"; sent internally before manual/recipe grind. The app also **re-sends it as the live adjuster** (`GrinderActivity.adjustGrinder`, best-effort/no-fail-dialog) whenever the grind-size/RPM sliders change while on the grind page and not running |
 | 8007 | `APP_BREWER_IN` (enum name `RD_BREWER_IN`) | — | Active | "enter pour screen"; sent for app parity before manual pour, not required |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | leave the grind page — cancel from an armed manual grind |
 | 8013 | `APP_BREWER_QUIT` | — | Active | leave the pour page — cancel from an armed manual pour |
-| 8016 | `APP_BREWER_SET_PATTERN` | — | Present, unconfirmed | in vendored enum, no confirmed call site here |
+| 8014 | *(no enum name — raw literal in the app)* | — | Active (app-confirmed) | "退出称重页面" — leave the scale screen; the app sends it from its scale page's back handler (`ScaleActivity.onBackPressed`) |
+| 8016 | `APP_BREWER_SET_PATTERN` | LE u32 pattern code | Active (app-confirmed) | jadx 2026-07-19: `BrewerActivity.checkAndSetSpiral` sends it live from the pour page whenever a pattern is tapped; disabled while a pour is running |
 | 8017 | `APP_RECIPE_START_QUIT` | — | Active | dismiss the machine's own "insert pod" prompt, and cancel from an armed recipe |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | manual-grind pause only, not whole-recipe |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | manual-pour pause only |
@@ -127,7 +129,7 @@ from the name alone.
 | 8009 | `RD_MachineSleeping` | — | Active | sets sleep flag; gates mode-switch retry |
 | 8011 | `RD_MachineNotSleeping` | — | Active | clears sleep flag |
 | 8015 | `RD_UNIT_CHANGE` | 3× LE u32 (weight/temp/water-source unit) | Active | pushed when units are changed on the machine's own touchscreen |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally. `index` mirrors the raw status-heartbeat state code byte-for-byte (live-confirmed 2026-07-19: `0x01` home, `0x1F` recipe loaded, `0x1E` awaiting confirm, `0x22` starting arrived in lock-step on both channels) — this integration reads the state from the heartbeat frames and leaves `index` unused |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally. `index` mirrors the raw status-heartbeat state code byte-for-byte (live-confirmed 2026-07-19: `0x01` home, `0x1F` recipe loaded, `0x1E` awaiting confirm, `0x22` starting arrived in lock-step on both channels) — this integration reads the state from the heartbeat frames and leaves `index` unused. App-side consumption (jadx): `index == 1` (home) is re-posted as a bus event that `AppJ15AutoManager` treats as end-of-session for its auto-brew tracking; `TeaAutoFragment` refreshes its pour list on `index == 35` |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` offset | Telemetry | live grind-size knob |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | live RPM; zeroed explicitly on grind-stop (0 is a real reading, not "unknown") |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | live pour-pattern knob |

@@ -83,17 +83,19 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 4506 | `APP_BREWER_START` | 용량, 온도, 유량, 패턴 | Active | 수동 추출 |
 | 4507 | `APP_BREWER_STOP` | — | Active | 수동 추출 정지 전용 |
 | 4508 | 급수원 설정 | LE u32 (0=탱크,1=직결) | Active | `WaterSourceType.ordinal()`; J20 전용 값(8/50)은 Studio에 해당 없음 |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | — | Present, unconfirmed | 벤더 enum에 존재, 이 통합에서 확인된 호출 지점 없음 |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active (앱 확인) | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화 |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | 큐에 넣은 티 레시피 실행 |
 | 4513 | `APP_TEA_RECIP_CODE` | 티 레시피 블롭 | Active | 티 레시피 큐잉; **8004가 아님** — brewing-notes.md 참고 |
-| 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피 |
+| 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피; 앱은 `recipe.isSetGrinderSize`로 8001/8004를 선택 (1 → 8001, 그 외 → 8004). 앱의 실행 체인(`8102` 바이패스 → `8104` 컵 → `8001`/`8004` → `8002`)에는 **모드 관문이 없음** — 기기가 Easy 모드여도 그대로 전송 |
 | 8002 | `APP_RECIPE_EXECUTE` | — | Active | 큐에 넣은 레시피 커밋/시작 |
-| 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 |
-| 8006 | `APP_GRINDER_IN` | — | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송 |
+| 8003 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active (앱 확인) | "电子秤功能进入指令" — 기기에 저울 화면 표시; 앱은 자기 저울 페이지를 열기 전에 ACK 확인 후 전송 (`HomeActivity.onClickOperator3`) |
+| 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 — 앱의 선택 기준은 8001 항목 참고 |
+| 8006 | `APP_GRINDER_IN` | 굵기, 속도 | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송. 앱은 그라인딩 페이지에서 실행 중이 아닐 때 굵기/RPM 슬라이더가 바뀌면 이를 **실시간 조절 명령으로 재전송** (`GrinderActivity.adjustGrinder`, 실패 무시 best-effort) |
 | 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님 |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | 분쇄 페이지 나가기 — armed 수동 분쇄 취소 |
 | 8013 | `APP_BREWER_QUIT` | — | Active | 추출 페이지 나가기 — armed 수동 추출 취소 |
-| 8016 | `APP_BREWER_SET_PATTERN` | — | Present, unconfirmed | 벤더 enum에 존재, 이 통합에서 확인된 호출 지점 없음 |
+| 8014 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active (앱 확인) | "退出称重页面" — 저울 화면 나가기; 앱 저울 페이지의 뒤로가기 핸들러에서 전송 (`ScaleActivity.onBackPressed`) |
+| 8016 | `APP_BREWER_SET_PATTERN` | LE u32 패턴 코드 | Active (앱 확인) | jadx 2026-07-19: `BrewerActivity.checkAndSetSpiral`이 추출 페이지에서 패턴을 탭할 때마다 실시간 전송; 추출이 도는 동안에는 비활성화 |
 | 8017 | `APP_RECIPE_START_QUIT` | — | Active | 머신 자체의 "포드 삽입" 프롬프트 취소, armed 레시피 취소 |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | 수동 그라인딩 일시정지 전용, 레시피 전체 아님 |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | 수동 추출 일시정지 전용 |
@@ -123,7 +125,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모드 전환 재시도를 게이팅 |
 | 8011 | `RD_MachineNotSleeping` | — | Active | sleep 플래그 해제 |
 | 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨 |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용 |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용. 앱 쪽 소비(jadx): `index == 1`(홈)은 버스 이벤트로 재게시되어 `AppJ15AutoManager`가 자동 추출 트래킹의 세션 종료로 처리; `TeaAutoFragment`는 `index == 35`에서 푸어 리스트를 갱신 |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` 오프셋 | Telemetry | 실시간 그라인딩 굵기 노브 |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | 실시간 RPM; 그라인딩 정지 시 명시적으로 0 처리(0은 실제 값이지 "알 수 없음"이 아님) |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | 실시간 추출 패턴 노브 |
