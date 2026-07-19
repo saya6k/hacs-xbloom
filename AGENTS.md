@@ -45,6 +45,8 @@ ha_xbloom/
 
 Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | const(0x01) | payload | crc(2)`. Type-2 commands (`11506`–`11512` family — mode switch, Easy Mode slots, pour radius/vibration amplitude) need `type_code=2` and a `0xC2` response marker instead of the usual `0xC1`, plus ≥0.8s spacing between back-to-back type-2 sends. The `8100` MTU handshake gates every other command.
 
+`XBloomClient.send_and_wait(cmd, ..., timeout=ACK_TIMEOUT_S)` is the ACK-gated send primitive (added 2026-07-19): it resolves when the machine echoes the command id back, and raises `AckTimeout` otherwise. Multi-step sequences should chain on it rather than on fixed `asyncio.sleep()` — the official app's `AppBleManager.sendMessage` fires each next step from the previous one's success callback, which is what stops a sequence advancing past a step the machine never received. Defaults mirror the app: 1.5s (`DefaultTimeOut`), 3.0s for recipe sends. Measured ACK latency on real hardware is ~370-380ms. It does **not** retry — the sleep-retry policy stays one layer up in `coordinator._async_retry_while_sleeping`. Full migration plan: `tasks/2026-07-app-parity-spec.md` (local, untracked).
+
 **Quick-reference checklist** — each line links to the memory entry with the full investigation history (hardware evidence, decompile trail, prior wrong turns):
 
 - Machine ignores everything until `8100` lands, including on reconnect/retry → [[xbloom-8100-handshake-and-firmware-history]]
