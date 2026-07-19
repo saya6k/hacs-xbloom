@@ -62,6 +62,31 @@ empty (공회전) on a later probe — repeated probe grinds drain the hopper,
 so refill before physical grind verification, and don't read an empty-spin
 grind as a protocol failure.
 
+**The machine's screen sequence during a recipe** (user-reported
+2026-07-19, matching the stall screens): recipe/confirm screen shows
+`<grind size> <ratio int> →` (35 13 — both straight out of our 8001
+payload, ratio being the footer byte's integer part), then grinding shows
+`<size> <RPM> →` (35 60), then brewer shows `<pattern icon> <temp> →`
+(spiral 93). The `→` glyph and `X` are different affordances on the same
+screen — turning the knob on `→` flips it to `X` (cancel), so a stalled
+awaiting_confirm screen may show either depending on whether the knob was
+touched.
+
+**cmd 40506 = grinder begin, CONFIRMED** (2026-07-19, three observations):
+absent from the APK's CommandParams (40505 GearReport → 40507
+Grinder_Stop gap) but real on the wire. Fires at the exact `0x22
+starting` instant on recipe grinds with an empty hopper (×2) AND a full
+one (×1) — hopper-independent, so not a no-beans alarm (that's 40517
+RD_ErrorIdling) — and also fires on **manual** grind start (3500), with
+40507 answering every stop/cancel. It is the reliable grinder-begin
+counterpart 9003 RD_GRINDER_BEGIN never was. **Handled since 2026-07-19**
+(`Response.GRINDER_RUN_BEGIN`, PR #127): mapped to `grinding_started` and
+drives `grinder.is_running`/GRINDING, with the calibration-sweep
+suppression applying like the 9003/40507 pair; 9003's mapping is kept
+only for pre-40506 firmware (no capture has ever shown both firing).
+Live-verified same day: a short manual grind fired
+grinding_started/grinding_complete and flipped is_running both ways.
+
 **Cancel slimmed** (`operations.async_cancel` recipe branch): bare 40519
 only, matching `AppJ15AutoManager.stop()`. The old chasers (3505, 4507,
 8022 + sleeps) are gone — the app never sends them when stopping a brew.

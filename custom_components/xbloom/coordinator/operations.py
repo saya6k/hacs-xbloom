@@ -64,8 +64,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
-
             self._active_operation = "manual_pour"
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.start(
@@ -93,7 +91,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.enter_mode()
             )
@@ -132,7 +129,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             self._active_operation = "manual_grind"
             await self._async_retry_while_sleeping(
                 lambda: self.client.grinder.start(size=self.grind_size, speed=self.rpm)
@@ -150,7 +146,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             await self._async_retry_while_sleeping(
                 lambda: self.client.grinder.enter_mode(size=self.grind_size, speed=self.rpm)
             )
@@ -311,9 +306,6 @@ class OperationsMixin:
                 await self.client.stop_recipe()
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
-        # Restore the user's persisted mode if we had auto-switched to Pro
-        # for an HA operation that is now cancelled.
-        await self._restore_persisted_mode("cancel")
 
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500). See ``async_pour``'s docstring —
@@ -324,3 +316,77 @@ class OperationsMixin:
             await self._async_retry_while_sleeping(lambda: brewing.async_tare(self.client))
         except Exception as exc:
             _LOGGER.error("Tare error: %s", exc)
+
+    async def async_enter_scale_mode(self) -> None:
+        """Show the scale screen on the machine (cmd 8003) — the official
+        app sends this before opening its own scale page. See
+        ``async_pour``'s docstring — same sleep-retry wrapping."""
+        if not await self._async_ensure_connected():
+            return
+        try:
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_enter_scale(self.client)
+            )
+        except Exception as exc:
+            _LOGGER.error("Scale mode enter error: %s", exc)
+
+    async def async_exit_scale_mode(self) -> None:
+        """Leave the scale screen (cmd 8014) — the official app's scale
+        page sends this from its back handler."""
+        if not await self._async_ensure_connected():
+            return
+        try:
+            await self._async_retry_while_sleeping(
+                lambda: brewing.async_exit_scale(self.client)
+            )
+        except Exception as exc:
+            _LOGGER.error("Scale mode exit error: %s", exc)
+
+    async def async_sync_armed_grinder_settings(self) -> None:
+        """Push the current grind size/RPM to a machine sitting on the
+        grind screen after ``async_arm_grind()``.
+
+        The official app has no dedicated adjust command: its
+        ``GrinderActivity.adjustGrinder`` simply re-sends ``GRINDER_IN``
+        (8006) with the new (size, speed) whenever a slider changes while
+        on the grind page and not running, best-effort
+        (``sendMessageNoShowFail``). No-op unless a grind is armed —
+        while idle the values only feed the next start command's payload,
+        and while actually grinding the app disables its sliders too.
+        """
+        if self._armed_operation != "grind":
+            return
+        if not await self._async_ensure_connected():
+            return
+        try:
+            await self.client.grinder.enter_mode(size=self.grind_size, speed=self.rpm)
+        except Exception as exc:
+            _LOGGER.warning("Armed grinder adjust failed: %s", exc)
+
+    async def async_sync_armed_brewer_temperature(self) -> None:
+        """Push the current temperature to a machine sitting on the pour
+        screen after ``async_arm_pour()`` (cmd 4510, temp × 10) — mirrors
+        the official app's ``checkAndSetTemperature``. No-op unless a
+        pour is armed (see ``async_sync_armed_grinder_settings``)."""
+        if self._armed_operation != "pour":
+            return
+        if not await self._async_ensure_connected():
+            return
+        try:
+            await self.client.brewer.set_temperature(float(self.temperature))
+        except Exception as exc:
+            _LOGGER.warning("Armed brewer temperature adjust failed: %s", exc)
+
+    async def async_sync_armed_brewer_pattern(self) -> None:
+        """Push the current pour pattern to a machine sitting on the pour
+        screen after ``async_arm_pour()`` (cmd 8016) — mirrors the
+        official app's ``checkAndSetSpiral``. No-op unless a pour is
+        armed."""
+        if self._armed_operation != "pour":
+            return
+        if not await self._async_ensure_connected():
+            return
+        try:
+            await self.client.brewer.set_pattern(self.pour_pattern)
+        except Exception as exc:
+            _LOGGER.warning("Armed brewer pattern adjust failed: %s", exc)

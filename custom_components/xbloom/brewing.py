@@ -83,6 +83,13 @@ _STEP_SETTLE_TEA_S = 2.0
 # xbloom-ble's python/xbloom.py (CMD_TARE).
 _CMD_TARE = 8500
 
+# 8003/8014 — scale screen enter/exit. Raw literals in the official app
+# (no CommandParams enum names): HomeActivity.onClickOperator3 sends 8003
+# ACK-gated before opening its scale page, ScaleActivity.onBackPressed
+# sends 8014 on leaving it (jadx 2026-07-19).
+_CMD_SCALE_IN = 8003
+_CMD_SCALE_QUIT = 8014
+
 # 11510 — Easy Mode recipe send. Type-2 packet. See the upstream
 # xbloom-ble's PROTOCOL.md "Easy Mode Slots — HCI Confirmed".
 _CMD_EASY_RECIPE_SEND = 11510
@@ -665,6 +672,22 @@ async def async_tare(client) -> None:
         raise ConnectionError("XBloom not connected")
     _LOGGER.info("Scale tare")
     await client._send_command(_CMD_TARE)
+
+
+async def async_enter_scale(client) -> None:
+    """Show the scale screen on the machine (cmd 8003). No payload."""
+    if not client.is_connected:
+        raise ConnectionError("XBloom not connected")
+    _LOGGER.info("Scale screen enter")
+    await client._send_command(_CMD_SCALE_IN)
+
+
+async def async_exit_scale(client) -> None:
+    """Leave the scale screen on the machine (cmd 8014). No payload."""
+    if not client.is_connected:
+        raise ConnectionError("XBloom not connected")
+    _LOGGER.info("Scale screen exit")
+    await client._send_command(_CMD_SCALE_QUIT)
 
 
 async def async_write_easy_slots(

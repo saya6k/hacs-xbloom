@@ -21,6 +21,12 @@ ERROR_EVENT_TYPES = [
     "no_beans",
     "abnormal_dose_or_water",
     "abnormal_gear_position",
+    # Synthesized by the coordinator when the latched water-shortage
+    # condition resolves. Deliberately the ONLY "_cleared" event type:
+    # water shortage is the one error with a wire-level resolution signal
+    # (40522 value=1); the other errors have none (the official app just
+    # toasts them, payload-less), so a derived "cleared" would be a guess.
+    "water_shortage_cleared",
 ]
 
 NOTIFICATION_EVENT_TYPES = [

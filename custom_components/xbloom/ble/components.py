@@ -118,6 +118,28 @@ class BrewerController:
         payload = struct.pack("<5I", flow_bits, volume_bits, temp_bits, water_source, pattern)
         return await self._client._send_command_raw(Command.BREWER_START, payload)
 
+    async def set_temperature(self, temperature: float) -> bool:
+        """APP_BREWER_SET_TEMPERATURE (4510) — live temperature adjust.
+
+        Payload is a single LE u32 of ``round(temp_c * 10)`` (a plain
+        integer, unlike start()'s float32 bit patterns) — matches the
+        official app's ``BrewerActivity.checkAndSetTemperature``
+        (``MathKt.roundToInt(10 * f)``). Sent while the machine is on the
+        pour page; the app disables it during an active pour.
+        """
+        return await self._client._send_command(
+            Command.BREWER_SET_TEMPERATURE, [round(temperature * 10)]
+        )
+
+    async def set_pattern(self, pattern: int) -> bool:
+        """APP_BREWER_SET_PATTERN (8016) — live pour-pattern adjust.
+
+        Single LE u32 pattern code, matching the official app's
+        ``BrewerActivity.checkAndSetSpiral``. Same pour-page timing rules
+        as set_temperature().
+        """
+        return await self._client._send_command(Command.BREWER_SET_PATTERN, [pattern])
+
     async def stop(self) -> bool:
         return await self._client._send_command(Command.BREWER_STOP)
 

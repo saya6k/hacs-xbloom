@@ -263,6 +263,14 @@ class StateMixin:
             # A successful brew implies water and beans were both available.
             self._water_shortage = False
             self._no_beans = False
+        # Synthesize "water_shortage_cleared" when the latched shortage
+        # resolves, dispatched to the event entities after the real event
+        # below. Deliberately the only "_cleared" event — water shortage is
+        # the one error with a wire-level resolution signal (40522 value=1);
+        # deriving "cleared" for the others would be a guess.
+        _cleared_events: list[str] = []
+        if prev_shortage and not self._water_shortage:
+            _cleared_events.append("water_shortage_cleared")
         if (
             (prev_shortage != self._water_shortage or prev_no_beans != self._no_beans)
             and self.hass and self.hass.loop
@@ -331,20 +339,6 @@ class StateMixin:
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
 
-        # ── Restore Easy Mode after HA-triggered operations finish ──
-        # When we auto-switched to Pro for grind/pour/recipe, switch
-        # back once the machine reports a completion event so the
-        # physical slot buttons work again.
-        if self._auto_switched_to_pro and category == "notification" and event_type in (
-            "grinding_complete", "pour_complete", "recipe_complete",
-        ):
-            if self.hass and self.hass.loop:
-                self.hass.loop.call_soon_threadsafe(
-                    lambda: self.hass.async_create_task(
-                        self._restore_persisted_mode(event_type)
-                    )
-                )
-
         def _do_dispatch() -> None:
             # Snapshot the list in case a listener un-registers during iteration
             for cb in list(self._event_listeners):
@@ -352,6 +346,14 @@ class StateMixin:
                     cb(category, event_type, attributes)
                 except Exception as exc:
                     _LOGGER.error("Event listener error: %s", exc)
+            # Synthesized "_cleared" error events (see the flag block above)
+            # ride the same dispatch, after the real event that caused them.
+            for cleared in _cleared_events:
+                for cb in list(self._event_listeners):
+                    try:
+                        cb("error", cleared, {})
+                    except Exception as exc:
+                        _LOGGER.error("Event listener error: %s", exc)
 
         if self.hass and self.hass.loop:
             self.hass.loop.call_soon_threadsafe(_do_dispatch)

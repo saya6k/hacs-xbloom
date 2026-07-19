@@ -717,58 +717,15 @@ class ConnectionMixin:
         except Exception as exc:
             _LOGGER.error("Mode switch error (%s): %s", mode, exc)
 
-    async def _restore_persisted_mode(self, trigger: str) -> None:
-        """Restore the user's persisted mode preference after an HA operation.
-
-        When the user has chosen Easy Mode (the default) we temporarily
-        switch to Pro for grind/pour/recipe execution, then switch back
-        once the machine reports idle.  If the user explicitly chose Pro
-        Mode we leave the machine there — it is already in the right mode.
-        """
-        if self._mode != "easy":
-            # User explicitly chose Pro — nothing to restore.
-            self._auto_switched_to_pro = False
-            return
-        await asyncio.sleep(3.0)
-        if not self._auto_switched_to_pro:
-            return  # another codepath already handled it
-        state = (self.data or {}).get("state", "unknown")
-        if state not in ("idle", "unknown"):
-            _LOGGER.debug(
-                "Not restoring Easy Mode yet — machine is %s (trigger=%s)",
-                state, trigger,
-            )
-            return
-        _LOGGER.info("Restoring Easy Mode after %s", trigger)
-        try:
-            await self._async_switch_mode_with_retry("easy")
-            self._auto_switched_to_pro = False
-            await self.async_refresh()
-        except Exception as exc:
-            _LOGGER.warning("Easy Mode restore failed: %s", exc)
-
-    async def _ensure_pro_mode(self) -> None:
-        """Switch the machine to Pro Mode if it is currently in Easy Mode.
-
-        Called before operations that need the Pro Mode command set
-        (grind, pour, recipe execution).  Easy Mode silently ignores
-        the Pro brew commands, resulting in the grinder never running
-        (hot water only).
-
-        Sets ``_auto_switched_to_pro`` so the event dispatcher can
-        restore Easy Mode when the operation finishes.  This switch is
-        ephemeral — the user's persisted mode preference is not
-        overwritten.
-        """
-        current = (self.data or {}).get("mode", "pro")
-        if current == "easy":
-            _LOGGER.info("Machine is in Easy Mode — switching to Pro for HA operation")
-            try:
-                await self._async_switch_mode_with_retry("pro")
-                self._auto_switched_to_pro = True
-                await self.async_refresh()
-            except Exception as exc:
-                _LOGGER.warning("Pro-mode switch failed: %s", exc)
+    # NOTE: there is deliberately no Easy→Pro auto-switch before brew
+    # operations. An earlier `_ensure_pro_mode` (+ post-brew Easy restore)
+    # existed on the belief that Easy Mode silently ignores the Pro brew
+    # commands ("hot water only, grinder never runs") — hardware-refuted
+    # 2026-07-19: recipe execution AND manual grind both run fine with the
+    # machine in Easy Mode, and the official app sends its brew chain with
+    # no mode gate. The original symptom was the ratio-footer grind-gate
+    # bug. The one real Pro requirement left is the Easy-slot batch write,
+    # which handles its own switch (see recipes.async_write_easy_slots).
 
     async def _async_retry_while_sleeping(
         self, action: Callable[[], Awaitable[_T]]

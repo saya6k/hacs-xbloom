@@ -127,6 +127,9 @@ class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
         self.coordinator.pour_pattern = POUR_PATTERN_OPTIONS.get(option, 2)
         self.async_write_ha_state()
         _LOGGER.debug("Pour pattern changed to: %s", option)
+        # Live-adjust an armed pour screen (no-op otherwise) — the app
+        # sends BREWER_SET_PATTERN (8016) live from the pour page.
+        await self.coordinator.async_sync_armed_brewer_pattern()
 
 
 class XBloomModeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):

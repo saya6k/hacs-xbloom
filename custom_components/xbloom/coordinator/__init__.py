@@ -247,11 +247,6 @@ class XBloomCoordinator(
         self._armed_recipe_is_tea: bool = False
         self._armed_recipe_tea_payload: Optional[bytes] = None
 
-        # Track whether we temporarily switched to Pro Mode for an HA
-        # operation.  When the operation completes we switch back to the
-        # default (Easy) mode so the physical slot buttons work again.
-        self._auto_switched_to_pro: bool = False
-
         # Set just before a user/HA-initiated disconnect so
         # _handle_unexpected_disconnect() can tell it apart from the
         # machine dropping the link on its own (observed on Easy<->Pro

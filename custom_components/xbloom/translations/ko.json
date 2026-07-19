@@ -153,6 +153,12 @@
       "tare_scale": {
         "name": "저울 영점"
       },
+      "enter_scale_mode": {
+        "name": "저울 모드 진입"
+      },
+      "exit_scale_mode": {
+        "name": "저울 모드 나가기"
+      },
       "calibrate_grinder": {
         "name": "그라인더 캘리브레이션"
       },
@@ -279,7 +285,8 @@
               "water_shortage": "물 부족",
               "no_beans": "원두 없음",
               "abnormal_dose_or_water": "도징/물 양 이상",
-              "abnormal_gear_position": "그라인더 기어 위치 이상"
+              "abnormal_gear_position": "그라인더 기어 위치 이상",
+              "water_shortage_cleared": "물 부족 해소"
             }
           }
         }

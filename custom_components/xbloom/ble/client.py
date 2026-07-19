@@ -102,7 +102,13 @@ _WEIGHT_GLITCH_LIMIT = 300.0
 _WEIGHT_GLITCH_ESCAPE_COUNT = 4
 
 _NOTIFICATION_MAP = {
+    # 9003 has never been seen firing on this firmware; 40506 is the
+    # hardware-confirmed begin signal (see Response.GRINDER_RUN_BEGIN).
+    # Both stay mapped — no capture has ever shown a firmware sending
+    # both, so there is no double-fire in practice, and keeping 9003
+    # covers any older firmware that predates 40506.
     Response.GRINDER_BEGIN: "grinding_started",
+    Response.GRINDER_RUN_BEGIN: "grinding_started",
     Response.GRINDER_STOP: "grinding_complete",
     Response.BREWER_BEGIN: "brewing_started",
     Response.BREWER_COFFEE_START: "brewing_started",
@@ -716,7 +722,10 @@ class XBloomClient:
         elif response == Response.BREWER_TEMPERATURE:
             if len(payload) >= 4:
                 st.brewer.temperature = struct.unpack_from("<I", payload, 0)[0] / 10.0
-        elif response == Response.GRINDER_BEGIN:
+        elif response in (Response.GRINDER_BEGIN, Response.GRINDER_RUN_BEGIN):
+            # GRINDER_RUN_BEGIN (40506) is the signal that actually fires
+            # on real grinds — without it here, grinder.is_running stayed
+            # False through an entire live grind (observed 2026-07-19).
             st.grinder.is_running = True
             st.state = DeviceState.GRINDING
         elif response == Response.GRINDER_STOP:

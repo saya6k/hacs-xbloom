@@ -56,6 +56,9 @@ class XBloomGrindSizeNumber(_XBloomNumber):
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.grind_size = int(value)
         self.async_write_ha_state()
+        # Live-adjust an armed grind screen (no-op otherwise) — the app
+        # re-sends GRINDER_IN (8006) with the new size/RPM on the grind page.
+        await self.coordinator.async_sync_armed_grinder_settings()
 
 
 class XBloomRPMNumber(_XBloomNumber):
@@ -76,6 +79,9 @@ class XBloomRPMNumber(_XBloomNumber):
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.rpm = int(value)
         self.async_write_ha_state()
+        # Live-adjust an armed grind screen (no-op otherwise) — see
+        # XBloomGrindSizeNumber.
+        await self.coordinator.async_sync_armed_grinder_settings()
 
 
 class XBloomTemperatureNumber(_XBloomNumber):
@@ -106,6 +112,9 @@ class XBloomTemperatureNumber(_XBloomNumber):
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.temperature = int(value)
         self.async_write_ha_state()
+        # Live-adjust an armed pour screen (no-op otherwise) — the app
+        # sends BREWER_SET_TEMPERATURE (4510) live from the pour page.
+        await self.coordinator.async_sync_armed_brewer_temperature()
 
 
 class XBloomVolumeNumber(_XBloomNumber):

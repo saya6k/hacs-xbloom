@@ -39,11 +39,13 @@ class Command(IntEnum):
     TEA_RECIPE_CODE = 4513
     RECIPE_SEND_AUTO = 8001
     RECIPE_EXECUTE = 8002
+    SCALE_IN = 8003
     RECIPE_SEND_MANUAL = 8004
     GRINDER_IN = 8006
     BREWER_IN = 8007
     GRINDER_QUIT = 8012
     BREWER_QUIT = 8013
+    SCALE_QUIT = 8014
     BREWER_SET_PATTERN = 8016
     RECIPE_START_QUIT = 8017
     GRINDER_PAUSE = 8018
@@ -122,6 +124,14 @@ class Response(IntEnum):
     PODS = 40501
     BREWER_COFFEE_START = 40502
     GEAR_REPORT = 40505
+    # 40506 is absent from the official app's own constant table (firmware
+    # newer than app) but hardware-confirmed 2026-07-19 as the real
+    # grinder-begin notification: fires at the exact instant the grinder
+    # starts, hopper-independent, on recipe AND manual grinds, with
+    # GRINDER_STOP (40507) answering every stop/cancel. The reliable
+    # counterpart GRINDER_BEGIN (9003) never was — that one has never been
+    # seen firing on this firmware.
+    GRINDER_RUN_BEGIN = 40506
     GRINDER_STOP = 40507
     BLOOM = 40510
     BREWER_STOP = 40511
