@@ -91,7 +91,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8003 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "电子秤功能进入指令" — 기기에 저울 화면 표시; 앱은 자기 저울 페이지를 열기 전에 ACK 확인 후 전송 (`HomeActivity.onClickOperator3`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태코드가 홈 `0x01` → `0x04` → `0x05`(저울 화면)로 이동; 노브 진입 시의 9002/9008 보고는 BLE 명령 경로에서는 발화하지 않았음 |
 | 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 — 앱의 선택 기준은 8001 항목 참고 |
 | 8006 | `APP_GRINDER_IN` | 굵기, 속도 | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송. 앱은 그라인딩 페이지에서 실행 중이 아닐 때 굵기/RPM 슬라이더가 바뀌면 이를 **실시간 조절 명령으로 재전송** (`GrinderActivity.adjustGrinder`, 실패 무시 best-effort) — 재전송이 하드웨어에서 깔끔히 ACK됨 (2026-07-19 라이브), 그리고 분쇄 페이지는 Easy 모드에서도 열림 (8023 index `0x02`로 보고) |
-| 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님 |
+| 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님. 추출 화면을 엶(상태/8023 코드 `0x03`) — 단, 한 라이브 런에서는 이후 코드 방출이 없었어서 보고가 완전히 일관되지는 않음 |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | 분쇄 페이지 나가기 — armed 수동 분쇄 취소 |
 | 8013 | `APP_BREWER_QUIT` | — | Active | 추출 페이지 나가기 — armed 수동 추출 취소 |
 | 8014 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "退出称重页面" — 저울 화면 나가기; 앱 저울 페이지의 뒤로가기 핸들러에서 전송 (`ScaleActivity.onBackPressed`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태가 홈 `0x01`로 복귀 |
@@ -163,7 +163,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40526 | `RD_CurrentGrinder` | LE u32, `-30` 오프셋 | Active | 8105와 동일 값; `is_calibrating_grinder` 중 `raw == 85`가 실제 캘리브레이션 완료 신호 |
 | 40527 | `RD_BeforeVibration` | — | Present, 페이로드 없음 확인 | 디컴파일로 확인된 페이로드 없는 펄스 |
 | 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 캘리브레이션 시작/진행 펄스; 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
-| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백) |
+| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x03` 추출 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백). 수동 추출은 `0x03` → `0x23`(brewing) → 4507 정지 시 `0x03` 복귀로 진행하며, 4506/4507 ACK는 용량을 float32로 echo |
 
 두 개의 id는 문맥에 따라 방향과 의미가 다르며 **동일 명령이 아닙니다**:
 `4508`은 순수 아웃바운드 급수원 setter(위 표 참고)이고, `8103`은 아웃바운드
