@@ -81,7 +81,7 @@ from the name alone.
 
 | id | name | payload | status | notes |
 | ---: | --- | --- | --- | --- |
-| 3500 | `APP_GRINDER_START` | size, speed | Active | manual + recipe grind |
+| 3500 | `APP_GRINDER_START` | size, speed | Active | manual + recipe grind; runs in Easy Mode too (hardware 2026-07-19 — see the 8001 note on the absent mode gate) |
 | 3502 | `CMD_CALIBRATE_GRINDER` | `[1000]` fixed | Active | fire-and-forget; machine runs ~120s sweep autonomously |
 | 3505 | `APP_GRINDER_STOP` | — | Active | manual-grind stop only, not whole-recipe |
 | 4506 | `APP_BREWER_START` | volume, temp, flow, pattern | Active | manual pour |
@@ -153,7 +153,7 @@ from the name alone.
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC pod detected; app hex-decodes 12 hex chars = 6 bytes, not 12 raw bytes |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | alternate "brewing started" signal |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | no handler |
-| 40506 | *(not in the APK's constant table)* | — | Observed, unconfirmed | fired exactly as the machine entered `starting` (status `0x22`, grind stage begin) on **two** live 2026-07-19 captures — both times at the same instant as `0x22` (zero detection latency, which argues against a no-beans alarm), and the second run's 40519 cancel was answered by 40507 (`RD_Grinder_Stop`), making a 40506/40507 begin/stop pairing the leading reading. Would explain why 9003 never fires during recipe grinds. No handler yet; a grind with a confirmed-full hopper would finish the confirmation |
+| 40506 | *(not in the APK's constant table — "grinder begin")* | — | Confirmed, unhandled | fires at the exact instant the grinder starts, hopper-independent (three live 2026-07-19 captures: recipe grinds with an empty hopper ×2 and a full one ×1, plus a **manual** 3500-started grind), with 40507 (`RD_Grinder_Stop`) answering every stop/cancel — a general grinder begin/stop pair. This is the reliable grinder-begin signal 9003 `RD_GRINDER_BEGIN` never was. Not in the app's own constant table (firmware newer than app); no handler in this integration yet — candidate source for a reliable `grinding_started` event |
 | 40507 | `RD_Grinder_Stop` | — | Active | grind end; zeroes live RPM; **not** a valid calibration-complete signal despite firing during calibration's homing move |
 | 40510 | `RD_BLOOM` | — | Active | bloom notification |
 | 40511 | `RD_Brewer_Stop` | — | Active | pour end |

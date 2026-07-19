@@ -77,7 +77,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 
 | id | 이름 | 페이로드 | 상태 | 비고 |
 | ---: | --- | --- | --- | --- |
-| 3500 | `APP_GRINDER_START` | 굵기, 속도 | Active | 수동 + 레시피 그라인딩 |
+| 3500 | `APP_GRINDER_START` | 굵기, 속도 | Active | 수동 + 레시피 그라인딩; Easy 모드에서도 동작 (2026-07-19 하드웨어 — 모드 관문 부재는 8001 항목 참고) |
 | 3502 | `CMD_CALIBRATE_GRINDER` | `[1000]` 고정 | Active | 발사 후 방치; 머신이 약 120초 스윕을 자율적으로 수행 |
 | 3505 | `APP_GRINDER_STOP` | — | Active | 수동 그라인딩 정지 전용, 레시피 전체 정지 아님 |
 | 4506 | `APP_BREWER_START` | 용량, 온도, 유량, 패턴 | Active | 수동 추출 |
@@ -148,7 +148,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | 핸들러 없음 |
-| 40506 | *(APK 상수 테이블에 없음)* | — | Observed, unconfirmed | 2026-07-19 라이브 캡처 **2회** 모두 머신이 `starting`(상태 `0x22`, 분쇄 시작)에 진입하는 것과 정확히 같은 순간 발화 — 검출 지연이 0이라 no-beans 알람 해석에는 불리하고, 두 번째 런에서 40519 취소에 40507(`RD_Grinder_Stop`)이 응답해 40506/40507 begin/stop 짝 구조가 유력. 레시피 분쇄 중 9003이 발화하지 않는 이유를 설명할 수 있음. 핸들러 없음; 호퍼가 확실히 찬 상태의 분쇄 1회면 확정 가능 |
+| 40506 | *(APK 상수 테이블에 없음 — "grinder begin")* | — | Confirmed, unhandled | 그라인더가 도는 정확히 그 순간 발화하며 호퍼 상태와 무관 (2026-07-19 라이브 캡처 3회: 빈 호퍼 레시피 분쇄 ×2, 찬 호퍼 ×1, **수동** 3500 분쇄 포함), 모든 정지/취소에 40507(`RD_Grinder_Stop`)이 응답 — 범용 grinder begin/stop 짝. 9003 `RD_GRINDER_BEGIN`이 끝내 제공하지 못한 신뢰 가능한 분쇄-시작 신호. 앱 자체 상수 테이블에 없는 id(펌웨어가 앱보다 최신); 이 통합엔 아직 핸들러 없음 — 신뢰 가능한 `grinding_started` 이벤트 소스 후보 |
 | 40507 | `RD_Grinder_Stop` | — | Active | 그라인딩 종료; 실시간 RPM을 0으로 설정; 캘리브레이션의 홈 이동 중에도 발생하므로 **캘리브레이션 완료 신호로 유효하지 않음** |
 | 40510 | `RD_BLOOM` | — | Active | 블룸 알림 |
 | 40511 | `RD_Brewer_Stop` | — | Active | 추출 종료 |
