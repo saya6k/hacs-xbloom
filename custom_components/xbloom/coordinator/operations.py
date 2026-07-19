@@ -211,11 +211,22 @@ class OperationsMixin:
                     await self.client.brewer.restart()
                 else:
                     await self.client.brewer.pause()
+            elif state == "paused":
+                await self.client._send_command(_CMD_RECIPE_RESTART)
+            elif state in ("starting", "brewing", "grinding"):
+                await self.client._send_command(_CMD_RECIPE_PAUSE)
             else:
-                if state == "paused":
-                    await self.client._send_command(_CMD_RECIPE_RESTART)
-                else:
-                    await self.client._send_command(_CMD_RECIPE_PAUSE)
+                # No-op unless something is verifiably pausable
+                # (2026-07-19). 40518 is state-sensitive on this firmware:
+                # from awaiting-confirm it STARTS a brew, and third-party
+                # hardware testing reports it can abort a running one —
+                # firing it blind from idle/unknown state is exactly the
+                # kind of guess that ends badly. The button's availability
+                # should track this same condition.
+                _LOGGER.debug(
+                    "Pause/resume pressed with nothing pausable (state=%s) — ignoring",
+                    state,
+                )
         except Exception as exc:
             _LOGGER.error("Pause/resume error (state=%s): %s", state, exc)
 
@@ -288,15 +299,16 @@ class OperationsMixin:
             elif active_operation == "manual_pour":
                 await self.client.brewer.stop()
             else:
+                # Bare 40519, nothing else (2026-07-19) — matching the
+                # official app's AppJ15AutoManager.stop(), which sends only
+                # this. The old heavier sequence chased it with grinder/
+                # brewer stops (3505/4507) and 8022, three commands the app
+                # never sends when stopping a brew; 8022 in particular is
+                # only ever sent from its machine-settings screen. Bare
+                # 40519 is hardware-verified: the ratio-footer bisection
+                # probes used it repeatedly and it cleanly stopped both
+                # grind-stage and pour-stage runs.
                 await self.client.stop_recipe()
-                await asyncio.sleep(0.3)
-                await self.client.grinder.stop()
-                await self.client.brewer.stop()
-                await asyncio.sleep(0.3)
-                # Reset the machine's UI/mode state to the home screen.
-                # Without this the machine stays in whatever screen was
-                # active (e.g. tea recipe UI) after the hardware stops.
-                await self.client._send_command(brewing._CMD_BACK_TO_HOME)
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
         # Restore the user's persisted mode if we had auto-switched to Pro

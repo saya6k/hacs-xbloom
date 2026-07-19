@@ -56,6 +56,7 @@ class XBloomStateSensor(_XBloomSensor):
         "unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping",
         "no_beans", "water_shortage", "ready", "starting", "calibrating",
         "armed_grind", "armed_pour", "armed_recipe",
+        "awaiting_confirm", "recipe_loaded",
     ]
 
     @property

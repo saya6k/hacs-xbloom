@@ -1,0 +1,70 @@
+---
+name: xbloom-brew-start-verification
+description: "Phase 3 (2026-07-19): 8002's echo ACK ≠ brew started — verify from the raw state heartbeat (new mapped codes 0x1E awaiting_confirm / 0x1F recipe_loaded, both live-confirmed); 40518-as-start refuted a second time on this machine (bounced awaiting_confirm back to recipe_loaded); recipe cancel slimmed to bare 40519; error events now tear run flags down; pause fallback state-gated."
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: efb12ddd-12cd-4a2f-8d7a-a3b406787f12
+  modified: 2026-07-19T07:05:30.136Z
+---
+
+Implemented 2026-07-19 (app-parity Phase 3), building on
+[[xbloom-ratio-footer-grind-gate]]'s bisection session.
+
+**Brew-start verification** (`brewing._async_verify_brew_started`, runs
+after 8002 in both the single-shot and confirm paths): watches
+`client.status.raw_state_label` up to 8s — `starting`/`brewing` → started;
+`water_shortage`/`no_beans` → machine refused (raise with reason);
+timeout → raise `BrewStartUnconfirmed`. **Sends nothing while watching.**
+This replaced "assume started", and the very first hardware probe
+validated the design in the best possible way: the machine genuinely
+stalled (below) and the verifier correctly refused to claim success.
+
+**New raw-state codes, live-confirmed on this machine** (adopted from
+HomoLand/xbloom-studio-brew's D500 notes, then observed directly):
+`0x1F recipe_loaded` (after the arm chain lands) and `0x1E
+awaiting_confirm` (after 8002 when the machine wants its own screen
+confirmed). Also mapped on their word but NOT yet seen here: `0x0C` →
+water_shortage, `0x0F` → no_beans. All four are in `_RAW_STATE_LABEL_MAP`,
+the state sensor's ENUM options, and all 3 translation files.
+
+**40518-as-start: refuted AGAIN, live.** HomoLand/Janczykkkko both claim
+40518 starts a brew from awaiting-confirm (their hardware). Tried here
+2026-07-19: the machine bounced from `awaiting_confirm` back to
+`recipe_loaded` — no start. Consistent with this project's original
+refutation ([[xbloom-40518-and-8104-third-party-claims-refuted]]). Their
+other 40518 warning ("into a running brew it aborts back to armed") stays
+unverified here but motivated the pause-gate below; don't fire 40518 on
+any guess.
+
+**Why the machine stalled at awaiting_confirm at all** (previous four
+brews auto-proceeded within ~1-4s): unresolved. Not sleep (is_sleeping
+False, pro mode, home screen). Most plausible: physical state after the
+prior completed brew (used grounds/cup on the scale). The stall is exactly
+the case the verifier exists for; if it recurs, ask what the machine's own
+screen shows before theorizing.
+
+**Cancel slimmed** (`operations.async_cancel` recipe branch): bare 40519
+only, matching `AppJ15AutoManager.stop()`. The old chasers (3505, 4507,
+8022 + sleeps) are gone — the app never sends them when stopping a brew.
+Bare 40519 was hardware-proven by the bisection probes (cleanly stopped
+grind-stage and pour-stage runs repeatedly).
+
+**Error teardown** (`state._finish_run`): `no_beans` /
+`abnormal_dose_or_water` / `abnormal_gear_position` error events now clear
+`_executing_recipe`/`_active_recipe_pours`/`current_pour_index`/
+`_active_operation` (the app posts BleEnjoyEvent on ErrorBle1/ErrorIdling).
+`water_shortage` is deliberately excluded — hardware-observed firing
+mid-brew while the brew ran to completion, and the app likewise excludes
+ErrorLackOfWater. Stale flags misroute cancel, pause, and idle standby.
+
+**Pause fallback state-gated** (`operations.async_pause_resume`): with no
+`_active_operation`, 40518/40524 only fire from
+`starting`/`brewing`/`grinding`/`paused`; anything else is a logged no-op.
+
+**Tea 4512 is ACK-gated** (`send_and_wait`, 3.0s) — the one place the
+third-party repos' echo-gating matched our primitive directly.
+
+**How to apply**: brew-start problems → read the label sequence first
+(`recipe_loaded` → `awaiting_confirm` → stuck means the machine wants a
+human); never "fix" a stall by firing state-sensitive commands blind.

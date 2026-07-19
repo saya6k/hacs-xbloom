@@ -289,6 +289,54 @@ async def async_execute_recipe(
     )
 
 
+class BrewStartUnconfirmed(Exception):
+    """8002 was sent but the machine never confirmed the brew started."""
+
+
+_BREW_START_TIMEOUT_S = 8.0
+_BREW_STARTED_LABELS = frozenset({"starting", "brewing"})
+_BREW_REFUSED_LABELS = frozenset({"water_shortage", "no_beans"})
+
+
+async def _async_verify_brew_started(client, *, timeout: float = _BREW_START_TIMEOUT_S) -> str:
+    """Confirm a committed coffee brew actually started, from machine state.
+
+    The 8002 echo ACK is not the signal — the machine's own raw status
+    heartbeat is. Watches ``client.status.raw_state_label`` for:
+
+    - ``starting``/``brewing`` → the brew is underway; return the label.
+      (The normal case: our brews auto-proceed within ~1-4s of 8002.)
+    - ``water_shortage``/``no_beans`` → the machine refused; raise, so the
+      caller reports a real reason instead of pretending the brew runs.
+    - nothing within ``timeout`` → raise. Fail closed: previously the code
+      just assumed the brew had started, which a real stall (observed
+      2026-07-19: the machine sat in ``awaiting_confirm`` on its own
+      screen) turned into silent wrongness.
+
+    Deliberately sends NO follow-up command on a stall. Third-party notes
+    (HomoLand/Janczykkkko) claim 40518 acts as "start" from
+    awaiting-confirm on their unit; tried live on this machine 2026-07-19
+    and it bounced the state back to ``recipe_loaded`` instead of starting
+    — consistent with this project's earlier refutation of the
+    40518-as-start claim. The machine's own confirm screen wants a human,
+    and the error message says so.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    label = None
+    while asyncio.get_running_loop().time() < deadline:
+        label = client.status.raw_state_label
+        if label in _BREW_STARTED_LABELS:
+            return label
+        if label in _BREW_REFUSED_LABELS:
+            raise BrewStartUnconfirmed(f"machine refused the brew: {label}")
+        await asyncio.sleep(0.1)
+    if label == "awaiting_confirm":
+        raise BrewStartUnconfirmed(
+            "machine is waiting for confirmation on its own screen"
+        )
+    raise BrewStartUnconfirmed(f"no start confirmation within {timeout:.0f}s")
+
+
 async def _ack_step(
     client,
     command: int,
@@ -460,10 +508,11 @@ async def _async_brew_coffee(
     # button flow gets that gap for free from the real second press.
     await asyncio.sleep(1.0)
 
-    # 8002 — Execute. Deliberately not ACK-gated: it is unverified
-    # whether a missing 8002 ACK means the brew failed to start, and
-    # raising on it could report a failure for a brew that is running.
+    # 8002 — Execute. Not ACK-gated (the echo says nothing about whether
+    # the brew started); verified from the machine's own state heartbeat
+    # instead, which is the real signal — see _async_verify_brew_started.
     await client.execute_coffee_recipe()
+    await _async_verify_brew_started(client)
 
 
 async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
@@ -554,8 +603,11 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
 
     # 4512 — APP_TEA_RECIP_MAKE. Execute. Re-sends the payload here rather
     # than an empty execute (matches the firmware's expected sequence).
-    await client._send_command_raw(
-        Command.TEA_RECIPE_MAKE, payload,
+    # ACK-gated on the plain command echo — unlike coffee's 8002, that is
+    # how the hardware-verified third-party implementations confirm this
+    # one (HomoLand start_tea: _drain_for_command(CMD_TEA_RECIPE_MAKE)).
+    await client.send_and_wait(
+        Command.TEA_RECIPE_MAKE, raw=payload, timeout=ACK_TIMEOUT_RECIPE_SEND_S,
     )
 
 
@@ -595,9 +647,13 @@ async def async_confirm_recipe(
     if is_tea:
         if tea_payload is None:
             raise ValueError("tea_payload is required to confirm a tea recipe")
-        await client._send_command_raw(Command.TEA_RECIPE_MAKE, tea_payload)
+        await client.send_and_wait(
+            Command.TEA_RECIPE_MAKE, raw=tea_payload,
+            timeout=ACK_TIMEOUT_RECIPE_SEND_S,
+        )
     else:
         await client.execute_coffee_recipe()
+        await _async_verify_brew_started(client)
 
 
 async def async_tare(client) -> None:

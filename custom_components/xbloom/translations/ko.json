@@ -198,7 +198,9 @@
           "calibrating": "캘리브레이션 중",
           "armed_grind": "예약됨 (분쇄)",
           "armed_pour": "예약됨 (추출)",
-          "armed_recipe": "예약됨 (레시피)"
+          "armed_recipe": "예약됨 (레시피)",
+          "awaiting_confirm": "확인 대기",
+          "recipe_loaded": "레시피 준비됨"
         }
       },
       "weight": {
