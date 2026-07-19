@@ -62,6 +62,30 @@ skips clearing `_armed_operation`) contradicts this — and is worse than a
 no-op, since a stuck armed flag makes the *next* button press confirm
 (start a real grind/pour) instead of arm.
 
+**5. Hardware-verified 2026-07-19** (natively on the Mac — see
+[[xbloom-macos-native-ble-testing]] for why this is possible at all):
+
+- 8012, 8013 and 8017 are all **accepted, each with a proper `0xC1` ACK**
+  (`5802074c1f0c000000c1e444` / `...4d1f...c131db` / `...511f...c162df`),
+  as are the 8006/8007 enters. The command-table status change from
+  "Present, unconfirmed" to Active is now backed by direct evidence, not
+  just the decompile.
+- Idle telemetry is a **~10 Hz flood** (`CURRENT_WEIGHT2` and
+  `WATER_VOLUME` at ~5 Hz each), **max gap 1.23s over 5 continuous
+  minutes**. So `_BLE_SILENCE_TIMEOUT_S = 15.0` is comfortably
+  conservative and a 15s gap really does mean a wedged link — the
+  placeholder value turned out fine.
+- **The machine did NOT sleep during 5+ minutes of connected idle**, and
+  the stream never paused. The mechanism originally proposed for the
+  overnight lockup — machine sleeps, telemetry stops, the old
+  reconnect-inline watchdog storms — is therefore **still unproven**. The
+  `is_sleeping()` gate on the watchdog is defensive, not demonstrated
+  load-bearing. Don't cite it as the established root cause.
+- What the measurement *does* establish independently: holding the link
+  means absorbing ~10 notifications/second forever (~864k packets/day),
+  which is its own argument for idle standby regardless of the sleep
+  question.
+
 **Why**: both live bugs traced back to the same wrong assumption — that
 the integration should hold and defend a BLE link the vendor's own client
 only ever holds while a user is looking at it.
