@@ -201,7 +201,9 @@ _CMD_RECIPE_RESTART = 40524
 # _async_switch_mode_with_retry mirrors this via client.is_sleeping().
 _MODE_SWITCH_HEX = {"pro": "00000000", "easy": "91327856"}
 _MODE_SWITCH_ACK_TIMEOUT_S = 1.5
-_MODE_SWITCH_MAX_ATTEMPTS = 4
+# Same sendMessage retry mechanism as _WAKE_RETRY_MAX_ATTEMPTS below —
+# 3 total sends per the app (retryCount starts at 1, resends while < 3).
+_MODE_SWITCH_MAX_ATTEMPTS = 3
 
 # General sleep-retry wrapper (coordinator._async_retry_while_sleeping),
 # for every other user-triggered action (grind/pour/tare/calibrate/execute
@@ -227,7 +229,10 @@ _MODE_SWITCH_MAX_ATTEMPTS = 4
 # constants above (same underlying DefaultTimeOut) but named separately
 # since they're a distinct, more approximate retry mechanism.
 _WAKE_RETRY_DELAY_S = 1.5
-_WAKE_RETRY_MAX_ATTEMPTS = 4
+# 3 total sends, not 4 — miscounted before the AppBleManager decompile was
+# re-read (2026-07-19): its timeout path resends only while
+# retryCount < 3 with retryCount starting at 1, i.e. initial + 2 retries.
+_WAKE_RETRY_MAX_ATTEMPTS = 3
 
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and

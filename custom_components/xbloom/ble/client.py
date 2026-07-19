@@ -94,6 +94,13 @@ _DISPLAY_BRIGHTNESS_RAW = {1: 1, 2: 8, 3: 15}
 
 HANDSHAKE_DATA = [185, 1]
 
+# Scale glitch filter, mirroring AppJ15AutoManager.onCoffeeVolume: reject a
+# reading >300 units from the last accepted one, unless 4 consecutive
+# readings insist (outOfLimitCount >= 4 in the app). Same wire units — the
+# app's weight is the identical float32 (WeightBleModel.intBitsToFloat).
+_WEIGHT_GLITCH_LIMIT = 300.0
+_WEIGHT_GLITCH_ESCAPE_COUNT = 4
+
 _NOTIFICATION_MAP = {
     Response.GRINDER_BEGIN: "grinding_started",
     Response.GRINDER_STOP: "grinding_complete",
@@ -156,6 +163,9 @@ class XBloomClient:
         # Waiters registered by send_and_wait(), keyed by the command id
         # whose echoed response resolves them.
         self._pending_acks: dict[int, List[asyncio.Future]] = {}
+        # Scale glitch filter state — see _filter_weight.
+        self._last_accepted_weight: Optional[float] = None
+        self._weight_out_of_limit_count: int = 0
 
         self.grinder = GrinderController(self)
         self.brewer = BrewerController(self)
@@ -507,6 +517,32 @@ class XBloomClient:
             except Exception as exc:
                 _LOGGER.error("Event callback error: %s", exc)
 
+    def _filter_weight(self, new: float) -> float:
+        """Reject single-frame scale glitches, exactly like the official app.
+
+        ``AppJ15AutoManager.onCoffeeVolume``: a reading more than 300 units
+        from the last accepted one is dropped, unless 4 consecutive
+        readings agree it (a real step change — e.g. lifting the cup),
+        at which point it is accepted and the counter resets. The app only
+        runs this during a brew session; applied here unconditionally with
+        the same parameters, since the stream floods at ~10 Hz and the
+        4-frame escape bounds the added latency at ~0.4s.
+        """
+        last = self._last_accepted_weight
+        if (
+            last is not None
+            and abs(new - last) > _WEIGHT_GLITCH_LIMIT
+            and self._weight_out_of_limit_count < _WEIGHT_GLITCH_ESCAPE_COUNT
+        ):
+            # The app checks the counter BEFORE incrementing (`<= 300 ||
+            # outOfLimitCount >= 4`), so an outlier run is rejected 4 times
+            # and accepted on the 5th — not the 4th.
+            self._weight_out_of_limit_count += 1
+            return last
+        self._last_accepted_weight = new
+        self._weight_out_of_limit_count = 0
+        return new
+
     def _on_notification(self, char, data: bytearray) -> None:
         self._last_notification_monotonic = time.monotonic()
         raw = bytes(data)
@@ -667,12 +703,16 @@ class XBloomClient:
                 st.grinder.position = struct.unpack_from("<I", payload, 0)[0]
         elif response == Response.CURRENT_WEIGHT2:
             if len(payload) >= 4:
-                st.scale.weight = struct.unpack_from("<f", payload, 0)[0]
+                st.scale.weight = self._filter_weight(
+                    struct.unpack_from("<f", payload, 0)[0]
+                )
         elif response == Response.CURRENT_WEIGHT:
             # Same float32 layout as CURRENT_WEIGHT2 (20501) — a second
             # weight-telemetry cmd some firmwares/sessions send instead.
             if len(payload) >= 4:
-                st.scale.weight = struct.unpack_from("<f", payload, 0)[0]
+                st.scale.weight = self._filter_weight(
+                    struct.unpack_from("<f", payload, 0)[0]
+                )
         elif response == Response.BREWER_TEMPERATURE:
             if len(payload) >= 4:
                 st.brewer.temperature = struct.unpack_from("<I", payload, 0)[0] / 10.0
