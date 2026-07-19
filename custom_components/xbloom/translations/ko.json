@@ -153,6 +153,12 @@
       "tare_scale": {
         "name": "저울 영점"
       },
+      "enter_scale_mode": {
+        "name": "저울 모드 진입"
+      },
+      "exit_scale_mode": {
+        "name": "저울 모드 나가기"
+      },
       "calibrate_grinder": {
         "name": "그라인더 캘리브레이션"
       },

@@ -35,6 +35,16 @@ class _FakeBrewer:
         self.enter_mode_calls = 0
         self.start_calls: list[dict] = []
         self.stop_calls = 0
+        self.set_temperature_calls: list[float] = []
+        self.set_pattern_calls: list[int] = []
+
+    async def set_temperature(self, temperature: float) -> bool:
+        self.set_temperature_calls.append(temperature)
+        return True
+
+    async def set_pattern(self, pattern: int) -> bool:
+        self.set_pattern_calls.append(pattern)
+        return True
 
     async def enter_mode(self) -> bool:
         self.enter_mode_calls += 1
@@ -212,3 +222,50 @@ def test_pause_resume_is_a_noop_while_armed():
 
     assert coordinator.client.brewer.start_calls == []
     assert coordinator.client.sent_commands == []
+
+
+def test_armed_grinder_adjust_resends_enter_mode_with_new_values():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_arm_grind())
+    coordinator.grind_size = 55
+    coordinator.rpm = 110
+    asyncio.run(coordinator.async_sync_armed_grinder_settings())
+
+    assert coordinator.client.grinder.enter_mode_calls[-1] == {
+        "size": 55, "speed": 110,
+    }
+
+
+def test_armed_grinder_adjust_is_a_noop_unless_grind_is_armed():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_sync_armed_grinder_settings())
+    assert coordinator.client.grinder.enter_mode_calls == []
+
+    asyncio.run(coordinator.async_arm_pour())
+    asyncio.run(coordinator.async_sync_armed_grinder_settings())
+    assert coordinator.client.grinder.enter_mode_calls == []
+
+
+def test_armed_brewer_adjust_sends_temperature_and_pattern():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_arm_pour())
+    coordinator.temperature = 88
+    coordinator.pour_pattern = 0
+    asyncio.run(coordinator.async_sync_armed_brewer_temperature())
+    asyncio.run(coordinator.async_sync_armed_brewer_pattern())
+
+    assert coordinator.client.brewer.set_temperature_calls == [88.0]
+    assert coordinator.client.brewer.set_pattern_calls == [0]
+
+
+def test_armed_brewer_adjust_is_a_noop_unless_pour_is_armed():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_sync_armed_brewer_temperature())
+    asyncio.run(coordinator.async_sync_armed_brewer_pattern())
+
+    asyncio.run(coordinator.async_arm_grind())
+    asyncio.run(coordinator.async_sync_armed_brewer_temperature())
+    asyncio.run(coordinator.async_sync_armed_brewer_pattern())
+
+    assert coordinator.client.brewer.set_temperature_calls == []
+    assert coordinator.client.brewer.set_pattern_calls == []

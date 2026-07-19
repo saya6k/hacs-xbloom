@@ -153,6 +153,12 @@
       "tare_scale": {
         "name": "Tare Scale"
       },
+      "enter_scale_mode": {
+        "name": "Enter Scale Mode"
+      },
+      "exit_scale_mode": {
+        "name": "Exit Scale Mode"
+      },
       "calibrate_grinder": {
         "name": "Calibrate Grinder"
       },

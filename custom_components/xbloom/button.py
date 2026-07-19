@@ -27,6 +27,8 @@ async def async_setup_entry(
             XBloomPauseButton(coordinator, entry),
             XBloomCancelButton(coordinator, entry),
             XBloomTareButton(coordinator, entry),
+            XBloomEnterScaleModeButton(coordinator, entry),
+            XBloomExitScaleModeButton(coordinator, entry),
             XBloomCalibrateGrinderButton(coordinator, entry),
             XBloomWriteSlotAButton(coordinator, entry),
             XBloomWriteSlotBButton(coordinator, entry),
@@ -142,6 +144,30 @@ class XBloomTareButton(_XBloomButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_tare_scale()
+
+
+class XBloomEnterScaleModeButton(_XBloomButton):
+    _attr_translation_key = "enter_scale_mode"
+    _attr_unique_id = "xbloom_enter_scale_mode"
+
+    @property
+    def device_info(self):
+        return self.coordinator.scale_device_info
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_enter_scale_mode()
+
+
+class XBloomExitScaleModeButton(_XBloomButton):
+    _attr_translation_key = "exit_scale_mode"
+    _attr_unique_id = "xbloom_exit_scale_mode"
+
+    @property
+    def device_info(self):
+        return self.coordinator.scale_device_info
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_exit_scale_mode()
 
 
 class XBloomCalibrateGrinderButton(_XBloomButton):
