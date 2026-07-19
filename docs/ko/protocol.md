@@ -83,19 +83,19 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 4506 | `APP_BREWER_START` | 용량, 온도, 유량, 패턴 | Active | 수동 추출 |
 | 4507 | `APP_BREWER_STOP` | — | Active | 수동 추출 정지 전용 |
 | 4508 | 급수원 설정 | LE u32 (0=탱크,1=직결) | Active | `WaterSourceType.ordinal()`; J20 전용 값(8/50)은 Studio에 해당 없음 |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active (앱 확인) | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화 |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화. 같은 날 하드웨어 확인: 880(88.0℃) 전송 시 ACK payload가 해석된 값을 float32로 echo (`00005c44` = 880.0) |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | 큐에 넣은 티 레시피 실행 |
 | 4513 | `APP_TEA_RECIP_CODE` | 티 레시피 블롭 | Active | 티 레시피 큐잉; **8004가 아님** — brewing-notes.md 참고 |
-| 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피; 앱은 `recipe.isSetGrinderSize`로 8001/8004를 선택 (1 → 8001, 그 외 → 8004). 앱의 실행 체인(`8102` 바이패스 → `8104` 컵 → `8001`/`8004` → `8002`)에는 **모드 관문이 없음** — 기기가 Easy 모드여도 그대로 전송 |
+| 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피; 앱은 `recipe.isSetGrinderSize`로 8001/8004를 선택 (1 → 8001, 그 외 → 8004). 앱의 실행 체인(`8102` 바이패스 → `8104` 컵 → `8001`/`8004` → `8002`)에는 **모드 관문이 없음** — 하드웨어도 불필요함을 확인 (2026-07-19 라이브: Easy 모드 상태에서 전체 체인이 ACK되고 분쇄 단계가 시작됨; 과거의 "Easy 모드는 추출 명령 무시, 물만 나옴" 관측은 ratio footer 버그의 오귀속이었음) |
 | 8002 | `APP_RECIPE_EXECUTE` | — | Active | 큐에 넣은 레시피 커밋/시작 |
-| 8003 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active (앱 확인) | "电子秤功能进入指令" — 기기에 저울 화면 표시; 앱은 자기 저울 페이지를 열기 전에 ACK 확인 후 전송 (`HomeActivity.onClickOperator3`) |
+| 8003 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "电子秤功能进入指令" — 기기에 저울 화면 표시; 앱은 자기 저울 페이지를 열기 전에 ACK 확인 후 전송 (`HomeActivity.onClickOperator3`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태코드가 홈 `0x01` → `0x04` → `0x05`(저울 화면)로 이동; 노브 진입 시의 9002/9008 보고는 BLE 명령 경로에서는 발화하지 않았음 |
 | 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 — 앱의 선택 기준은 8001 항목 참고 |
-| 8006 | `APP_GRINDER_IN` | 굵기, 속도 | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송. 앱은 그라인딩 페이지에서 실행 중이 아닐 때 굵기/RPM 슬라이더가 바뀌면 이를 **실시간 조절 명령으로 재전송** (`GrinderActivity.adjustGrinder`, 실패 무시 best-effort) |
+| 8006 | `APP_GRINDER_IN` | 굵기, 속도 | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송. 앱은 그라인딩 페이지에서 실행 중이 아닐 때 굵기/RPM 슬라이더가 바뀌면 이를 **실시간 조절 명령으로 재전송** (`GrinderActivity.adjustGrinder`, 실패 무시 best-effort) — 재전송이 하드웨어에서 깔끔히 ACK됨 (2026-07-19 라이브), 그리고 분쇄 페이지는 Easy 모드에서도 열림 (8023 index `0x02`로 보고) |
 | 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님 |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | 분쇄 페이지 나가기 — armed 수동 분쇄 취소 |
 | 8013 | `APP_BREWER_QUIT` | — | Active | 추출 페이지 나가기 — armed 수동 추출 취소 |
-| 8014 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active (앱 확인) | "退出称重页面" — 저울 화면 나가기; 앱 저울 페이지의 뒤로가기 핸들러에서 전송 (`ScaleActivity.onBackPressed`) |
-| 8016 | `APP_BREWER_SET_PATTERN` | LE u32 패턴 코드 | Active (앱 확인) | jadx 2026-07-19: `BrewerActivity.checkAndSetSpiral`이 추출 페이지에서 패턴을 탭할 때마다 실시간 전송; 추출이 도는 동안에는 비활성화 |
+| 8014 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "退出称重页面" — 저울 화면 나가기; 앱 저울 페이지의 뒤로가기 핸들러에서 전송 (`ScaleActivity.onBackPressed`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태가 홈 `0x01`로 복귀 |
+| 8016 | `APP_BREWER_SET_PATTERN` | LE u32 패턴 코드 | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetSpiral`이 추출 페이지에서 패턴을 탭할 때마다 실시간 전송; 추출이 도는 동안에는 비활성화. 하드웨어: 같은 날 ACK 확인 (빈 payload echo) |
 | 8017 | `APP_RECIPE_START_QUIT` | — | Active | 머신 자체의 "포드 삽입" 프롬프트 취소, armed 레시피 취소 |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | 수동 그라인딩 일시정지 전용, 레시피 전체 아님 |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | 수동 추출 일시정지 전용 |
@@ -125,7 +125,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모드 전환 재시도를 게이팅 |
 | 8011 | `RD_MachineNotSleeping` | — | Active | sleep 플래그 해제 |
 | 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨 |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용. 앱 쪽 소비(jadx): `index == 1`(홈)은 버스 이벤트로 재게시되어 `AppJ15AutoManager`가 자동 추출 트래킹의 세션 종료로 처리; `TeaAutoFragment`는 `index == 35`에서 푸어 리스트를 갱신 |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 단, 항상 엄격한 짝은 아님: Easy 모드에서 분쇄 페이지를 열면 8023 `index=0x02`만 오고 대응하는 raw 하트비트 프레임은 **없었음** — 8023이 더 완전한 페이지 전환 채널. 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용. 앱 쪽 소비(jadx): `index == 1`(홈)은 버스 이벤트로 재게시되어 `AppJ15AutoManager`가 자동 추출 트래킹의 세션 종료로 처리; `TeaAutoFragment`는 `index == 35`에서 푸어 리스트를 갱신 |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` 오프셋 | Telemetry | 실시간 그라인딩 굵기 노브 |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | 실시간 RPM; 그라인딩 정지 시 명시적으로 0 처리(0은 실제 값이지 "알 수 없음"이 아님) |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | 실시간 추출 패턴 노브 |
@@ -148,7 +148,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | 핸들러 없음 |
-| 40506 | *(APK 상수 테이블에 없음)* | — | Observed, unconfirmed | 2026-07-19 라이브 캡처에서 머신이 `starting`(상태 `0x22`, 분쇄 시작)에 진입하는 순간 정확히 발화 — 40507의 분쇄-시작 카운터파트 후보이며, 레시피 분쇄 중 9003이 발화하지 않는 이유를 설명할 수 있음. 관측 1회; 핸들러 없음 |
+| 40506 | *(APK 상수 테이블에 없음)* | — | Observed, unconfirmed | 2026-07-19 라이브 캡처 **2회** 모두 머신이 `starting`(상태 `0x22`, 분쇄 시작)에 진입하는 것과 정확히 같은 순간 발화 — 검출 지연이 0이라 no-beans 알람 해석에는 불리하고, 두 번째 런에서 40519 취소에 40507(`RD_Grinder_Stop`)이 응답해 40506/40507 begin/stop 짝 구조가 유력. 레시피 분쇄 중 9003이 발화하지 않는 이유를 설명할 수 있음. 핸들러 없음; 호퍼가 확실히 찬 상태의 분쇄 1회면 확정 가능 |
 | 40507 | `RD_Grinder_Stop` | — | Active | 그라인딩 종료; 실시간 RPM을 0으로 설정; 캘리브레이션의 홈 이동 중에도 발생하므로 **캘리브레이션 완료 신호로 유효하지 않음** |
 | 40510 | `RD_BLOOM` | — | Active | 블룸 알림 |
 | 40511 | `RD_Brewer_Stop` | — | Active | 추출 종료 |
@@ -163,7 +163,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40526 | `RD_CurrentGrinder` | LE u32, `-30` 오프셋 | Active | 8105와 동일 값; `is_calibrating_grinder` 중 `raw == 85`가 실제 캘리브레이션 완료 신호 |
 | 40527 | `RD_BeforeVibration` | — | Present, 페이로드 없음 확인 | 디컴파일로 확인된 페이로드 없는 펄스 |
 | 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 캘리브레이션 시작/진행 펄스; 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
-| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고 |
+| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백) |
 
 두 개의 id는 문맥에 따라 방향과 의미가 다르며 **동일 명령이 아닙니다**:
 `4508`은 순수 아웃바운드 급수원 setter(위 표 참고)이고, `8103`은 아웃바운드
