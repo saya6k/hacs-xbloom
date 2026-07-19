@@ -339,20 +339,6 @@ class StateMixin:
                 lambda: self.hass.async_create_task(self.async_refresh())
             )
 
-        # ── Restore Easy Mode after HA-triggered operations finish ──
-        # When we auto-switched to Pro for grind/pour/recipe, switch
-        # back once the machine reports a completion event so the
-        # physical slot buttons work again.
-        if self._auto_switched_to_pro and category == "notification" and event_type in (
-            "grinding_complete", "pour_complete", "recipe_complete",
-        ):
-            if self.hass and self.hass.loop:
-                self.hass.loop.call_soon_threadsafe(
-                    lambda: self.hass.async_create_task(
-                        self._restore_persisted_mode(event_type)
-                    )
-                )
-
         def _do_dispatch() -> None:
             # Snapshot the list in case a listener un-registers during iteration
             for cb in list(self._event_listeners):

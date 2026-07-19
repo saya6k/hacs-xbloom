@@ -35,16 +35,12 @@ class _Coordinator(StateMixin, OperationsMixin):
         self._pod_prompt_active = False
         self._water_shortage = False
         self._no_beans = False
-        self._auto_switched_to_pro = False
         self._event_listeners: list = []
 
     async def _async_ensure_connected(self) -> bool:
         return True
 
     def async_update_listeners(self) -> None:
-        pass
-
-    async def _restore_persisted_mode(self, _reason: str) -> None:
         pass
 
 

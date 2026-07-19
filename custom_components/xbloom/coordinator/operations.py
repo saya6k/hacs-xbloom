@@ -64,8 +64,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
-
             self._active_operation = "manual_pour"
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.start(
@@ -93,7 +91,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.enter_mode()
             )
@@ -132,7 +129,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             self._active_operation = "manual_grind"
             await self._async_retry_while_sleeping(
                 lambda: self.client.grinder.start(size=self.grind_size, speed=self.rpm)
@@ -150,7 +146,6 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self._ensure_pro_mode()
             await self._async_retry_while_sleeping(
                 lambda: self.client.grinder.enter_mode(size=self.grind_size, speed=self.rpm)
             )
@@ -311,9 +306,6 @@ class OperationsMixin:
                 await self.client.stop_recipe()
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
-        # Restore the user's persisted mode if we had auto-switched to Pro
-        # for an HA operation that is now cancelled.
-        await self._restore_persisted_mode("cancel")
 
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500). See ``async_pour``'s docstring —

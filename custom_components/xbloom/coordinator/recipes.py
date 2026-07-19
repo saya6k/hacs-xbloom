@@ -322,13 +322,10 @@ class RecipesMixin:
             return
         recipe, is_tea, bypass_vol, bypass_temp = prepared
         try:
-            # ── Auto-switch to PRO mode if the machine is in Easy mode ──
-            # Easy Mode silences or misinterprets the 8001/8004/8002 Pro-mode
-            # brew sequence, resulting in hot water only (grinder never runs).
-            # We always switch to PRO before a live brew to guarantee the
-            # sequence is honoured.  The user can switch back via the Mode
-            # switch entity if they want physical slot buttons afterwards.
-            await self._ensure_pro_mode()
+            # No Easy→Pro switch here — Easy Mode runs the 8001/8002 brew
+            # sequence fine (hardware-confirmed 2026-07-19; the old "hot
+            # water only in Easy" belief was the ratio-footer bug). See
+            # connection.py's note where _ensure_pro_mode used to live.
             # Snapshot the final (post-override, post-rescale) pour list so
             # the "bloom" handler in _dispatch_event can look up each
             # pour's actual flow_rate as the brew progresses.
@@ -374,7 +371,6 @@ class RecipesMixin:
             return
         recipe, is_tea, bypass_vol, bypass_temp = prepared
         try:
-            await self._ensure_pro_mode()
             tea_payload = await self._async_retry_while_sleeping(
                 lambda: brewing.async_arm_recipe(
                     self.client, recipe,

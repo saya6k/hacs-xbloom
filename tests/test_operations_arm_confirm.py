@@ -94,7 +94,6 @@ class _Coordinator(OperationsMixin):
         self._active_recipe_pours = None
         self.current_pour_index = None
         self.data = {}
-        self.restore_persisted_mode_calls = 0
         self.connected = True
         self.update_listeners_calls = 0
 
@@ -104,14 +103,8 @@ class _Coordinator(OperationsMixin):
     def async_update_listeners(self) -> None:
         self.update_listeners_calls += 1
 
-    async def _ensure_pro_mode(self) -> None:
-        return None
-
     async def _async_retry_while_sleeping(self, action):
         return await action()
-
-    async def _restore_persisted_mode(self, _reason) -> None:
-        self.restore_persisted_mode_calls += 1
 
 
 def test_arm_grind_enters_mode_without_starting():

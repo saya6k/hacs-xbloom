@@ -98,9 +98,6 @@ class _Coordinator(RecipesMixin):
     async def _async_ensure_connected(self) -> bool:
         return True
 
-    async def _ensure_pro_mode(self) -> None:
-        return None
-
     async def _async_retry_while_sleeping(self, action):
         return await action()
 
