@@ -38,3 +38,4 @@
 - [Two-stage arm/confirm buttons](xbloom_two_stage_arm_confirm_buttons.md) — grind/pour/execute-recipe HA buttons now queue-then-go on 2 presses; services/LLM tools unchanged.
 - [Ratio footer grind gate](xbloom_ratio_footer_grind_gate.md) — 8001 footer ratio byte undershooting the pour sum silently downgrades to no-grind (water only, no error); int()→ceil fix; 40519 cancel-probe bisection; bloom-vs-grinding_complete discriminator.
 - [Brew-start verification](xbloom_brew_start_verification.md) — 8002 ACK ≠ started; state-heartbeat verifier (0x1E/0x1F live-confirmed); 40518-as-start re-refuted; bare-40519 cancel; error-event teardown.
+- [App-parity controls jadx round 2](xbloom_app_parity_controls_jadx_round2.md) — 8023=RD_MachineActivity solved; 8003/8014 scale page; 4510/8016/8006 live-adjust; no Easy-mode gate on recipes → _ensure_pro_mode rationale in doubt; PR #127 unverified.
