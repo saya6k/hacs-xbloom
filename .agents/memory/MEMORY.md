@@ -40,3 +40,4 @@
 - [Brew-start verification](xbloom_brew_start_verification.md) — 8002 ACK ≠ started; state-heartbeat verifier (0x1E/0x1F live-confirmed); 40518-as-start re-refuted; bare-40519 cancel; error-event teardown.
 - [App-parity controls jadx round 2](xbloom_app_parity_controls_jadx_round2.md) — 8023=RD_MachineActivity solved; 8003/8014 scale page; 4510/8016/8006 live-adjust; no Easy-mode gate on recipes → _ensure_pro_mode rationale in doubt; PR #127 unverified.
 - [Machine alarm channel + RT/BP](xbloom_machine_alarm_channel_and_rtbp.md) — 0xFFFE/0xCD alarm code lists per category; RT/BP slider 39-96°C → 20/98 on the wire; descale/scale-cal have NO BLE commands; 50038/50039 = gear-zeroing toasts.
+- [T2 screen-code capture](xbloom_t2_screen_code_capture.md) — full standalone screen map (0x06-0x09 subscreens, 0x2F/0x32 descale, 0x39/0x3A scale-cal, 0x25-0x27 grinder-cal); 9001 shows machine volume default 250; 8500 tares anywhere but flips display to scale page.
