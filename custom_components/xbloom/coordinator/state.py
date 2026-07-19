@@ -17,6 +17,23 @@ _LOGGER = logging.getLogger(__name__)
 class StateMixin:
     """DataUpdateCoordinator's ``_async_update_data`` plus BLE event dispatch."""
 
+    def _reconcile_armed_with_screen(self, s) -> None:
+        """Drop a stale grind/pour arm once the machine reports its home
+        screen — the user backed out of the armed page with the knob (T5,
+        2026-07-20). Without this, cancel later sends a quit command for a
+        screen that is no longer open, and the armed fallback in
+        ``_derive_state_string`` can never be reached with wrong data.
+
+        Deliberately NOT applied to an armed recipe: its machine-side
+        dismissal is unverified on hardware, and the arm send chain
+        (8102→8104→8001) sits on the home screen far longer than the
+        instant 8006/8007 page opens do, so a poll tick mid-chain would
+        clear a perfectly live arm. Recipe arms are cleared by cancel, the
+        confirm press, or a machine-side start signal.
+        """
+        if self._armed_operation in ("grind", "pour") and s.screen == "home":
+            self._armed_operation = None
+
     def _derive_state_string(self, s) -> str:
         """The sensor.state derivation chain, in priority order.
 
@@ -141,6 +158,7 @@ class StateMixin:
                 # See ble/client.py's _scan_for_status_frame /
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
+                self._reconcile_armed_with_screen(s)
                 state_str = self._derive_state_string(s)
                 data = {
                     "connected": True,
@@ -314,6 +332,38 @@ class StateMixin:
             # later cancel doesn't send 8017 mid-brew (never verified
             # safe in that state) instead of the real stop/quit sequence.
             self._pod_prompt_active = False
+
+        # ── Armed→active transition on machine-side starts (T5) ──
+        # The user armed in HA but pressed the machine's knob to start:
+        # transition the bookkeeping exactly as the HA confirm press would,
+        # so pause/cancel target the right command family afterwards.
+        # grinding_started with nothing armed/active is deliberately NOT
+        # inferred as a manual grind — an NFC pod brew fires it too, and
+        # the recipe cancel fallback (bare 40519) is the safe default.
+        if category == "notification" and event_type == "easy_slot_started":
+            # A brew from the machine's Easy Mode dial (8111) is a recipe
+            # execution regardless of what, if anything, was armed.
+            self._armed_operation = None
+            self._armed_recipe_is_tea = False
+            self._armed_recipe_tea_payload = None
+            self._active_operation = "recipe"
+        elif category == "notification" and event_type in (
+            "grinding_started", "brewing_started",
+        ):
+            if self._armed_operation == "recipe":
+                # Coffee-with-grind confirms via grinding_started; a
+                # no-grind (bypass) recipe's first signal is
+                # brewing_started.
+                self._armed_operation = None
+                self._armed_recipe_is_tea = False
+                self._armed_recipe_tea_payload = None
+                self._active_operation = "recipe"
+            elif self._armed_operation == "grind" and event_type == "grinding_started":
+                self._armed_operation = None
+                self._active_operation = "manual_grind"
+            elif self._armed_operation == "pour" and event_type == "brewing_started":
+                self._armed_operation = None
+                self._active_operation = "manual_pour"
 
         # ── Track the active pour during recipe execution ──
         # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a
