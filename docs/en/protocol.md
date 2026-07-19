@@ -62,6 +62,11 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
   still be busy replying to the first. Hardware-confirmed at 0.3s (fails)
   vs. 0.8s/1.0s/1.5s (succeeds) across repeated trials; every type-2
   call site in this integration uses an 0.8s gap for margin.
+- **CRC errors are deliberately ignored.** The official app's handler for a
+  machine-reported CRC error (`ErrorCRCBleModel.excute()`) is an empty
+  method — no resend, no user-facing surface, no reset. Do not "fix" this
+  with a retransmit loop: resending on CRC error would be a divergence from
+  the vendor client, not an improvement.
 
 ## Command table
 
