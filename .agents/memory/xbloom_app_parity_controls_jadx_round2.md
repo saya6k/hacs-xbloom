@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9df22f00-e12a-4774-8845-697ce76887a4
-  modified: 2026-07-19T11:31:40.038Z
+  modified: 2026-07-19T11:40:57.172Z
 ---
 
 Second jadx sweep of `xbloom_coffee_release.apk` (2026-07-19), answering the
@@ -55,12 +55,14 @@ machine in Easy mode, send a recipe with a correct ratio footer, watch
 whether it grinds. If it does, the auto Pro-switch (and the post-brew
 Easy restore) can go. Don't remove it before that test.
 
-**Error resolution signals** (basis for PR #127's `*_cleared` events):
+**Error resolution signals** (basis for PR #127's cleared event):
 only 40522 is bidirectional (value 1 = refilled). 8203/8204
 (AbnormalGearPosition/AbnormalDoseOrWater) and 40517 (ErrorIdling =
 no-beans, "空磨提醒") are payload-less one-shot toasts in the app with no
-wire-level clear — so recovery is only honestly detectable via
-demonstrated success (brewing_started / pour_complete / recipe_complete).
+wire-level clear. **User decision 2026-07-19: ship only
+`water_shortage_cleared`** — derived cleared events for the other three
+were implemented then removed same-session as guesswork; don't re-add
+them without a real resolution signal (a test pins the sole-type rule).
 
 **Why:** these are decompile-established facts that future protocol work
 will re-ask; the _ensure_pro_mode doubt in particular must not be lost or
