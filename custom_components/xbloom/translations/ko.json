@@ -201,9 +201,10 @@
           "water_shortage": "물 부족",
           "ready": "완료 (컵 대기)",
           "starting": "시작 중",
-          "calibrating": "캘리브레이션 중",
-          "armed_grind": "예약됨 (분쇄)",
-          "armed_pour": "예약됨 (추출)",
+          "calibrating_grinder": "그라인더 캘리브레이션 중",
+          "standalone_grind": "단독 분쇄",
+          "standalone_pour": "단독 추출",
+          "standalone_scale": "단독 저울",
           "armed_recipe": "예약됨 (레시피)",
           "awaiting_confirm": "확인 대기",
           "recipe_loaded": "레시피 준비됨"

@@ -81,7 +81,11 @@
           "brewing": "mdi:coffee",
           "paused": "mdi:pause-circle",
           "error": "mdi:alert-circle",
-          "sleeping": "mdi:sleep"
+          "sleeping": "mdi:sleep",
+          "calibrating_grinder": "mdi:tune-vertical",
+          "standalone_grind": "mdi:grain",
+          "standalone_pour": "mdi:kettle-outline",
+          "standalone_scale": "mdi:scale-balance"
         }
       },
       "weight": {

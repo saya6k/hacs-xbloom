@@ -201,9 +201,10 @@
           "water_shortage": "Water Shortage",
           "ready": "Ready",
           "starting": "Starting",
-          "calibrating": "Calibrating",
-          "armed_grind": "Armed (Grind)",
-          "armed_pour": "Armed (Pour)",
+          "calibrating_grinder": "Calibrating Grinder",
+          "standalone_grind": "Standalone Grind",
+          "standalone_pour": "Standalone Pour",
+          "standalone_scale": "Standalone Scale",
           "armed_recipe": "Armed (Recipe)",
           "awaiting_confirm": "Awaiting confirm",
           "recipe_loaded": "Recipe loaded"

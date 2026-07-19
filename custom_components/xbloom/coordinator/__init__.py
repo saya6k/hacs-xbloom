@@ -235,9 +235,12 @@ class XBloomCoordinator(
         # "pour" / "recipe" / None. No timeout: stays armed until confirmed
         # or cancelled (async_cancel() sends the per-operation quit command
         # matching whichever machine screen the arm press opened).
-        # sensor.state surfaces it as "armed_grind"/"armed_pour"/
-        # "armed_recipe" (see state.py) so the user knows a second press is
-        # needed.
+        # sensor.state surfaces "recipe" as "armed_recipe"; for grind/pour
+        # the telemetry-driven "standalone_grind"/"standalone_pour" states
+        # (from status.screen, T4 2026-07-20) cover the armed page, with
+        # this flag as the no-screen-reported fallback (see
+        # state._derive_state_string) — so the user knows a second press
+        # is needed.
         self._armed_operation: Optional[str] = None
         # Only meaningful while _armed_operation == "recipe" — which go
         # command async_confirm_recipe() must send, and (tea only) the

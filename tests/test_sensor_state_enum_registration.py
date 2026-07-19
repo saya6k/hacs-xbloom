@@ -40,8 +40,24 @@ def _state_sensor_options() -> set[str]:
     raise AssertionError("XBloomStateSensor._attr_options not found")
 
 
-def test_state_options_include_calibrating():
-    assert "calibrating" in _state_sensor_options()
+def test_state_options_include_calibrating_grinder():
+    assert "calibrating_grinder" in _state_sensor_options()
+
+
+def test_state_options_include_standalone_states():
+    options = _state_sensor_options()
+    assert {"standalone_grind", "standalone_pour", "standalone_scale"} <= options
+
+
+def test_state_options_dropped_armed_grind_pour():
+    """Breaking rename (2026-07-20): armed_grind/armed_pour became the
+    telemetry-driven standalone_* states; armed_recipe stays (it is a
+    start-confirmation prompt, not a standalone page)."""
+    options = _state_sensor_options()
+    assert "armed_grind" not in options
+    assert "armed_pour" not in options
+    assert "calibrating" not in options
+    assert "armed_recipe" in options
 
 
 def test_state_options_match_translations():

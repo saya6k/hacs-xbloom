@@ -17,6 +17,65 @@ _LOGGER = logging.getLogger(__name__)
 class StateMixin:
     """DataUpdateCoordinator's ``_async_update_data`` plus BLE event dispatch."""
 
+    def _derive_state_string(self, s) -> str:
+        """The sensor.state derivation chain, in priority order.
+
+        Extracted from ``_async_update_data`` (T4, 2026-07-20) so the
+        priority table is unit-testable — see
+        tests/test_standalone_state_derivation.py.
+        """
+        if self._armed_operation == "recipe":
+            # Pure HA-side bookkeeping for the two-stage recipe button
+            # (2026-07-18): a machine-visible start prompt, not a
+            # standalone page — the machine reports it via 0x1E/0x1F
+            # anyway, but our own arm is the more immediate signal.
+            return "armed_recipe"
+        if self.client.is_calibrating_grinder():
+            # A deliberate, HA-triggered action (see
+            # async_calibrate_grinder()) we know is actually running, not
+            # inferred from ambiguous telemetry.
+            return "calibrating_grinder"
+        if self._no_beans:
+            return "no_beans"
+        if self._water_shortage:
+            return "water_shortage"
+        if s.raw_state_label:
+            # starting/brewing/ready/awaiting_confirm/… — an activity in
+            # progress always outranks whatever page the machine last
+            # reported (the screen goes stale the moment activity codes
+            # replace page codes on the heartbeat).
+            return s.raw_state_label
+        if (
+            s.screen in ("grind", "pour", "scale")
+            and not s.grinder.is_running
+            and not s.brewer.is_running
+        ):
+            # Telemetry-driven standalone modes (T2 capture 2026-07-20):
+            # the machine's own screen report covers knob-entered pages,
+            # not just HA-armed ones. The is_running guards cover the
+            # window where an operation began but no activity code has
+            # landed yet.
+            return f"standalone_{s.screen}"
+        if s.screen is None and self._armed_operation in ("grind", "pour"):
+            # Armed-bookkeeping fallback, only while the machine has not
+            # reported any screen: one 2026-07-19 run showed no page code
+            # after our own 8007. A reported home screen deliberately
+            # wins over a stale armed flag ("telemetry wins").
+            return f"standalone_{self._armed_operation}"
+        state_str = s.state.value
+        if state_str == "unknown":
+            # Vendored DeviceState defaults to UNKNOWN and only ever
+            # transitions on a Grinder/Brewer Begin/Stop event — on a
+            # connection where the machine has never ground/brewed yet,
+            # nothing ever sets it, so a genuinely idle, connected
+            # machine reports "unknown" forever (hardware-reported
+            # 2026-07-17). We're only called from the
+            # `client.is_connected` branch, so treat "connected + no
+            # error + no activity ever observed" as idle rather than a
+            # permanent placeholder.
+            return "idle"
+        return state_str
+
     async def _async_update_data(self) -> Dict[str, Any]:
         """Pull fresh data from the BLE status object (no I/O needed).
 
@@ -82,43 +141,7 @@ class StateMixin:
                 # See ble/client.py's _scan_for_status_frame /
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
-                raw_label = s.raw_state_label
-                if self._armed_operation:
-                    # Highest priority of all — the two-stage arm/confirm
-                    # manual button flow's armed state (2026-07-18) is
-                    # pure HA-side bookkeeping, not inferred from
-                    # telemetry at all, so it's even more certain than
-                    # is_calibrating_grinder() below. armed_grind /
-                    # armed_pour / armed_recipe — see _armed_operation's
-                    # docstring in __init__.py.
-                    state_str = f"armed_{self._armed_operation}"
-                elif self.client.is_calibrating_grinder():
-                    # Next-highest priority — a deliberate, HA-triggered
-                    # action (see async_calibrate_grinder()) we know is
-                    # actually running, not inferred from ambiguous
-                    # telemetry.
-                    state_str = "calibrating"
-                elif self._no_beans:
-                    state_str = "no_beans"
-                elif self._water_shortage:
-                    state_str = "water_shortage"
-                elif raw_label:
-                    state_str = raw_label
-                else:
-                    state_str = s.state.value
-                    if state_str == "unknown":
-                        # Vendored DeviceState defaults to UNKNOWN and only
-                        # ever transitions to IDLE on a Grinder/Brewer
-                        # Begin/Stop event (the upstream PyBloom's core/client.py) — on
-                        # a connection where the machine has never
-                        # ground/brewed yet, nothing ever sets it, so a
-                        # genuinely idle, connected machine reports
-                        # "unknown" forever (hardware-reported 2026-07-17).
-                        # We're inside the `client.is_connected` branch
-                        # here, so treat "connected + no error + no
-                        # activity ever observed" as idle rather than a
-                        # permanent placeholder.
-                        state_str = "idle"
+                state_str = self._derive_state_string(s)
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
