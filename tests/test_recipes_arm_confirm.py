@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 
+from custom_components.xbloom.ble.client import XBloomClient
 from custom_components.xbloom.coordinator.recipes import RecipesMixin
 
 
@@ -37,6 +38,21 @@ class _FakeClient:
 
     async def execute_coffee_recipe(self, device_id=None):
         self.executed = True
+
+    # See the same block in test_recipe_arm_confirm.py — the arm chains
+    # are ACK-gated, so they route through send_and_wait.
+    _bypass_args = staticmethod(XBloomClient._bypass_args)
+    _cup_args = staticmethod(XBloomClient._cup_args)
+
+    async def send_and_wait(
+        self, command, data=None, *, raw=None, timeout=1.5,
+        device_id=None, type_code=0x01,
+    ):
+        if raw is not None:
+            await self._send_command_raw(command, raw, device_id, type_code)
+        else:
+            await self._send_command(command, data, device_id)
+        return b""
 
 
 _COFFEE_RECIPE = {

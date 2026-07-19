@@ -45,6 +45,8 @@ ha_xbloom/
 
 Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | const(0x01) | payload | crc(2)`. Type-2 commands (`11506`–`11512` family — mode switch, Easy Mode slots, pour radius/vibration amplitude) need `type_code=2` and a `0xC2` response marker instead of the usual `0xC1`, plus ≥0.8s spacing between back-to-back type-2 sends. The `8100` MTU handshake gates every other command.
 
+`XBloomClient.send_and_wait(cmd, ..., timeout=ACK_TIMEOUT_S)` is the ACK-gated send primitive (added 2026-07-19): it resolves when the machine echoes the command id back, and raises `AckTimeout` otherwise. Multi-step sequences should chain on it **in addition to**, not instead of, their inter-step delay — the official app's `AppBleManager.sendMessage` fires each next step from the previous one's success callback, which is what stops a sequence advancing past a step the machine never received, but an ACK means "received", not "applied" (see `brewing._ack_step` and `_STEP_SETTLE_COFFEE_S`). Defaults mirror the app: 1.5s (`DefaultTimeOut`), 3.0s for recipe sends. Measured ACK latency on real hardware is ~370-380ms. It does **not** retry — the sleep-retry policy stays one layer up in `coordinator._async_retry_while_sleeping`. Full migration plan: `tasks/2026-07-app-parity-spec.md` (local, untracked).
+
 **Quick-reference checklist** — each line links to the memory entry with the full investigation history (hardware evidence, decompile trail, prior wrong turns):
 
 - Machine ignores everything until `8100` lands, including on reconnect/retry → [[xbloom-8100-handshake-and-firmware-history]]
@@ -67,6 +69,7 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 - Every user-triggered action (grind/pour/tare/calibrate/execute recipe/easy-slot write) must retry while the machine reports itself asleep, not just mode-switch — the official app's `DefaultTimeOut`/1.5s retry is universal, not mode-switch-specific → [[xbloom-wake-retry-universal-pattern]]
 - `button.grind`/`button.pour`/`button.execute_recipe` are two-stage (arm then confirm on a 2nd press) — HA-button-only, services/LLM tools still act in one call → [[xbloom-two-stage-arm-confirm-buttons]]
 - Cancelling an *armed* operation sends the quit command for that machine screen (`8012` grind / `8013` pour / `8017` recipe, `_ARMED_QUIT_COMMANDS`), never `8022`; and the local armed/active flags clear before the BLE send, regardless of whether it lands → [[xbloom-app-connection-lifecycle-and-page-quit]]
+- The 8001 recipe footer's ratio byte must reconstruct (dose × byte/10) to **at least** the pour sum, or the firmware silently downgrades the whole brew to no-grind — water only, no error, everything still ACKed; never truncate it (`ceil` + clamp 255, `_build_coffee_recipe_payload`) → [[xbloom-ratio-footer-grind-gate]]
 
 If a quirk you're debugging isn't in this checklist, it may not have been hit yet — check `docs/en/protocol.md`'s command table for the id's confirmed/unconfirmed status before assuming new behavior, and write a new memory entry (project-type) once you've root-caused it, rather than growing this file.
 
@@ -208,7 +211,7 @@ This repo (and other `ha-*` HACS components, excluding `ha-app*`) ships on a two
 - Localization broken? Check hard rule #2/#3 above before anything else.
 - Sensor stuck `unknown`? Check the BLE protocol checklist above, especially [[xbloom-machineinfo-reliability-and-padding]] and [[xbloom-raw-state-heartbeat-vs-cmd-tagged]].
 - Sensor shows a raw untranslated word instead of localized Unknown? See "A recurring bug shape" in Entity translation flow.
-- Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. See `docs/en/protocol.md` and `docs/en/brewing-notes.md`.
+- Tea recipe doing nothing, or steeps flattening into one pour? Tea must go through `brewing._async_brew_tea` (8022 → 8102 → 8104 → 4513 → 4512) — `8004` does not trigger tea mode at all. Every step up to 4513 is ACK-gated (`send_and_wait`), so a chain that dies partway raises `AckTimeout` instead of silently reaching 4512. See `docs/en/protocol.md` and `docs/en/brewing-notes.md`.
 - `sensor.state` looks wrong specifically during/right after a real grind? See [[xbloom-raw-state-heartbeat-vs-cmd-tagged]] before assuming a new bug.
 - Adding a new entity? Update `strings.json` AND every file under `translations/`. Add an `icons.json` entry. Don't set `_attr_name` or `_attr_icon` on the class.
 - Adding a new **device** (not entity)? Same idea, one level up — see the Device registry section.

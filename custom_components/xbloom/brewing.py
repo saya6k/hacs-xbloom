@@ -36,8 +36,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import struct
+import time
 
+from .ble.client import ACK_TIMEOUT_RECIPE_SEND_S, ACK_TIMEOUT_S
 from .ble.models import CupType, XBloomRecipe, build_recipe_payload
 from .ble.constants import Command
 
@@ -55,6 +58,26 @@ _TEA_CUP_BOUNDS = (200.0, 0.0)
 # brAzzi64 capture shows the official app sends it outbound at brew
 # start. Hardcoded here as an int to avoid coupling to either enum.
 _CMD_BACK_TO_HOME = 8022
+
+# Minimum wall-clock spacing between recipe-chain steps, held IN ADDITION to
+# waiting for each step's ACK. The two guard different failures and neither
+# replaces the other: the ACK proves the command arrived, the delay gives the
+# machine time to actually apply it before the next one lands. The same
+# distinction is what the 8007/4506 back-to-back regression turned on — see
+# ``coordinator.operations.async_pour``.
+#
+# These values are the spacing this integration shipped with before ACK
+# gating was added (2026-07-19), restored rather than newly chosen. An
+# intermediate version relied on the ACK alone and dropped them; that was
+# reverted because "received" is not "applied", NOT because dropping them was
+# shown to break anything.
+#
+# (A no-grind symptom initially blamed on dropping these floors turned out
+# to be unrelated: it was the ratio footer byte truncating — see
+# _build_coffee_recipe_payload. Restoring the floors did not change it;
+# fixing the footer did, hardware-bisected 2026-07-19.)
+_STEP_SETTLE_COFFEE_S = 1.0
+_STEP_SETTLE_TEA_S = 2.0
 
 # 8500 — Scale tare/zero. Cherry-picked from the upstream
 # xbloom-ble's python/xbloom.py (CMD_TARE).
@@ -202,7 +225,20 @@ def _build_coffee_recipe_payload(recipe: XBloomRecipe) -> bytes:
     total_water = sum(p.volume for p in recipe.pours)
     dose = recipe.bean_weight
     ratio = (total_water / dose) if dose > 0 else 0
-    ratio_byte = int(ratio * 10) & 0xFF
+    # CEIL, never truncate (root-caused on hardware 2026-07-19): the firmware
+    # reconstructs the expected total as dose × ratio_byte/10, and if that
+    # lands BELOW the pours' actual sum it silently downgrades the whole brew
+    # to no-grind — 8001 is ACKed, the pours run, the grinder never starts,
+    # no error is reported. 18g/250ml truncated to 138 (18×13.8 = 248.4 <
+    # 250) and never ground; the same recipe with 139 (250.2) or 140 (252)
+    # grinds, so a small overshoot is tolerated while any undershoot is
+    # fatal. ceil keeps the overshoot under 0.1×dose ≤ 1.8ml. App-made
+    # recipes can't hit this because the app UI forces dose × grandWater to
+    # equal the pour sum exactly (Water_Powder_Error otherwise).
+    # min(…, 255) clamps instead of wrapping: a ratio over 25.5 (e.g. a
+    # 10g/300ml brew) used to alias to a tiny byte via & 0xFF, guaranteeing
+    # the downgrade above. 255 is the closest the wire format can express.
+    ratio_byte = min(math.ceil(ratio * 10), 0xFF)
 
     body_len = len(body_content)
     footer = struct.pack("BB", grind_byte, ratio_byte)
@@ -253,6 +289,30 @@ async def async_execute_recipe(
     )
 
 
+async def _ack_step(
+    client,
+    command: int,
+    data: list | None = None,
+    *,
+    raw: bytes | None = None,
+    timeout: float = ACK_TIMEOUT_S,
+    settle: float,
+) -> None:
+    """Send one recipe-chain step: wait for its ACK, then hold the floor.
+
+    Raises ``AckTimeout`` if the machine never echoes the command, which
+    aborts the caller's whole chain. The ACK wait counts toward ``settle``
+    rather than adding to it, so a fast ACK does not make the sequence any
+    slower than the fixed-delay version it replaced — see
+    ``_STEP_SETTLE_COFFEE_S`` for why the floor exists at all.
+    """
+    started = time.monotonic()
+    await client.send_and_wait(command, data, raw=raw, timeout=timeout)
+    remaining = settle - (time.monotonic() - started)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
+
+
 async def _async_arm_coffee(
     client,
     recipe: XBloomRecipe,
@@ -272,6 +332,24 @@ async def _async_arm_coffee(
     grind/no-grind cup-bound split from the vendored ``XBloomClient``.
     Bypass values come from the YAML's ``bypass_volume`` /
     ``bypass_temperature`` (0 = bypass disabled).
+
+    **Every step is ACK-gated AND floor-spaced** (2026-07-19, see
+    ``_ack_step``). Each command waits for the machine to echo it before
+    the next is sent — an ``AckTimeout`` aborts the whole chain — and the
+    step additionally holds ``_STEP_SETTLE_COFFEE_S`` of wall clock.
+
+    The ACK was added because fixed spacing alone could not tell a
+    delivered step from a dropped one: a missed 8102 still ran on to the
+    8002 execute, starting a brew against a recipe the machine never
+    received. The official app chains these same commands from each
+    other's success callbacks for the same reason
+    (``RecipeDetailActivity.sendBypassJ15`` → ``sendCupJ15`` →
+    ``sendCodeJ15`` → ``readyToGo``).
+
+    The floor was kept because the ACK alone is **not** sufficient — it
+    means "received", not "applied" — and because it is the spacing this
+    integration already shipped with. See ``_STEP_SETTLE_COFFEE_S``,
+    including the unresolved no-grind observation recorded there.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -293,10 +371,8 @@ async def _async_arm_coffee(
         recipe.name, grinding, dose, bypass_volume, bypass_temperature,
     )
 
-    # 1.0 s spacing — matches the existing vendored ``XBloomClient.brew``
-    # cadence that has worked in the field. brAzzi64 uses 2.0 s but the
-    # tighter spacing has never dropped packets on the coffee path.
-    _STEP_DELAY = 1.0
+    # Each step waits for the machine's own ACK before the next is sent,
+    # rather than guessing a delay — see ``_ack`` below.
 
     # ── Reset prelude ───────────────────────────────────────────────────
     # 8022 (Back to Home) only. A PacketLogger capture of the official app
@@ -308,15 +384,17 @@ async def _async_arm_coffee(
     # after tea (confirmed 2026-05-29: grind + spiral pour + temperature +
     # vibration all correct). 8022 is kept — it independently restores
     # pour-pattern interpretation, so it stays.
-    await client._send_command(_CMD_BACK_TO_HOME)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(client, _CMD_BACK_TO_HOME, settle=_STEP_SETTLE_COFFEE_S)
 
     # 8102 — Bypass + dose. The dose byte is REQUIRED for the grinder
     # (vendored comment: "Even when bypass water is disabled, dose MUST
     # be set!"). Non-zero ``bypass_volume`` / ``bypass_temperature``
     # enable the post-brew bypass dispense.
-    await client.set_bypass(bypass_volume, bypass_temperature, dose)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(
+        client, Command.SET_BYPASS,
+        client._bypass_args(bypass_volume, bypass_temperature, dose),
+        settle=_STEP_SETTLE_COFFEE_S,
+    )
 
     # 8104 — Cup bounds. Grind path uses min=40; no-grind path uses
     # min=0 to bypass the 0 g telemetry safety check.
@@ -336,17 +414,24 @@ async def _async_arm_coffee(
     # one isn't trusted on cross-claim credibility alone either.
     bounds_table = _COFFEE_CUP_BOUNDS_GRIND if grinding else _COFFEE_CUP_BOUNDS_NO_GRIND
     cup_max, cup_min = bounds_table.get(_cup_value(recipe), _COFFEE_CUP_BOUNDS_DEFAULT)
-    await client.set_cup(cup_max, cup_min)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(
+        client, Command.SET_CUP, client._cup_args(cup_max, cup_min),
+        settle=_STEP_SETTLE_COFFEE_S,
+    )
 
     # Recipe: 8001 (APP_RECIPE_SEND_AUTO, with grinding) or 8004
-    # (APP_RECIPE_SEND_MANUAL, no grinding).
+    # (APP_RECIPE_SEND_MANUAL, no grinding). Longer deadline — the app
+    # raises this one step to 3000 ms because the machine legitimately
+    # takes longer to accept a full recipe payload.
     payload = _build_coffee_recipe_payload(recipe)
     recipe_cmd = (
         Command.RECIPE_SEND_AUTO if grinding
         else Command.RECIPE_SEND_MANUAL
     )
-    await client._send_command_raw(recipe_cmd, payload)
+    await _ack_step(
+        client, recipe_cmd, raw=payload,
+        timeout=ACK_TIMEOUT_RECIPE_SEND_S, settle=_STEP_SETTLE_COFFEE_S,
+    )
 
 
 async def _async_brew_coffee(
@@ -369,9 +454,15 @@ async def _async_brew_coffee(
         client, recipe,
         bypass_volume=bypass_volume, bypass_temperature=bypass_temperature,
     )
+    # Kept as a fixed gap, unlike the arm chain above: in the app the
+    # equivalent pause is the user reading its start dialog before
+    # pressing Go, so there is no ACK to chain on here. The two-stage
+    # button flow gets that gap for free from the real second press.
     await asyncio.sleep(1.0)
 
-    # 8002 — Execute.
+    # 8002 — Execute. Deliberately not ACK-gated: it is unverified
+    # whether a missing 8002 ACK means the brew failed to start, and
+    # raising on it could report a failure for a brew that is running.
     await client.execute_coffee_recipe()
 
 
@@ -384,6 +475,18 @@ async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
     unlike coffee's bare 8002, tea's "go" step (4512) must re-send these
     exact bytes (matches the firmware's expected sequence — see below),
     so the caller needs them back to hand to ``async_confirm_recipe``.
+
+    **ACK-gated like the coffee chain** (2026-07-19), on top of the
+    existing 2.0 s spacing rather than instead of it — see
+    ``_STEP_SETTLE_TEA_S`` and the coffee chain's docstring for why the
+    delay could not simply be dropped. The 2.0 s value is unchanged from
+    when it was chosen after a 0.3 s attempt saw the firmware ACK only
+    the first command and silently drop the rest (2026-05-13).
+
+    Hardware-probed 2026-07-19: the tea steps ACK in 379/420/418/481 ms,
+    so 4513 does acknowledge and the gating is real rather than a no-op.
+    That probe sent 8022/8102/8104/4513 and deliberately never sent 4512,
+    so nothing brewed — the full tea path is still unverified end to end.
     """
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -392,27 +495,25 @@ async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
         "Tea brew arm: %s — %d steep(s)", recipe.name, len(recipe.pours),
     )
 
-    # Spacing between brew packets. brAzzi64's send_brew_packets uses
-    # 2.0 s; with 0.3 s the firmware ACK'd only the first command and
-    # silently dropped the rest (see log analysis 2026-05-13).
-    _STEP_DELAY = 2.0
-
     # 8022 — Back to Home. Cleanly resets any lingering recipe / scale
     # screen state on the machine before we start a new sequence.
-    await client._send_command(_CMD_BACK_TO_HOME)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(client, _CMD_BACK_TO_HOME, settle=_STEP_SETTLE_TEA_S)
 
     # 8102 — Bypass off, dose=0. Tea has no weighed bean dose; sending
     # this still tells the firmware "no grinder, no bypass".
-    await client.set_bypass(0.0, 0.0, 0)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(
+        client, Command.SET_BYPASS, client._bypass_args(0.0, 0.0, 0),
+        settle=_STEP_SETTLE_TEA_S,
+    )
 
     # 8104 — Cup bounds for tea (200, 0). brAzzi64 reports the firmware
     # tolerates any value here, but matching the cloud-API tea defaults
     # avoids any chance of a scale-overflow guard tripping.
     cup_max, cup_min = _TEA_CUP_BOUNDS
-    await client.set_cup(cup_max, cup_min)
-    await asyncio.sleep(_STEP_DELAY)
+    await _ack_step(
+        client, Command.SET_CUP, client._cup_args(cup_max, cup_min),
+        settle=_STEP_SETTLE_TEA_S,
+    )
 
     # 4513 — APP_TEA_RECIP_CODE. The ONLY known way to actually trigger
     # tea mode on the firmware (tea-cup UI icon, soak timer, internal
@@ -428,8 +529,9 @@ async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
     # ``_build_tea_payload`` encodes steep separation / soak / siphon
     # handling; see its docstring for the current (pattern=1) encoding.
     payload = _build_tea_payload(recipe)
-    await client._send_command_raw(
-        Command.TEA_RECIPE_CODE, payload,
+    await _ack_step(
+        client, Command.TEA_RECIPE_CODE, raw=payload,
+        timeout=ACK_TIMEOUT_RECIPE_SEND_S, settle=_STEP_SETTLE_TEA_S,
     )
     return payload
 
@@ -446,6 +548,8 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
     manual-button form.
     """
     payload = await _async_arm_tea(client, recipe)
+    # Fixed gap for the same reason as the coffee path — see
+    # ``_async_brew_coffee``.
     await asyncio.sleep(2.0)
 
     # 4512 — APP_TEA_RECIP_MAKE. Execute. Re-sends the payload here rather

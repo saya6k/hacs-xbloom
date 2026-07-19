@@ -40,6 +40,16 @@ _LOGGER = logging.getLogger(__name__)
 EventCallback = Callable[[str, str, dict], None]
 StatusCallback = Callable[[DeviceStatus], None]
 
+# Per-command ACK timeout, matching the official app's
+# AppBleManager.DefaultTimeOut (1500 ms). Steps that legitimately take
+# longer pass their own — the app raises the recipe-send step to 3000 ms.
+ACK_TIMEOUT_S = 1.5
+ACK_TIMEOUT_RECIPE_SEND_S = 3.0
+
+
+class AckTimeout(TimeoutError):
+    """A command was sent but the machine never echoed it back."""
+
 # MachineInfo payload byte offsets (from the upstream xbloom-ble's PROTOCOL.md field
 # map, plus two more cross-referenced against a third-party HA integration
 # — see docs/en/protocol.md and project memory for provenance).
@@ -134,6 +144,9 @@ class XBloomClient:
         # doesn't false-positive before the first real notification has
         # had a chance to arrive.
         self._last_notification_monotonic: float = time.monotonic()
+        # Waiters registered by send_and_wait(), keyed by the command id
+        # whose echoed response resolves them.
+        self._pending_acks: dict[int, List[asyncio.Future]] = {}
 
         self.grinder = GrinderController(self)
         self.brewer = BrewerController(self)
@@ -235,6 +248,7 @@ class XBloomClient:
                 pass
             await self._connection.disconnect()
         self._status.connected = False
+        self._fail_pending_acks("BLE link closed while awaiting ACK")
 
     async def _reset_state(self) -> None:
         """Send the 8100 handshake, then the machine-state cleanup commands.
@@ -308,15 +322,114 @@ class XBloomClient:
         await self._connection.write_command(WRITE_UUID, packet, response=False)
         return True
 
+    async def send_and_wait(
+        self,
+        command: int,
+        data: Optional[list] = None,
+        *,
+        raw: Optional[bytes] = None,
+        timeout: float = ACK_TIMEOUT_S,
+        device_id: Optional[int] = None,
+        type_code: int = 0x01,
+    ) -> bytes:
+        """Send a command and wait for the machine to echo it back.
+
+        The machine answers a command by echoing its own id with a
+        ``0xC1`` (or ``0xC2`` for type-2) marker — see ``iter_frames``,
+        which only yields frames carrying a valid marker, so anything
+        reaching ``_parse_response`` is already an acknowledgement rather
+        than an unsolicited telemetry push.
+
+        This is the primitive the official app builds its multi-step
+        sequences on: ``AppBleManager.sendMessage`` takes a per-command
+        timeout (``DefaultTimeOut`` 1500 ms) plus success/fail callbacks,
+        and callers chain the next step from the success callback rather
+        than after a fixed delay. Chaining on ACKs is what stops a
+        sequence from advancing past a step the machine never received —
+        with fixed delays, a dropped ``set_bypass`` still ends in an
+        "execute" against a recipe the machine does not have.
+
+        Raises ``AckTimeout`` if no echo arrives in ``timeout`` seconds.
+        Does NOT retry: the sleep-retry policy lives one layer up in
+        ``coordinator._async_retry_while_sleeping``, matching the app,
+        which only resends while the machine reports itself asleep.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_acks.setdefault(command, []).append(future)
+        try:
+            if raw is not None:
+                await self._send_command_raw(
+                    command, raw, device_id=device_id, type_code=type_code
+                )
+            else:
+                await self._send_command(
+                    command, data, device_id=device_id, type_code=type_code
+                )
+            return await asyncio.wait_for(future, timeout)
+        except asyncio.TimeoutError:
+            raise AckTimeout(
+                f"No ACK for {command} ({command_name(command)}) after {timeout:.1f}s"
+            ) from None
+        finally:
+            waiters = self._pending_acks.get(command)
+            if waiters and future in waiters:
+                waiters.remove(future)
+            if waiters is not None and not waiters:
+                del self._pending_acks[command]
+
+    def _resolve_pending_acks(self, command: int, frame: bytes) -> None:
+        """Hand an echoed frame to whoever is waiting on that command id.
+
+        Notifications can arrive off the event loop depending on the
+        backend, so results are posted through ``call_soon_threadsafe``.
+        """
+        for future in list(self._pending_acks.get(command, ())):
+            if future.done():
+                continue
+            future.get_loop().call_soon_threadsafe(
+                lambda f=future: None if f.done() else f.set_result(frame)
+            )
+
+    def _fail_pending_acks(self, reason: str) -> None:
+        """Fail every outstanding waiter — used when the link goes away, so
+        an in-flight sequence aborts instead of sitting out its timeout."""
+        for waiters in list(self._pending_acks.values()):
+            for future in list(waiters):
+                if future.done():
+                    continue
+                future.get_loop().call_soon_threadsafe(
+                    lambda f=future: None
+                    if f.done()
+                    else f.set_exception(AckTimeout(reason))
+                )
+        self._pending_acks.clear()
+
     async def stop_recipe(self, type_code: int = 1, device_id: Optional[int] = None) -> bool:
         return await self._send_command(Command.RECIPE_STOP, type_code=type_code, device_id=device_id)
+
+    # Argument packing is split out from the send so an ACK-gated caller
+    # (``brewing``'s recipe chains) can reuse it with ``send_and_wait``
+    # instead of duplicating the float encoding.
+    @staticmethod
+    def _cup_args(f1: float, f2: float) -> list:
+        b1 = struct.unpack("<I", struct.pack("<f", f1))[0]
+        b2 = struct.unpack("<I", struct.pack("<f", f2))[0]
+        return [b1, b2]
+
+    @staticmethod
+    def _bypass_args(volume: float, temp: float, dose: int) -> list:
+        vol_bits = struct.unpack("<I", struct.pack("<f", volume))[0]
+        temp_bits = struct.unpack("<I", struct.pack("<f", float(temp * 10)))[0]
+        return [vol_bits, temp_bits, int(dose)]
 
     async def set_cup(
         self, f1: float, f2: float, type_code: int = 1, device_id: Optional[int] = None
     ) -> bool:
-        b1 = struct.unpack("<I", struct.pack("<f", f1))[0]
-        b2 = struct.unpack("<I", struct.pack("<f", f2))[0]
-        return await self._send_command(Command.SET_CUP, [b1, b2], type_code=type_code, device_id=device_id)
+        return await self._send_command(
+            Command.SET_CUP, self._cup_args(f1, f2),
+            type_code=type_code, device_id=device_id,
+        )
 
     async def set_bypass(
         self,
@@ -326,10 +439,8 @@ class XBloomClient:
         type_code: int = 1,
         device_id: Optional[int] = None,
     ) -> bool:
-        vol_bits = struct.unpack("<I", struct.pack("<f", volume))[0]
-        temp_bits = struct.unpack("<I", struct.pack("<f", float(temp * 10)))[0]
         return await self._send_command(
-            Command.SET_BYPASS, [vol_bits, temp_bits, int(dose)],
+            Command.SET_BYPASS, self._bypass_args(volume, temp, dose),
             type_code=type_code, device_id=device_id,
         )
 
@@ -501,6 +612,7 @@ class XBloomClient:
     def _parse_response(self, frame: bytes) -> None:
         cmd = frame_command(frame)
         _LOGGER.info("RECV CMD: %s (%s) | DATA: %s", cmd, command_name(cmd), frame.hex())
+        self._resolve_pending_acks(cmd, frame)
         try:
             response = Response(cmd)
         except ValueError:
