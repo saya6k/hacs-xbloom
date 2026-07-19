@@ -135,7 +135,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8203 | `RD_AbnormalGearPosition` | — | Active | 에러 이벤트 |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | 에러 이벤트 |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | 모드 진입 ACK, 이 통합에 핸들러 없음 |
-| 9003 | `RD_GRINDER_BEGIN` | — | Active, 신뢰 불가 | 실제 그라인딩 중 발생하지 않을 수 있음 — 아래 raw status-heartbeat 프레임 참고 |
+| 9003 | `RD_GRINDER_BEGIN` | — | Active, 신뢰 불가 | 이 펌웨어에서 실제 그라인딩 중 발화가 한 번도 관측되지 않음 — 실제로 발화하는 begin 신호는 40506(아래); 9003의 `grinding_started` 매핑은 40506 이전의 구형 펌웨어 대비용으로만 유지 |
 | 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Present, unconfirmed | 모드 종료 ACK, 핸들러 없음 |
 | 9005 | `RD_BREWER_BEGIN` | — | Active, 조기 발생 | 커밋 직후 즉시 발생 — 실제 추출 시작보다 훨씬 이름 |
 | 9009 | `RD_GRINDER_PAUSE` | — | Present, unconfirmed | 핸들러 없음 |
@@ -148,7 +148,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | 핸들러 없음 |
-| 40506 | *(APK 상수 테이블에 없음 — "grinder begin")* | — | Confirmed, unhandled | 그라인더가 도는 정확히 그 순간 발화하며 호퍼 상태와 무관 (2026-07-19 라이브 캡처 3회: 빈 호퍼 레시피 분쇄 ×2, 찬 호퍼 ×1, **수동** 3500 분쇄 포함), 모든 정지/취소에 40507(`RD_Grinder_Stop`)이 응답 — 범용 grinder begin/stop 짝. 9003 `RD_GRINDER_BEGIN`이 끝내 제공하지 못한 신뢰 가능한 분쇄-시작 신호. 앱 자체 상수 테이블에 없는 id(펌웨어가 앱보다 최신); 이 통합엔 아직 핸들러 없음 — 신뢰 가능한 `grinding_started` 이벤트 소스 후보 |
+| 40506 | *(APK 상수 테이블에 없음 — "grinder begin")* | — | Active | 그라인더가 도는 정확히 그 순간 발화하며 호퍼 상태와 무관 (2026-07-19 라이브 캡처 3회: 빈 호퍼 레시피 분쇄 ×2, 찬 호퍼 ×1, **수동** 3500 분쇄 포함), 모든 정지/취소에 40507(`RD_Grinder_Stop`)이 응답 — 범용 grinder begin/stop 짝. 9003 `RD_GRINDER_BEGIN`이 끝내 제공하지 못한 신뢰 가능한 분쇄-시작 신호. 앱 자체 상수 테이블에 없는 id(펌웨어가 앱보다 최신). 2026-07-19부터 처리(`Response.GRINDER_RUN_BEGIN`): `grinding_started` 이벤트와 `grinder.is_running`을 구동, 같은 날 라이브 검증; 캘리브레이션 스윕 억제도 9003/40507 짝과 동일하게 적용 |
 | 40507 | `RD_Grinder_Stop` | — | Active | 그라인딩 종료; 실시간 RPM을 0으로 설정; 캘리브레이션의 홈 이동 중에도 발생하므로 **캘리브레이션 완료 신호로 유효하지 않음** |
 | 40510 | `RD_BLOOM` | — | Active | 블룸 알림 |
 | 40511 | `RD_Brewer_Stop` | — | Active | 추출 종료 |

@@ -139,7 +139,7 @@ from the name alone.
 | 8203 | `RD_AbnormalGearPosition` | — | Active | error event |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | error event |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | enter-mode acks, no handler in this integration |
-| 9003 | `RD_GRINDER_BEGIN` | — | Active, unreliable | can fail to fire during a real grind — see raw status-heartbeat frame below |
+| 9003 | `RD_GRINDER_BEGIN` | — | Active, unreliable | has never been seen firing during a real grind on this firmware — 40506 (below) is the begin signal that actually fires; 9003's `grinding_started` mapping is kept only for any older firmware that predates 40506 |
 | 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Present, unconfirmed | exit-mode acks, no handler |
 | 9005 | `RD_BREWER_BEGIN` | — | Active, early-firing | fires immediately after commit, well before real pour starts |
 | 9009 | `RD_GRINDER_PAUSE` | — | Present, unconfirmed | no handler |
@@ -153,7 +153,7 @@ from the name alone.
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC pod detected; app hex-decodes 12 hex chars = 6 bytes, not 12 raw bytes |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | alternate "brewing started" signal |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | no handler |
-| 40506 | *(not in the APK's constant table — "grinder begin")* | — | Confirmed, unhandled | fires at the exact instant the grinder starts, hopper-independent (three live 2026-07-19 captures: recipe grinds with an empty hopper ×2 and a full one ×1, plus a **manual** 3500-started grind), with 40507 (`RD_Grinder_Stop`) answering every stop/cancel — a general grinder begin/stop pair. This is the reliable grinder-begin signal 9003 `RD_GRINDER_BEGIN` never was. Not in the app's own constant table (firmware newer than app); no handler in this integration yet — candidate source for a reliable `grinding_started` event |
+| 40506 | *(not in the APK's constant table — "grinder begin")* | — | Active | fires at the exact instant the grinder starts, hopper-independent (three live 2026-07-19 captures: recipe grinds with an empty hopper ×2 and a full one ×1, plus a **manual** 3500-started grind), with 40507 (`RD_Grinder_Stop`) answering every stop/cancel — a general grinder begin/stop pair. This is the reliable grinder-begin signal 9003 `RD_GRINDER_BEGIN` never was. Not in the app's own constant table (firmware newer than app). Handled since 2026-07-19 (`Response.GRINDER_RUN_BEGIN`): drives the `grinding_started` event and `grinder.is_running`, live-verified same day; the calibration-sweep suppression applies to it like the 9003/40507 pair |
 | 40507 | `RD_Grinder_Stop` | — | Active | grind end; zeroes live RPM; **not** a valid calibration-complete signal despite firing during calibration's homing move |
 | 40510 | `RD_BLOOM` | — | Active | bloom notification |
 | 40511 | `RD_Brewer_Stop` | — | Active | pour end |
