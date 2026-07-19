@@ -312,7 +312,7 @@ class RecipesMixin:
         :meth:`async_arm_recipe`/:meth:`async_confirm_recipe` for the
         two-stage manual-button form (HA button entity only).
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         prepared = self._prepare_recipe_execution(
             overrides=overrides, pour_overrides=pour_overrides,
@@ -364,7 +364,7 @@ class RecipesMixin:
         Always uses the recipe's own stored settings — no overrides,
         matching the button's no-argument single-shot counterpart.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         prepared = self._prepare_recipe_execution(
             overrides=None, pour_overrides=None,
@@ -399,7 +399,7 @@ class RecipesMixin:
         flow: send the go command (8002 coffee, 4512 tea) for the recipe
         queued by :meth:`async_arm_recipe`.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         try:
             self._executing_recipe = True
@@ -511,7 +511,7 @@ class RecipesMixin:
                 ),
             }
 
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return {
                 "success": False,
                 "error": "not_connected",

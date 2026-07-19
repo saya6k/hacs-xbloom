@@ -33,4 +33,5 @@
 - [Temperature name constants](xbloom_temperature_name_constants.md) — RT=20/BP=98 fixed constants, not computed.
 - [Wake-retry universal pattern](xbloom_wake_retry_universal_pattern.md) — DefaultTimeOut=1500L is universal, not mode-switch-specific; generalized to grind/pour/tare/calibrate/execute/easy-slot.
 - [Collective bare-id import bug](xbloom_collective_bare_id_import_bug.md) — bare community recipe id fell through to share-h5 id space; fixed via .isdigit() routing.
+- [App connection lifecycle + page quit](xbloom_app_connection_lifecycle_and_page_quit.md) — heart check DISCONNECTS at 2s, no supervision while backgrounded, page exit is 8012/8013 not 8022.
 - [Two-stage arm/confirm buttons](xbloom_two_stage_arm_confirm_buttons.md) — grind/pour/execute-recipe HA buttons now queue-then-go on 2 presses; services/LLM tools unchanged.

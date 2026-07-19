@@ -60,14 +60,22 @@ class ConnectionMixin:
         disconnect (``_manual_disconnect``), and skipped while a connect
         attempt is already in flight (``_connect_lock``) to avoid piling up
         redundant tasks.
+
+        Also skipped while in idle standby (``_idle_disconnected``, see
+        that flag in ``__init__.py``) — that link was dropped deliberately
+        and stays down until an action needs it again, which is the whole
+        point of the timeout.
         """
-        if self._manual_disconnect or self._connect_lock.locked():
+        if self._manual_disconnect or self._idle_disconnected:
+            return
+        if self._connect_lock.locked():
             return
         _LOGGER.debug("XBloom not connected — reconnect supervisor retrying")
         self.hass.async_create_task(self.async_connect())
 
-    async def _async_force_reconnect(self) -> None:
-        """Tear down a stale-looking link and reconnect immediately.
+    async def _async_drop_stale_link(self) -> None:
+        """Tear down a link that has gone silent, and let the supervisor
+        pick it back up on a later poll tick.
 
         Triggered when the BLE GATT link still reports connected but no
         notification has arrived in over ``_BLE_SILENCE_TIMEOUT_S`` — the
@@ -77,17 +85,53 @@ class ConnectionMixin:
         retry task, etc.), then immediately clears ``_manual_disconnect``
         again so this doesn't look like a user-requested disconnect to the
         reconnect supervisor above or to ``_handle_unexpected_disconnect``.
+
+        Deliberately does NOT reconnect inline (it did until 2026-07-19).
+        The official app's equivalent — AppDeviceManager's "heart check",
+        which arms a ``disconnect(true)`` 2s after every 5s tick and cancels
+        it from ``onCharacteristicChanged`` — only ever disconnects, and
+        leaves reconnecting to the next tick of its ordinary poll loop
+        (decompiled 2026-07-19, see project memory). Reconnecting inline
+        here made a machine that stops talking (asleep, or wedged) get
+        hammered with back-to-back connect cycles for as long as it stayed
+        quiet; the supervisor's own 5s cadence is the app's cadence.
         """
         _LOGGER.warning(
-            "No BLE notification in over %.0fs — link looks stale, forcing reconnect",
+            "No BLE notification in over %.0fs — link looks stale, dropping it",
             _BLE_SILENCE_TIMEOUT_S,
         )
         try:
             await self.async_disconnect()
             self._manual_disconnect = False
-            await self.async_connect()
         finally:
             self._force_reconnect_pending = False
+
+    async def _async_enter_idle_standby(self) -> None:
+        """Drop the link after ``_session_timeout`` seconds of doing nothing.
+
+        Mirrors the official app's actual connection lifetime rather than
+        its reconnect logic: AppDeviceManager's supervise-and-reconnect
+        loop is skipped entirely while the app is backgrounded, so the
+        vendor's own client simply does not hold an unattended link
+        (decompiled 2026-07-19, see project memory). Holding one 24/7 is
+        what this integration used to do, and a machine left connected
+        overnight locked up hard enough to need a power cycle.
+
+        ``_idle_disconnected`` keeps the reconnect supervisor off until
+        something actually wants the machine — see
+        ``_async_ensure_connected()``, which every coordinator action goes
+        through, and the connection switch, which clears the flag directly.
+        """
+        _LOGGER.info(
+            "Idle for over %ds — disconnecting until the next action "
+            "(set the idle disconnect timeout to 0 to stay connected)",
+            self._session_timeout,
+        )
+        self._idle_disconnected = True
+        try:
+            await self.async_disconnect()
+        finally:
+            self._idle_standby_pending = False
 
     def _maybe_update_device_registry(self, data: Dict[str, Any]) -> None:
         """Push updated serial/firmware version to the HA device registry."""
@@ -147,6 +191,10 @@ class ConnectionMixin:
 
             _LOGGER.info("Connecting to XBloom at %s …", self.mac_address)
             self._manual_disconnect = False
+            # Whatever the reason for connecting, we are no longer in idle
+            # standby, and the idle countdown starts fresh from here.
+            self._idle_disconnected = False
+            self._note_activity()
             try:
                 client = XBloomClient(
                     mac_address=self.mac_address,
@@ -601,7 +649,7 @@ class ConnectionMixin:
         The choice is persisted in ``entry.options`` so it survives HA
         restarts and is reapplied on the next connection.
         """
-        if not self._check_connected():
+        if not await self._async_ensure_connected():
             return
         mode = mode.strip().lower()
         if mode not in ("pro", "easy"):

@@ -23,6 +23,9 @@
           "mac_address": "MAC Address (XX:XX:XX:XX:XX:XX)",
           "telemetry_interval": "Telemetry update interval (seconds)",
           "session_timeout": "Idle disconnect timeout (seconds)"
+        },
+        "data_description": {
+          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected permanently — not recommended: the official app never holds an unattended connection, and machines left connected have locked up."
         }
       },
       "account": {
@@ -65,6 +68,9 @@
           "weight_unit": "Machine's own weight display unit",
           "temp_unit": "Machine's own temperature display unit",
           "water_source": "Water source"
+        },
+        "data_description": {
+          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected permanently — not recommended: the official app never holds an unattended connection, and machines left connected have locked up."
         }
       },
       "account": {

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
@@ -37,7 +38,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .._cloud_client import XBloomCloudClient
 from ..ble.client import XBloomClient
-from ..const import DEFAULT_MODE, DEFAULT_TEMP_UNIT, DEFAULT_WATER_SOURCE, DEFAULT_WEIGHT_UNIT, DOMAIN
+from ..const import (
+    DEFAULT_MODE,
+    DEFAULT_SESSION_TIMEOUT,
+    DEFAULT_TEMP_UNIT,
+    DEFAULT_WATER_SOURCE,
+    DEFAULT_WEIGHT_UNIT,
+    DOMAIN,
+)
 from .advanced_settings import AdvancedSettingsMixin
 from .connection import ConnectionMixin
 from .operations import OperationsMixin
@@ -85,6 +93,7 @@ class XBloomCoordinator(
         initial_mode: str = DEFAULT_MODE,
         initial_weight_unit: str = DEFAULT_WEIGHT_UNIT,
         initial_temp_unit: str = DEFAULT_TEMP_UNIT,
+        session_timeout: int = DEFAULT_SESSION_TIMEOUT,
         cloud_email: Optional[str] = None,
         cloud_password: Optional[str] = None,
     ) -> None:
@@ -224,7 +233,8 @@ class XBloomCoordinator(
         # execute_tea_recipe services, async_grind()/async_pour(), and
         # every LLM tool still act in one call, unchanged. One of "grind" /
         # "pour" / "recipe" / None. No timeout: stays armed until confirmed
-        # or cancelled (async_cancel() clears it via a Back to Home reset).
+        # or cancelled (async_cancel() sends the per-operation quit command
+        # matching whichever machine screen the arm press opened).
         # sensor.state surfaces it as "armed_grind"/"armed_pour"/
         # "armed_recipe" (see state.py) so the user knows a second press is
         # needed.
@@ -249,10 +259,32 @@ class XBloomCoordinator(
         self._manual_disconnect: bool = False
 
         # Guards against the silence watchdog spawning a second overlapping
-        # _async_force_reconnect() task if it fires again on a later poll
+        # _async_drop_stale_link() task if it fires again on a later poll
         # tick while the first one is still mid-teardown (disconnect() is
         # awaited, so self.client briefly still reports connected).
         self._force_reconnect_pending: bool = False
+
+        # Idle standby (2026-07-19). The official app never holds an
+        # unattended BLE link: AppDeviceManager's 5s poll loop only
+        # supervises and reconnects while the app is in the FOREGROUND
+        # (it returns early when resumeTime < pauseTime), and its own
+        # "heart check" answer to a quiet link is disconnect(), not a
+        # reconnect (decompiled 2026-07-19 — see project memory). This
+        # integration used to hold the link 24/7 and defend it with an
+        # immediate-reconnect watchdog; a machine left connected overnight
+        # locked up hard enough to need a power cycle. So: after
+        # ``_session_timeout`` seconds with nothing happening, drop the
+        # link and stay down (``_idle_disconnected`` suppresses the
+        # reconnect supervisor) until the user actually wants the machine
+        # again — any coordinator action reconnects on demand via
+        # ``_async_ensure_connected()``, as does the connection switch.
+        # 0 disables the whole behavior and restores the always-on link.
+        self._session_timeout: int = session_timeout
+        self._idle_disconnected: bool = False
+        self._last_activity_monotonic: float = time.monotonic()
+        # Same overlap guard as _force_reconnect_pending, for the standby
+        # drop's own awaited teardown.
+        self._idle_standby_pending: bool = False
 
     # ------------------------------------------------------------------
     # Helpers
@@ -263,6 +295,32 @@ class XBloomCoordinator(
             _LOGGER.warning("Action requested but XBloom is not connected")
             return False
         return True
+
+    def _note_activity(self) -> None:
+        """Restart the idle-standby countdown (see ``_session_timeout``)."""
+        self._last_activity_monotonic = time.monotonic()
+
+    async def _async_ensure_connected(self) -> bool:
+        """Connectivity gate for every user-initiated action.
+
+        Replaces the bare ``_check_connected()`` guard at the top of each
+        coordinator action: with idle standby (``_session_timeout``) the
+        link is *expected* to be down between uses, so an action that
+        finds it down reconnects on demand rather than failing. Also
+        stamps the idle countdown, since "the user asked for something"
+        is exactly what that countdown measures.
+
+        A user-requested disconnect (the connection switch, tracked by
+        ``_manual_disconnect``) is deliberately NOT overridden here —
+        only a standby drop we made ourselves reconnects automatically.
+        """
+        self._note_activity()
+        if self.client and self.client.is_connected:
+            return True
+        if self._idle_disconnected:
+            _LOGGER.info("Action requested while in idle standby — reconnecting")
+            return await self.async_connect()
+        return self._check_connected()
 
     @property
     def device_info(self) -> DeviceInfo:

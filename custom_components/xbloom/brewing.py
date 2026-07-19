@@ -507,23 +507,6 @@ async def async_tare(client) -> None:
     await client._send_command(_CMD_TARE)
 
 
-async def async_dismiss_pod_prompt(client) -> None:
-    """Cancel the machine's local "start?" prompt after a pod scan (cmd 8017).
-
-    Decompiled 2026-07-17: ``PodsDetailActivity``/``RecipeDetailActivity``'s
-    ``showStartDialog()`` dismiss handler sends ``quitRecipeStart()`` (8017,
-    ``Command.RECIPE_START_QUIT``) before any BLE brew commands are sent —
-    the machine shows its own local "ready to brew this pod" state the
-    moment it reads the NFC tag (see ``RD_Pods``/40501, fired as the
-    ``pod_detected`` event), independent of whether the app/HA has armed
-    anything. No payload.
-    """
-    if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
-    _LOGGER.info("Dismiss pod start prompt")
-    await client._send_command(Command.RECIPE_START_QUIT)
-
-
 async def async_write_easy_slots(
     client,
     slot_recipes: dict,

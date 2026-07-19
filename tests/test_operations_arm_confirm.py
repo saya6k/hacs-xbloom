@@ -77,15 +77,22 @@ class _Coordinator(OperationsMixin):
         self.rpm = 90
         self._active_operation = None
         self._armed_operation = None
+        self._armed_recipe_is_tea = False
+        self._armed_recipe_tea_payload = None
         self._pod_prompt_active = False
         self._executing_recipe = False
         self._active_recipe_pours = None
         self.current_pour_index = None
         self.data = {}
         self.restore_persisted_mode_calls = 0
+        self.connected = True
+        self.update_listeners_calls = 0
 
-    def _check_connected(self) -> bool:
-        return True
+    async def _async_ensure_connected(self) -> bool:
+        return self.connected
+
+    def async_update_listeners(self) -> None:
+        self.update_listeners_calls += 1
 
     async def _ensure_pro_mode(self) -> None:
         return None
@@ -143,12 +150,59 @@ def test_cancel_while_armed_backs_out_without_heavier_stop_sequence():
     asyncio.run(coordinator.async_cancel())
 
     assert coordinator._armed_operation is None
-    # Backs out via Back to Home (8022), not the grinder/brewer stop or
-    # whole-recipe stop sequence — nothing had actually started yet.
-    assert coordinator.client.sent_commands == [8022]
+    # Backs out of the grind page with APP_GRINDER_QUIT (8012) — what the
+    # official app's GrinderActivity.onBackPressed() sends — not the
+    # grinder/brewer stop or the whole-recipe stop sequence, since nothing
+    # had actually started yet.
+    assert coordinator.client.sent_commands == [8012]
     assert coordinator.client.grinder.stop_calls == 0
     assert coordinator.client.brewer.stop_calls == 0
     assert coordinator.client.stop_recipe_calls == 0
+
+
+def test_cancel_while_armed_pour_quits_the_pour_page():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_arm_pour())
+    asyncio.run(coordinator.async_cancel())
+
+    # APP_BREWER_QUIT (8013) — BrewerActivity.onBackPressed().
+    assert coordinator.client.sent_commands == [8013]
+    assert coordinator._armed_operation is None
+
+
+def test_cancel_while_armed_recipe_quits_the_recipe_start_screen():
+    coordinator = _Coordinator()
+    coordinator._armed_operation = "recipe"
+    asyncio.run(coordinator.async_cancel())
+
+    # APP_RECIPE_START_QUIT (8017) — the start dialog's own dismiss
+    # handler in RecipeDetailActivity/PodsDetailActivity.
+    assert coordinator.client.sent_commands == [8017]
+    assert coordinator._armed_operation is None
+
+
+def test_cancel_with_pod_prompt_over_armed_recipe_sends_the_command_once():
+    coordinator = _Coordinator()
+    coordinator._armed_operation = "recipe"
+    coordinator._pod_prompt_active = True
+    asyncio.run(coordinator.async_cancel())
+
+    assert coordinator.client.sent_commands == [8017]
+    assert coordinator._pod_prompt_active is False
+
+
+def test_cancel_clears_armed_state_even_when_disconnected():
+    coordinator = _Coordinator()
+    asyncio.run(coordinator.async_arm_grind())
+    coordinator.connected = False
+    asyncio.run(coordinator.async_cancel())
+
+    # Nothing reaches the machine, but the armed flag must still clear:
+    # leaving it set makes the next press of the same button CONFIRM
+    # (start a real grind) instead of arm.
+    assert coordinator._armed_operation is None
+    assert coordinator.client.sent_commands == []
+    assert coordinator.update_listeners_calls == 1
 
 
 def test_pause_resume_is_a_noop_while_armed():

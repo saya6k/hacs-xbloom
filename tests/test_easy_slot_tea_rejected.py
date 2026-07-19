@@ -32,7 +32,7 @@ class _FakeSelf:
         self.recipes = recipes
         self.selected_recipe = selected_recipe
 
-    def _check_connected(self) -> bool:
+    async def _async_ensure_connected(self) -> bool:
         # Not under test here — False lets the coffee-recipe test observe
         # that the tea guard let it fall through to the *next* gate,
         # without needing a real connected client.

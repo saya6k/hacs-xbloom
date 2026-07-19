@@ -87,10 +87,10 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 |
 | 8006 | `APP_GRINDER_IN` | — | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송 |
 | 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님 |
-| 8012 | `APP_GRINDER_QUIT` | — | Present, unconfirmed | 이 통합의 플로에서는 3505/40519로 대체됨 |
-| 8013 | `APP_BREWER_QUIT` | — | Present, unconfirmed | 4507/40519로 대체됨 |
+| 8012 | `APP_GRINDER_QUIT` | — | Active | 분쇄 페이지 나가기 — armed 수동 분쇄 취소 |
+| 8013 | `APP_BREWER_QUIT` | — | Active | 추출 페이지 나가기 — armed 수동 추출 취소 |
 | 8016 | `APP_BREWER_SET_PATTERN` | — | Present, unconfirmed | 벤더 enum에 존재, 이 통합에서 확인된 호출 지점 없음 |
-| 8017 | `APP_RECIPE_START_QUIT` | — | Active | 머신 자체의 "포드 삽입" 프롬프트 취소 |
+| 8017 | `APP_RECIPE_START_QUIT` | — | Active | 머신 자체의 "포드 삽입" 프롬프트 취소, armed 레시피 취소 |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | 수동 그라인딩 일시정지 전용, 레시피 전체 아님 |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | 수동 추출 일시정지 전용 |
 | 8020 | `APP_GRINDER_RESTART` | — | Active | 수동 그라인딩 재개 |
