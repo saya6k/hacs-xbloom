@@ -81,23 +81,25 @@ from the name alone.
 
 | id | name | payload | status | notes |
 | ---: | --- | --- | --- | --- |
-| 3500 | `APP_GRINDER_START` | size, speed | Active | manual + recipe grind |
+| 3500 | `APP_GRINDER_START` | size, speed | Active | manual + recipe grind; runs in Easy Mode too (hardware 2026-07-19 — see the 8001 note on the absent mode gate) |
 | 3502 | `CMD_CALIBRATE_GRINDER` | `[1000]` fixed | Active | fire-and-forget; machine runs ~120s sweep autonomously |
 | 3505 | `APP_GRINDER_STOP` | — | Active | manual-grind stop only, not whole-recipe |
 | 4506 | `APP_BREWER_START` | volume, temp, flow, pattern | Active | manual pour |
 | 4507 | `APP_BREWER_STOP` | — | Active | manual-pour stop only |
 | 4508 | water-source set | LE u32 (0=tank,1=direct) | Active | `WaterSourceType.ordinal()`; J20-only values (8/50) don't apply to Studio |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | — | Present, unconfirmed | in vendored enum, no confirmed call site here |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(temp_c × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature` sends it live from the pour page whenever the temperature slider changes; the app disables the slider while a pour is actually running. Hardware-confirmed same day: sending 880 (88.0 °C) gets an ACK whose payload echoes the parsed value as a float32 (`00005c44` = 880.0) |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | execute queued tea recipe |
 | 4513 | `APP_TEA_RECIP_CODE` | tea recipe blob | Active | queues a tea recipe; **not** 8004 — see brewing-notes.md |
-| 8001 | `APP_RECIPE_SEND_AUTO` | recipe blob | Active | coffee recipe, with grinding |
+| 8001 | `APP_RECIPE_SEND_AUTO` | recipe blob | Active | coffee recipe, with grinding; the app picks 8001 vs 8004 on `recipe.isSetGrinderSize` (1 → 8001, else 8004). Its execute chain (`8102` bypass → `8104` cup → `8001`/`8004` → `8002`) has **no mode gate** — and hardware confirms none is needed (live 2026-07-19: the full chain ACKed and the grind stage began with the machine in Easy Mode; an earlier "Easy Mode ignores brew commands, water only" observation was a misattribution of the ratio-footer bug) |
 | 8002 | `APP_RECIPE_EXECUTE` | — | Active | commits/starts the queued recipe |
-| 8004 | `APP_RECIPE_SEND_MANUAL` | recipe blob | Active | coffee recipe, no grinding (bypass) |
-| 8006 | `APP_GRINDER_IN` | — | Active | "enter grind screen"; sent internally before manual/recipe grind |
-| 8007 | `APP_BREWER_IN` (enum name `RD_BREWER_IN`) | — | Active | "enter pour screen"; sent for app parity before manual pour, not required |
+| 8003 | *(no enum name — raw literal in the app)* | — | Active | "电子秤功能进入指令" — show the scale screen on the machine; the app sends it ACK-gated before opening its own scale page (`HomeActivity.onClickOperator3`). Hardware-confirmed live 2026-07-19: ACKed, machine's status code walks home `0x01` → `0x04` → `0x05` (scale screens); note the knob-entry reports 9002/9008 did NOT fire on this BLE-commanded path |
+| 8004 | `APP_RECIPE_SEND_MANUAL` | recipe blob | Active | coffee recipe, no grinding (bypass) — see 8001 for how the app chooses between them |
+| 8006 | `APP_GRINDER_IN` | size, speed | Active | "enter grind screen"; sent internally before manual/recipe grind. The app also **re-sends it as the live adjuster** (`GrinderActivity.adjustGrinder`, best-effort/no-fail-dialog) whenever the grind-size/RPM sliders change while on the grind page and not running — the re-send ACKs cleanly on hardware (live 2026-07-19), and the grind page opens in Easy Mode too (reported via 8023 index `0x02`) |
+| 8007 | `APP_BREWER_IN` (enum name `RD_BREWER_IN`) | — | Active | "enter pour screen"; sent for app parity before manual pour, not required. Opens the pour screen (status/8023 code `0x03`) — though one live run showed no code emission after it, so the report is not fully consistent |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | leave the grind page — cancel from an armed manual grind |
 | 8013 | `APP_BREWER_QUIT` | — | Active | leave the pour page — cancel from an armed manual pour |
-| 8016 | `APP_BREWER_SET_PATTERN` | — | Present, unconfirmed | in vendored enum, no confirmed call site here |
+| 8014 | *(no enum name — raw literal in the app)* | — | Active | "退出称重页面" — leave the scale screen; the app sends it from its scale page's back handler (`ScaleActivity.onBackPressed`). Hardware-confirmed live 2026-07-19: ACKed, status returns to home `0x01` |
+| 8016 | `APP_BREWER_SET_PATTERN` | LE u32 pattern code | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetSpiral` sends it live from the pour page whenever a pattern is tapped; disabled while a pour is running. Hardware: ACKed same day (empty-payload echo) |
 | 8017 | `APP_RECIPE_START_QUIT` | — | Active | dismiss the machine's own "insert pod" prompt, and cancel from an armed recipe |
 | 8018 | `APP_GRINDER_PAUSE` | — | Active | manual-grind pause only, not whole-recipe |
 | 8019 | `APP_BREWER_PAUSE` | — | Active | manual-pour pause only |
@@ -127,7 +129,7 @@ from the name alone.
 | 8009 | `RD_MachineSleeping` | — | Active | sets sleep flag; gates mode-switch retry |
 | 8011 | `RD_MachineNotSleeping` | — | Active | clears sleep flag |
 | 8015 | `RD_UNIT_CHANGE` | 3× LE u32 (weight/temp/water-source unit) | Active | pushed when units are changed on the machine's own touchscreen |
-| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally; `index` itself unused |
+| 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally. `index` mirrors the raw status-heartbeat state code (live-confirmed 2026-07-19: `0x01` home, `0x1F` recipe loaded, `0x1E` awaiting confirm, `0x22` starting arrived in lock-step on both channels) — but not always as a strict pair: opening the grind page in Easy Mode produced 8023 `index=0x02` with **no** matching raw heartbeat frame, so 8023 is the more complete page-change channel. This integration reads state from the heartbeat frames and leaves `index` unused. App-side consumption (jadx): `index == 1` (home) is re-posted as a bus event that `AppJ15AutoManager` treats as end-of-session for its auto-brew tracking; `TeaAutoFragment` refreshes its pour list on `index == 35` |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` offset | Telemetry | live grind-size knob |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | live RPM; zeroed explicitly on grind-stop (0 is a real reading, not "unknown") |
 | 8107 | `RD_BREWER_MODE` | LE u32, 0/1/2 | Telemetry | live pour-pattern knob |
@@ -137,7 +139,7 @@ from the name alone.
 | 8203 | `RD_AbnormalGearPosition` | — | Active | error event |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | error event |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | enter-mode acks, no handler in this integration |
-| 9003 | `RD_GRINDER_BEGIN` | — | Active, unreliable | can fail to fire during a real grind — see raw status-heartbeat frame below |
+| 9003 | `RD_GRINDER_BEGIN` | — | Active, unreliable | has never been seen firing during a real grind on this firmware — 40506 (below) is the begin signal that actually fires; 9003's `grinding_started` mapping is kept only for any older firmware that predates 40506 |
 | 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Present, unconfirmed | exit-mode acks, no handler |
 | 9005 | `RD_BREWER_BEGIN` | — | Active, early-firing | fires immediately after commit, well before real pour starts |
 | 9009 | `RD_GRINDER_PAUSE` | — | Present, unconfirmed | no handler |
@@ -151,6 +153,7 @@ from the name alone.
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC pod detected; app hex-decodes 12 hex chars = 6 bytes, not 12 raw bytes |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | alternate "brewing started" signal |
 | 40505 | `RD_GearReport` | — | Present, unconfirmed | no handler |
+| 40506 | *(not in the APK's constant table — "grinder begin")* | — | Active | fires at the exact instant the grinder starts, hopper-independent (three live 2026-07-19 captures: recipe grinds with an empty hopper ×2 and a full one ×1, plus a **manual** 3500-started grind), with 40507 (`RD_Grinder_Stop`) answering every stop/cancel — a general grinder begin/stop pair. This is the reliable grinder-begin signal 9003 `RD_GRINDER_BEGIN` never was. Not in the app's own constant table (firmware newer than app). Handled since 2026-07-19 (`Response.GRINDER_RUN_BEGIN`): drives the `grinding_started` event and `grinder.is_running`, live-verified same day; the calibration-sweep suppression applies to it like the 9003/40507 pair |
 | 40507 | `RD_Grinder_Stop` | — | Active | grind end; zeroes live RPM; **not** a valid calibration-complete signal despite firing during calibration's homing move |
 | 40510 | `RD_BLOOM` | — | Active | bloom notification |
 | 40511 | `RD_Brewer_Stop` | — | Active | pour end |
@@ -165,7 +168,7 @@ from the name alone.
 | 40526 | `RD_CurrentGrinder` | LE u32, `-30` offset | Active | parity with 8105; `raw == 85` while `is_calibrating_grinder` is the real calibration-complete signal |
 | 40527 | `RD_BeforeVibration` | — | Present, confirmed payload-less | decompile-confirmed payload-less pulse |
 | 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | calibration start/progress pulses; not reliably sent on every unit — `async_calibrate_grinder()` doesn't depend on 50038 to start tracking |
-| Raw status-heartbeat frame | (no cmd id — separate framing, `type` byte `0x57`) | state byte | Active | the only reliable `starting`/`brewing`/`ready` signal; the cmd-tagged path above (9003/9005/40507) is known-unreliable for that specific transition — see AGENTS.md |
+| Raw status-heartbeat frame | (no cmd id — separate framing, `type` byte `0x57`) | state byte | Active | the only reliable `starting`/`brewing`/`ready` signal; the cmd-tagged path above (9003/9005/40507) is known-unreliable for that specific transition — see AGENTS.md. Screen/state codes observed live 2026-07-19 beyond the mapped set: `0x01` home (PRO), `0x41` home (Easy Mode), `0x02` grind screen, `0x03` pour screen, `0x04` → `0x05` scale screens, `0x1D` brief connect-time transient before home — all currently unmapped in `_RAW_STATE_LABEL_MAP` (they fall through to `idle`). A manual pour walks `0x03` → `0x23` (brewing) → back to `0x03` on 4507 stop; 4506/4507 ACKs echo the volume as a float32 |
 
 Two ids appear in both directions with different meanings depending on
 context and are **not** the same command: `4508` is a plain outbound

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: efb12ddd-12cd-4a2f-8d7a-a3b406787f12
-  modified: 2026-07-19T07:05:30.136Z
+  modified: 2026-07-19T07:30:18.942Z
 ---
 
 Implemented 2026-07-19 (app-parity Phase 3), building on
@@ -37,12 +37,30 @@ other 40518 warning ("into a running brew it aborts back to armed") stays
 unverified here but motivated the pause-gate below; don't fire 40518 on
 any guess.
 
-**Why the machine stalled at awaiting_confirm at all** (previous four
-brews auto-proceeded within ~1-4s): unresolved. Not sleep (is_sleeping
-False, pro mode, home screen). Most plausible: physical state after the
-prior completed brew (used grounds/cup on the scale). The stall is exactly
-the case the verifier exists for; if it recurs, ask what the machine's own
-screen shows before theorizing.
+**What awaiting_confirm actually is** (settled by the 2026-07-19 stall
+probe + the user reading the machine screen): the machine's own pre-start
+screen, showing values straight from our payload — "35 13 →" = grind 35,
+ratio 13 (the footer's 13.9 truncated), with an arrow to tap. In the
+normal flow it is a **~2.7s transient**: 8002 → 0x1E → auto-proceed to
+0x22 starting (well inside the verifier's 8s window). The earlier stall
+was the machine sitting on that screen waiting for the arrow tap; a human
+tapping it starts the brew, which is exactly what the verifier's error
+message tells them. WHY it sometimes waits instead of auto-proceeding is
+still not established.
+
+**Two protocol discoveries from the same probe** (recorded in
+docs/*/protocol.md): cmd 8023's `index` payload mirrors the raw
+status-heartbeat state code byte-for-byte (0x01 home / 0x1F / 0x1E / 0x22
+arrived in lock-step on both channels — they are one state stream, and
+0x01 = home/idle is unmapped but real); and **cmd 40506** (absent from the
+APK's own constant table) fired exactly at the 0x22 grind-begin moment —
+candidate real grind-start notification, which would explain why 9003
+RD_GRINDER_BEGIN never fires during recipe grinds. Single observation.
+
+**Bean supply matters for probes**: the user observed the grinder running
+empty (공회전) on a later probe — repeated probe grinds drain the hopper,
+so refill before physical grind verification, and don't read an empty-spin
+grind as a protocol failure.
 
 **Cancel slimmed** (`operations.async_cancel` recipe branch): bare 40519
 only, matching `AppJ15AutoManager.stop()`. The old chasers (3505, 4507,
