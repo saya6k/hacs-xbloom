@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9df22f00-e12a-4774-8845-697ce76887a4
-  modified: 2026-07-19T12:09:29.595Z
+  modified: 2026-07-19T12:17:55.056Z
 ---
 
 Second jadx sweep of `xbloom_coffee_release.apk` (2026-07-19), answering the
@@ -69,12 +69,19 @@ the original symptom was the ratio-footer grind-gate bug
 (8006 → 3500 → `0x22` + 40506 fired, grinder ran → 3505 → 40507), closing
 the last gap, and the user approved removal — **`_ensure_pro_mode`,
 `_restore_persisted_mode`, and `_auto_switched_to_pro` are deleted**
-(PR #127). Only 4506 manual pour in Easy Mode remains formally untested.
+(PR #127). The last gap closed too (`probe_easy_pour.py`, same day):
+**manual pour runs in Easy Mode** — 8007 → status/8023 `0x03` (pour
+screen, a previously unseen code; note one earlier PRO-mode run showed NO
+code after 8007, so its emission isn't fully consistent) → 4506 → `0x23`
+brewing, water flowed → 4507 → back to `0x03`; the 4506/4507 ACKs echo
+the volume as float32 (`00004842` = 50.0). All three operation families
+(recipe / manual grind / manual pour) now hardware-proven mode-agnostic.
 The Easy-slot batch write keeps its own Pro switch
 (`recipes.async_write_easy_slots`, separate hardware-established
-requirement). Bonus from that probe: the vendored `grinder.is_running`
-stayed False through a real grind — yet another cmd-tagged-path
-unreliability datapoint; trust the heartbeat/40506, not it.
+requirement). Bonus from the beans probe: the vendored
+`grinder.is_running` stayed False through a real grind — yet another
+cmd-tagged-path unreliability datapoint; trust the heartbeat/40506, not
+it.
 
 **Error resolution signals** (basis for PR #127's cleared event):
 only 40522 is bidirectional (value 1 = refilled). 8203/8204
