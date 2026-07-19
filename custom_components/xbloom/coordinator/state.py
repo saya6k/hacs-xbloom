@@ -17,6 +17,42 @@ _LOGGER = logging.getLogger(__name__)
 class StateMixin:
     """DataUpdateCoordinator's ``_async_update_data`` plus BLE event dispatch."""
 
+    def _apply_grinder_knob(self, attrs: dict) -> None:
+        """Mirror a grind-page knob push (8105 size / 8106 RPM / 9000 entry
+        snapshot — the client's "grinder_knob" settings event) onto the
+        grind-size/RPM number entities (T6, 2026-07-20).
+
+        Gated on the machine actually being on its grind page with nothing
+        running: a recipe execution's own 8105 push must not clobber the
+        user's manual setpoints, and the app disables its sliders during a
+        real grind too.
+        """
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "grind" or s.grinder.is_running:
+            return
+        size = attrs.get("size")
+        rpm = attrs.get("rpm")
+        changed = False
+        if isinstance(size, int) and 1 <= size <= 80 and size != self.grind_size:
+            self.grind_size = size
+            changed = True
+        if isinstance(rpm, int) and 60 <= rpm <= 120 and rpm != self.rpm:
+            self.rpm = rpm
+            changed = True
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _tracked_live_grind_size(self, s) -> int | None:
+        """sensor.live_grind_size's value: the size in use by an actual
+        grind, frozen at its last in-grind value otherwise (T6). Knob
+        turns while idle belong to the grind-size number entity (see
+        ``_apply_grinder_knob``), not this sensor — before this, every
+        knob click animated "live" grind size with nothing grinding.
+        """
+        if s.grinder.is_running:
+            self._live_grind_size = s.grinder.size or None
+        return self._live_grind_size
+
     def _reconcile_armed_with_screen(self, s) -> None:
         """Drop a stale grind/pour arm once the machine reports its home
         screen — the user backed out of the armed page with the knob (T5,
@@ -183,10 +219,10 @@ class StateMixin:
                     "error": None,
                     # Live readings from the machine's own knobs/heartbeat —
                     # see ble/client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
-                    # RD_MachineInfo handling. live_grind_size: None until
-                    # first observed — 0 (the dataclass default) is never a
-                    # real grind size, so it means "not yet seen".
-                    "live_grind_size": s.grinder.size or None,
+                    # RD_MachineInfo handling. live_grind_size: scoped to an
+                    # actual grind (frozen otherwise, None until the first
+                    # one) — see _tracked_live_grind_size.
+                    "live_grind_size": self._tracked_live_grind_size(s),
                     # live_grind_speed: 0 IS a real, meaningful reading
                     # (the grinder isn't currently spinning) — unlike grind
                     # size, don't coerce it to None/Unknown. ble/client.py's
@@ -274,6 +310,13 @@ class StateMixin:
         # ── Machine-side unit/water-source change (cmd 8015) ──
         # "settings" is a coordinator-internal category: the event entities
         # filter on "error"/"notification", so this never surfaces there.
+        if category == "settings" and event_type == "grinder_knob":
+            # Grind-page knob push — mirror onto the number entities and
+            # stop here (coordinator-internal, never surfaces on the
+            # event entities).
+            self._apply_grinder_knob(attributes)
+            return
+
         if category == "settings" and event_type == "unit_change":
             if self.hass and self.hass.loop:
                 attrs_copy = dict(attributes)

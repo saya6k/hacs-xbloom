@@ -785,8 +785,19 @@ class XBloomClient:
                 st.brewer.temperature = float(temperature)
                 _LOGGER.info("POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
         elif response == Response.IN_GRINDER:
-            # Grind-page entry snapshot: 2× LE u32 (size in user units, rpm).
+            # Grind-page entry snapshot: 2× LE u32 (size, rpm) — the size
+            # is already in user units (hardware 2026-07-20: 9000 said 35
+            # right after 8105's raw 65), so no -30 offset here. The RPM
+            # is a setpoint, NOT a live spin reading — grinder.speed keeps
+            # its "0 = not spinning" contract and is left alone.
             st.screen = "grind"
+            if len(payload) >= 8:
+                size, rpm = struct.unpack_from("<2I", payload, 0)
+                if size:
+                    st.grinder.size = size
+                self._fire_event(
+                    "settings", "grinder_knob", {"size": size, "rpm": rpm}
+                )
         elif response == Response.IN_SCALE:
             st.screen = "scale"
         elif response in (Response.OUT_GRINDER, Response.OUT_BREWER, Response.OUT_SCALE):
@@ -797,9 +808,15 @@ class XBloomClient:
             if len(payload) >= 4:
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 st.grinder.size = max(raw - _GRIND_SIZE_RAW_OFFSET, 1)
+                # Knob turn on the grind page — internal "settings" event
+                # (unit_change pattern): the coordinator mirrors it onto
+                # the grind-size number entity, gated on the page being
+                # open and nothing running (T6, 2026-07-20).
+                self._fire_event("settings", "grinder_knob", {"size": st.grinder.size})
         elif response == Response.GRINDER_SPEED:
             if len(payload) >= 4:
                 st.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+                self._fire_event("settings", "grinder_knob", {"rpm": st.grinder.speed})
         elif response == Response.CURRENT_GRINDER:
             # Same LE u32 grind-size value as GRINDER_SIZE (identical -30
             # offset), but fires in contexts our own brew flow doesn't

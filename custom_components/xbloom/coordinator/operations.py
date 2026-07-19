@@ -342,6 +342,16 @@ class OperationsMixin:
         except Exception as exc:
             _LOGGER.error("Scale mode exit error: %s", exc)
 
+    def _grind_page_open(self) -> bool:
+        """Whether the machine reports its grind page open with nothing
+        running — the telemetry-driven equivalent of an armed grind."""
+        status = getattr(self.client, "status", None)
+        return (
+            status is not None
+            and status.screen == "grind"
+            and not status.grinder.is_running
+        )
+
     async def async_sync_armed_grinder_settings(self) -> None:
         """Push the current grind size/RPM to a machine sitting on the
         grind screen after ``async_arm_grind()``.
@@ -350,11 +360,14 @@ class OperationsMixin:
         ``GrinderActivity.adjustGrinder`` simply re-sends ``GRINDER_IN``
         (8006) with the new (size, speed) whenever a slider changes while
         on the grind page and not running, best-effort
-        (``sendMessageNoShowFail``). No-op unless a grind is armed —
-        while idle the values only feed the next start command's payload,
-        and while actually grinding the app disables its sliders too.
+        (``sendMessageNoShowFail``). No-op unless a grind is armed OR the
+        machine reports its grind page open with nothing running (T6,
+        2026-07-20 — a knob-opened page live-adjusts too, matching the
+        telemetry-driven standalone states): while idle the values only
+        feed the next start command's payload, and while actually grinding
+        the app disables its sliders too.
         """
-        if self._armed_operation != "grind":
+        if self._armed_operation != "grind" and not self._grind_page_open():
             return
         if not await self._async_ensure_connected():
             return

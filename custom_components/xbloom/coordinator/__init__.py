@@ -136,6 +136,9 @@ class XBloomCoordinator(
         # Default matches the app's per-pour default (center). Recipe
         # execution uses each pour's own pattern from the YAML.
         self.pour_pattern: int = 0
+        # sensor.live_grind_size's held value — only updated while a grind
+        # actually runs (see state._tracked_live_grind_size).
+        self._live_grind_size: Optional[int] = None
 
         # Recipe-execution pour tracking, so sensor.xbloom_flow_rate can
         # report the *current* pour's flow rate instead of a fixed manual
