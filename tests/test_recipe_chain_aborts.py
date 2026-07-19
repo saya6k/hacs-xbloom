@@ -17,6 +17,25 @@ from custom_components.xbloom.ble.client import AckTimeout, XBloomClient
 from custom_components.xbloom.ble.models import CupType, PourStep, XBloomRecipe
 
 
+# Captured before the autouse fixture below can shrink them.
+_REAL_COFFEE_SETTLE = brewing._STEP_SETTLE_COFFEE_S
+_REAL_TEA_SETTLE = brewing._STEP_SETTLE_TEA_S
+
+
+@pytest.fixture(autouse=True)
+def _fast_floors(monkeypatch):
+    """Shrink the inter-step floors for every test in this module.
+
+    The real 1.0s/2.0s values would add ~10s to the suite without testing
+    anything the shrunken ones don't — what each test here asserts is
+    ordering and abort behaviour. The values themselves are pinned by
+    ``test_settle_floors_match_the_verified_values``, which reads the
+    constants directly rather than timing them.
+    """
+    monkeypatch.setattr(brewing, "_STEP_SETTLE_COFFEE_S", 0.01)
+    monkeypatch.setattr(brewing, "_STEP_SETTLE_TEA_S", 0.01)
+
+
 class _FlakyClient:
     """Records sends; refuses to ACK one nominated command."""
 
@@ -111,6 +130,58 @@ def test_tea_single_shot_never_makes_when_the_chain_fails():
 
     # 4512 (TEA_RECIPE_MAKE) is what actually starts a steep.
     assert 4512 not in client.sent
+
+
+def _step_gaps(monkeypatch, arm, recipe, settle: float) -> list[float]:
+    """Run an arm chain with a shrunken floor and return the step gaps.
+
+    The real 1.0s/2.0s floors would add ~9s to the suite for no extra
+    coverage — what matters is that the chain honours whatever the
+    constant says. ``test_settle_floors_match_the_verified_values`` pins
+    the values themselves.
+    """
+    monkeypatch.setattr(brewing, "_STEP_SETTLE_COFFEE_S", settle)
+    monkeypatch.setattr(brewing, "_STEP_SETTLE_TEA_S", settle)
+    client = _FlakyClient()
+    stamps: list[float] = []
+    real = client.send_and_wait
+
+    async def timed(command, *a, **kw):
+        stamps.append(asyncio.get_running_loop().time())
+        return await real(command, *a, **kw)
+
+    client.send_and_wait = timed
+    asyncio.run(arm(client, recipe))
+    return [b - a for a, b in zip(stamps, stamps[1:])]
+
+
+def test_steps_are_floor_spaced_even_when_acks_are_instant(monkeypatch):
+    # The ACK means "received", not "applied", so the floor must survive an
+    # instantly-ACKing machine — an intermediate version relied on the ACK
+    # alone and lost the spacing entirely. (That version was also seen to
+    # run a grind recipe as no-grind, but restoring the floor did not fix
+    # that, so the two are not known to be connected — see
+    # brewing._STEP_SETTLE_COFFEE_S.)
+    gaps = _step_gaps(monkeypatch, brewing._async_arm_coffee, _coffee(), 0.2)
+
+    assert len(gaps) == 3
+    for gap in gaps:
+        assert gap >= 0.19, f"steps too close: {gaps}"
+
+
+def test_tea_steps_are_floor_spaced_too(monkeypatch):
+    gaps = _step_gaps(monkeypatch, brewing._async_arm_tea, _tea(), 0.2)
+
+    assert len(gaps) == 3
+    for gap in gaps:
+        assert gap >= 0.19, f"steps too close: {gaps}"
+
+
+def test_settle_floors_match_the_verified_values():
+    # Both are the pre-ACK-gating shipped values, restored deliberately;
+    # tea's 2.0s dates to the 2026-05-13 investigation.
+    assert _REAL_COFFEE_SETTLE == 1.0
+    assert _REAL_TEA_SETTLE == 2.0
 
 
 def test_a_healthy_chain_sends_every_step_in_order():
