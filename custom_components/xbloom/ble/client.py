@@ -88,6 +88,25 @@ _RAW_STATE_LABEL_MAP = {
     0x24: "ready",
 }
 
+# Machine screen (page) codes from the same heartbeat/8023 channel as
+# _RAW_STATE_LABEL_MAP — hardware-captured 2026-07-20 (T2, see project memory
+# xbloom-t2-screen-code-capture). The two maps are deliberately disjoint: one
+# answers "what is the machine doing", this one "what screen is it on".
+# 0x06/0x07 (grind size / RPM adjust) and 0x08/0x09 (pattern / temperature
+# adjust) are the pages' own adjust subscreens, mapped to their parent page.
+_SCREEN_CODE_MAP = {
+    0x01: "home",   # PRO home
+    0x41: "home",   # Easy Mode home
+    0x02: "grind",
+    0x06: "grind",
+    0x07: "grind",
+    0x03: "pour",
+    0x08: "pour",
+    0x09: "pour",
+    0x04: "scale",
+    0x05: "scale",
+}
+
 _ADVANCED_SETTINGS_TYPE_CODE = 2
 _CALIBRATE_GRINDER_PAYLOAD = [1000]
 _DISPLAY_BRIGHTNESS_RAW = {1: 1, 2: 8, 3: 15}
@@ -582,6 +601,11 @@ class XBloomClient:
         if not payload:
             return
         self._status.raw_state_label = _RAW_STATE_LABEL_MAP.get(payload[0])
+        # Same self-correcting recompute for the screen map (page codes and
+        # activity codes never overlap, so exactly one of the two labels is
+        # non-None per frame).
+        self._status.screen_code = payload[0]
+        self._status.screen = _SCREEN_CODE_MAP.get(payload[0])
 
     def _scan_for_advanced_settings(self, raw: bytes) -> None:
         """Raw pre-scan for cmd 11506/11507/11508/11509 responses — these
@@ -750,12 +774,25 @@ class XBloomClient:
             if len(payload) >= 4:
                 st.water_volume = int(struct.unpack_from("<f", payload, 0)[0])
         elif response == Response.IN_BREWER:
+            # Knob-driven pour-page ENTRY snapshot (hardware 2026-07-20, T2
+            # capture): 4× LE u32 (volume, temp_c, pattern, temp_c again).
+            # This is NOT a brewing-started signal — the old is_running/
+            # BREWING claim here made HA report "brewing" for a machine
+            # merely sitting on its pour page.
+            st.screen = "pour"
             if len(payload) >= 12:
                 volume, temperature, pattern = struct.unpack_from("<3I", payload, 0)
                 st.brewer.temperature = float(temperature)
-                st.brewer.is_running = True
-                st.state = DeviceState.BREWING
-                _LOGGER.info("BREWER STATE: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+                _LOGGER.info("POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+        elif response == Response.IN_GRINDER:
+            # Grind-page entry snapshot: 2× LE u32 (size in user units, rpm).
+            st.screen = "grind"
+        elif response == Response.IN_SCALE:
+            st.screen = "scale"
+        elif response in (Response.OUT_GRINDER, Response.OUT_BREWER, Response.OUT_SCALE):
+            # Near-reliable (one missed 9006 in the T2 capture) — the
+            # heartbeat home code corrects any miss on its next frame.
+            st.screen = "home"
         elif response == Response.GRINDER_SIZE:
             if len(payload) >= 4:
                 raw = struct.unpack_from("<I", payload, 0)[0]
