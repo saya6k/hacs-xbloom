@@ -72,6 +72,15 @@ _GRINDER_CALIBRATION_DONE_RAW = 85
 # docs/en/protocol.md.
 _STATUS_FRAME_TYPE_BYTE = 0x57
 _RAW_STATE_LABEL_MAP = {
+    # 0x0C/0x0F/0x1E/0x1F are from HomoLand/xbloom-studio-brew's D500
+    # hardware notes (same firmware as this project's machine), adopted
+    # 2026-07-19 for the post-8002 brew-start verification — see
+    # brewing._async_verify_brew_started. Not yet independently observed
+    # on this machine; the verifier fails closed if they never fire.
+    0x0C: "water_shortage",
+    0x0F: "no_beans",
+    0x1E: "awaiting_confirm",
+    0x1F: "recipe_loaded",
     0x22: "starting",
     0x10: "brewing",
     0x23: "brewing",

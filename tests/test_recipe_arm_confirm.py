@@ -13,6 +13,7 @@ used, just reordered into two callable halves).
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,6 +29,7 @@ class _FakeClient:
         self.raw_calls: list[tuple[int, bytes, int]] = []
         self.plain_calls: list[tuple] = []
         self.executed = False
+        self.status = SimpleNamespace(raw_state_label=None)
 
     async def _send_command_raw(self, command, data, device_id=None, type_code=0x01):
         self.raw_calls.append((int(command), bytes(data), type_code))
@@ -47,6 +49,9 @@ class _FakeClient:
 
     async def execute_coffee_recipe(self, device_id=None):
         self.executed = True
+        # The machine "starts" the moment execute lands, so the post-8002
+        # state verifier (_async_verify_brew_started) returns immediately.
+        self.status.raw_state_label = "brewing"
 
     # The arm chains are ACK-gated (2026-07-19), so they go through
     # send_and_wait rather than the bare senders. Route both forms into

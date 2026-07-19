@@ -198,7 +198,9 @@
           "calibrating": "Calibrating",
           "armed_grind": "Armed (Grind)",
           "armed_pour": "Armed (Pour)",
-          "armed_recipe": "Armed (Recipe)"
+          "armed_recipe": "Armed (Recipe)",
+          "awaiting_confirm": "Awaiting confirm",
+          "recipe_loaded": "Recipe loaded"
         }
       },
       "weight": {

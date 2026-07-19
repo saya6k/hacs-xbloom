@@ -208,6 +208,18 @@ class StateMixin:
         except ValueError:
             pass  # already removed or never registered — harmless
 
+    def _finish_run(self) -> None:
+        """Tear down the in-flight-run bookkeeping on any terminal signal.
+
+        One shared teardown for completion AND machine-side failure — the
+        flags gate the cancel branch, the pause target, and idle standby,
+        so leaving them set past the run's real end misroutes all three.
+        """
+        self._executing_recipe = False
+        self._active_recipe_pours = None
+        self.current_pour_index = None
+        self._active_operation = None
+
     def _dispatch_event(self, category: str, event_type: str, attributes: dict) -> None:
         """Forward a BLE event to all registered HA event entities.
 
@@ -291,10 +303,20 @@ class StateMixin:
         elif category == "notification" and event_type in (
             "pour_complete", "recipe_complete",
         ):
-            self._executing_recipe = False
-            self._active_recipe_pours = None
-            self.current_pour_index = None
-            self._active_operation = None
+            self._finish_run()
+        elif category == "error" and event_type in (
+            "no_beans", "abnormal_dose_or_water", "abnormal_gear_position",
+        ):
+            # The official app treats a machine alarm as end-of-brew
+            # (AppJ15AutoManager posts BleEnjoyEvent on ErrorBle1/
+            # ErrorIdling and tears its run state down). Without this, an
+            # errored-out brew left _active_operation set forever — wrong
+            # cancel branch, wrong pause target, and idle standby
+            # suppressed indefinitely. water_shortage is deliberately NOT
+            # here: hardware-observed 2026-07-19 firing mid-brew while the
+            # brew ran on to completion, and the app likewise excludes
+            # ErrorLackOfWater from its terminal set.
+            self._finish_run()
         elif (
             category == "notification" and event_type == "grinding_complete"
             and self._active_operation == "manual_grind"
