@@ -69,6 +69,7 @@ Packet layout: `header(0x58 0x02) | dev_id | type | cmd(2 LE) | len(4 LE) | cons
 - Every user-triggered action (grind/pour/tare/calibrate/execute recipe/easy-slot write) must retry while the machine reports itself asleep, not just mode-switch — the official app's `DefaultTimeOut`/1.5s retry is universal, not mode-switch-specific → [[xbloom-wake-retry-universal-pattern]]
 - `button.grind`/`button.pour`/`button.execute_recipe` are two-stage (arm then confirm on a 2nd press) — HA-button-only, services/LLM tools still act in one call → [[xbloom-two-stage-arm-confirm-buttons]]
 - Cancelling an *armed* operation sends the quit command for that machine screen (`8012` grind / `8013` pour / `8017` recipe, `_ARMED_QUIT_COMMANDS`), never `8022`; and the local armed/active flags clear before the BLE send, regardless of whether it lands → [[xbloom-app-connection-lifecycle-and-page-quit]]
+- The 8001 recipe footer's ratio byte must reconstruct (dose × byte/10) to **at least** the pour sum, or the firmware silently downgrades the whole brew to no-grind — water only, no error, everything still ACKed; never truncate it (`ceil` + clamp 255, `_build_coffee_recipe_payload`) → [[xbloom-ratio-footer-grind-gate]]
 
 If a quirk you're debugging isn't in this checklist, it may not have been hit yet — check `docs/en/protocol.md`'s command table for the id's confirmed/unconfirmed status before assuming new behavior, and write a new memory entry (project-type) once you've root-caused it, rather than growing this file.
 
