@@ -130,7 +130,10 @@ class XBloomCoordinator(
         self.grind_size: int = 50
         self.rpm: int = 80
         self.temperature: int = 93
-        self.volume: int = 200
+        # Manual/standalone pour ONLY — recipes carry per-pour volumes.
+        # 250 matches the machine's own pour-page default (hardware
+        # 2026-07-20: the 9001 entry snapshot).
+        self.volume: int = 250
         self.flow_rate: float = 3.0
         # Pour pattern for MANUAL POUR only (0=center, 1=circular, 2=spiral).
         # Default matches the app's per-pour default (center). Recipe
