@@ -204,7 +204,9 @@
           "standalone_scale": "단독 저울",
           "armed_recipe": "예약됨 (레시피)",
           "awaiting_confirm": "확인 대기",
-          "recipe_loaded": "레시피 준비됨"
+          "recipe_loaded": "레시피 준비됨",
+          "descaling": "디스케일링",
+          "calibrating_scale": "저울 캘리브레이션 중"
         }
       },
       "weight": {

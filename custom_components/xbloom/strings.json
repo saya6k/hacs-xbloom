@@ -204,7 +204,9 @@
           "standalone_scale": "Standalone Scale",
           "armed_recipe": "Armed (Recipe)",
           "awaiting_confirm": "Awaiting confirm",
-          "recipe_loaded": "Recipe loaded"
+          "recipe_loaded": "Recipe loaded",
+          "descaling": "Descaling",
+          "calibrating_scale": "Calibrating Scale"
         }
       },
       "weight": {

@@ -79,7 +79,9 @@
           "calibrating_grinder": "mdi:tune-vertical",
           "standalone_grind": "mdi:grain",
           "standalone_pour": "mdi:kettle-outline",
-          "standalone_scale": "mdi:scale-balance"
+          "standalone_scale": "mdi:scale-balance",
+          "descaling": "mdi:water-opacity",
+          "calibrating_scale": "mdi:scale-unbalanced"
         }
       },
       "weight": {

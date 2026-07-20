@@ -86,6 +86,21 @@ _RAW_STATE_LABEL_MAP = {
     0x23: "brewing",
     0x3B: "brewing",
     0x24: "ready",
+    # Knob-triple-press maintenance screens (T2 capture 2026-07-20).
+    # 0x26/0x27 are the grinder-calibration sweep phases — machine-entered
+    # calibration reads the same state as the HA-triggered flag path.
+    # 0x2F/0x32 and 0x39/0x3A are the descale / scale-calibration confirm
+    # screens (the second code of each pair = cancel selected); the codes
+    # emitted DURING an actual descale/scale-calibration run are
+    # uncaptured (both sessions were cancelled) — if they differ, the
+    # state falls back to idle for that stretch. 0x25 (calibration
+    # complete screen) is deliberately unmapped.
+    0x26: "calibrating_grinder",
+    0x27: "calibrating_grinder",
+    0x2F: "descaling",
+    0x32: "descaling",
+    0x39: "calibrating_scale",
+    0x3A: "calibrating_scale",
 }
 
 # Machine screen (page) codes from the same heartbeat/8023 channel as
