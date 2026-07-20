@@ -176,6 +176,13 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 | Cold Brew              | 58–80  |
 | Cold Drip              | 59–80  |
 
+## Troubleshooting
+
+Machine alarms surface as translated event types on the `event.error`
+entity, each carrying the raw alarm code — see
+[`troubleshooting.md`](./troubleshooting.md) for the full mapping to the
+official quick-fix guidance.
+
 ## Known limitations
 
 - **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi + cloud IoT protocol (mapped out in [`protocol-original-j20.md`](./protocol-original-j20.md)), and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.

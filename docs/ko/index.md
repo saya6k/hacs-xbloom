@@ -176,6 +176,12 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 | Cold Brew | 58–80 |
 | Cold Drip | 59–80 |
 
+## 문제 해결
+
+머신 알람은 `event.error` 엔티티에 번역된 이벤트 타입으로 표시되며 원시
+알람 코드가 속성으로 포함됩니다 — 공식 해결 가이드와의 전체 매핑은
+[`troubleshooting.md`](./troubleshooting.md)를 참고하세요.
+
 ## 알려진 제한사항
 
 - **XBloom Original 미지원**: 이 통합은 XBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조) — Original은 완전히 다른 Wi-Fi + 클라우드 IoT 프로토콜을 쓰며([`protocol-original-j20.md`](./protocol-original-j20.md)에 정리), 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original 전용 계정에서는 계정 레시피 시드와 `cloud_export_recipe`가 검증되지 않았습니다.
