@@ -83,13 +83,21 @@ class StateMixin:
         changed = False
         temperature = attrs.get("temperature")
         pattern = attrs.get("pattern")
-        if (
-            isinstance(temperature, (int, float))
-            and 40 <= temperature <= 100
-            and round(temperature) != self.temperature
-        ):
-            self.temperature = round(temperature)
-            changed = True
+        if isinstance(temperature, (int, float)) and 15 <= temperature <= 100:
+            # Inverse of _wire_temperature (T11): the machine transmits
+            # 20.0 for its RT position and 98.0 for BP; anything below the
+            # literal band lands on the RT slider endpoint (39), anything
+            # above it on BP (96) — so a knob sitting in either zone
+            # round-trips to the same slider position without oscillating.
+            if temperature < 40:
+                slider = 39
+            elif temperature > 95:
+                slider = 96
+            else:
+                slider = round(temperature)
+            if slider != self.temperature:
+                self.temperature = slider
+                changed = True
         if isinstance(pattern, int) and pattern in (0, 1, 2) and pattern != self.pour_pattern:
             self.pour_pattern = pattern
             changed = True

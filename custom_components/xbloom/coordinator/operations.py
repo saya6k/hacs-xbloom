@@ -93,7 +93,7 @@ class OperationsMixin:
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.start(
                     volume=float(self.volume),
-                    temperature=float(self.temperature),
+                    temperature=self._wire_temperature(),
                     flow_rate=self.flow_rate,
                     water_source=self.water_source,
                     pattern=self.pour_pattern,
@@ -131,7 +131,7 @@ class OperationsMixin:
             return
         await asyncio.sleep(_POUR_ARM_SETTLE_S)
         try:
-            await self.client.brewer.set_temperature(float(self.temperature))
+            await self.client.brewer.set_temperature(self._wire_temperature())
             await asyncio.sleep(_POUR_ARM_PUSH_GAP_S)
             await self.client.brewer.set_pattern(self.pour_pattern)
         except Exception as exc:
@@ -149,7 +149,7 @@ class OperationsMixin:
             await self._async_retry_while_sleeping(
                 lambda: self.client.brewer.start(
                     volume=float(self.volume),
-                    temperature=float(self.temperature),
+                    temperature=self._wire_temperature(),
                     flow_rate=self.flow_rate,
                     water_source=self.water_source,
                     pattern=self.pour_pattern,
@@ -448,6 +448,21 @@ class OperationsMixin:
         except Exception as exc:
             _LOGGER.warning("Armed grinder adjust failed: %s", exc)
 
+    def _wire_temperature(self) -> float:
+        """Map the temperature slider (39–96 °C) to the wire value the
+        machine expects (T11, jadx 2026-07-20): the min position means RT
+        (room temperature) and transmits 20.0 °C, the max means BP
+        (boiling) and transmits 98.0 °C, everything between is literal —
+        the exact branch `BrewerActivity.checkAndSetTemperature` and
+        `startWater` share (`TemperatureConstant.RT/BP`, the same 20/98
+        the recipe schema's temperature names resolve to)."""
+        t = float(self.temperature)
+        if t <= 39:
+            return 20.0
+        if t >= 96:
+            return 98.0
+        return t
+
     def _pour_page_open(self) -> bool:
         """Whether the machine reports its pour page open with nothing
         running — the telemetry-driven equivalent of an armed pour."""
@@ -469,7 +484,7 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
-            await self.client.brewer.set_temperature(float(self.temperature))
+            await self.client.brewer.set_temperature(self._wire_temperature())
         except Exception as exc:
             _LOGGER.warning("Armed brewer temperature adjust failed: %s", exc)
 
