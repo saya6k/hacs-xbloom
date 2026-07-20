@@ -117,18 +117,32 @@ def _status(screen):
     return SimpleNamespace(screen=screen)
 
 
-def test_home_screen_clears_stale_grind_arm():
+def test_leaving_the_armed_page_for_home_clears_the_arm():
     coordinator = _Coordinator()
     coordinator._armed_operation = "grind"
+    coordinator._reconcile_armed_with_screen(_status("grind"))
     coordinator._reconcile_armed_with_screen(_status("home"))
     assert coordinator._armed_operation is None
 
 
-def test_home_screen_clears_stale_pour_arm():
+def test_leaving_the_armed_pour_page_clears_the_arm():
     coordinator = _Coordinator()
     coordinator._armed_operation = "pour"
+    coordinator._reconcile_armed_with_screen(_status("pour"))
     coordinator._reconcile_armed_with_screen(_status("home"))
     assert coordinator._armed_operation is None
+
+
+def test_home_report_right_after_arming_keeps_the_arm():
+    """Hardware-found 2026-07-20: the machine keeps reporting home for ~1s
+    after our 8006/8007 until the page code lands — a level-triggered
+    clear raced every arm. Home without a prior armed-page observation
+    must keep the arm."""
+    coordinator = _Coordinator()
+    coordinator._reconcile_armed_with_screen(_status("home"))  # pre-arm home
+    coordinator._armed_operation = "grind"
+    coordinator._reconcile_armed_with_screen(_status("home"))  # race window
+    assert coordinator._armed_operation == "grind"
 
 
 def test_no_screen_report_keeps_the_arm():

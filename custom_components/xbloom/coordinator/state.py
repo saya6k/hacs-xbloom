@@ -106,21 +106,38 @@ class StateMixin:
             self._live_grind_size = s.grinder.size or None
         return self._live_grind_size
 
+    # Last screen this reconcile observed — class default so every test
+    # harness gets it without __init__ churn.
+    _last_reconcile_screen = None
+
     def _reconcile_armed_with_screen(self, s) -> None:
-        """Drop a stale grind/pour arm once the machine reports its home
-        screen — the user backed out of the armed page with the knob (T5,
+        """Drop a stale grind/pour arm once the machine LEAVES the armed
+        page for home — the user backed out with the knob (T5,
         2026-07-20). Without this, cancel later sends a quit command for a
-        screen that is no longer open, and the armed fallback in
-        ``_derive_state_string`` can never be reached with wrong data.
+        screen that is no longer open.
+
+        Edge-triggered on the page→home transition, not home itself —
+        hardware-found the same day: the machine keeps reporting home for
+        ~1s after our 8006/8007 until the page code lands, so a
+        level-triggered clear raced every arm whose next poll tick fell in
+        that window (deterministically so on a fast tick). The armed page
+        must have been *observed* before home clears it; an arm whose page
+        report never arrives at all keeps relying on cancel, as before.
 
         Deliberately NOT applied to an armed recipe: its machine-side
         dismissal is unverified on hardware, and the arm send chain
         (8102→8104→8001) sits on the home screen far longer than the
-        instant 8006/8007 page opens do, so a poll tick mid-chain would
-        clear a perfectly live arm. Recipe arms are cleared by cancel, the
-        confirm press, or a machine-side start signal.
+        instant 8006/8007 page opens do. Recipe arms are cleared by
+        cancel, the confirm press, or a machine-side start signal.
         """
-        if self._armed_operation in ("grind", "pour") and s.screen == "home":
+        last = self._last_reconcile_screen
+        self._last_reconcile_screen = s.screen
+        if (
+            s.screen == "home"
+            and self._armed_operation in ("grind", "pour")
+            # The armed op name and its page label are the same string.
+            and last == self._armed_operation
+        ):
             self._armed_operation = None
 
     def _derive_state_string(self, s) -> str:
