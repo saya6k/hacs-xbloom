@@ -42,6 +42,59 @@ class StateMixin:
         if changed and self.hass and self.hass.loop:
             self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
 
+    def _apply_brewer_knob(self, attrs: dict) -> None:
+        """Mirror a pour-page knob push (8108 temperature / 8107 pattern)
+        onto the manual-pour setpoints (T7). Gated on the pour page being
+        open with no pour running — an active brew's 8108 frames are the
+        heater's own in-progress readings, not knob turns. Applies while
+        HA-armed too: an armed page's knobs are still live.
+        """
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "pour" or s.brewer.is_running:
+            return
+        changed = self._apply_brewer_values(attrs)
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _apply_brewer_page_entry(self, attrs: dict) -> None:
+        """Seed the entities from a knob-entry settings snapshot (9001,
+        T7) — volume included, unlike live knob turns (the page has no
+        live volume push, only this snapshot). Suppressed while an HA arm
+        is in flight: the snapshot carries the machine's own remembered
+        values, which the entry push (async_arm_pour) is about to
+        overwrite with HA's — mirroring them first would make that push
+        a no-op echo.
+        """
+        if self._armed_operation == "pour":
+            return
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "pour" or s.brewer.is_running:
+            return
+        changed = self._apply_brewer_values(attrs)
+        volume = attrs.get("volume")
+        if isinstance(volume, int) and 30 <= volume <= 500 and volume != self.volume:
+            self.volume = volume
+            changed = True
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _apply_brewer_values(self, attrs: dict) -> bool:
+        """Shared temperature/pattern apply for the two brewer mirrors."""
+        changed = False
+        temperature = attrs.get("temperature")
+        pattern = attrs.get("pattern")
+        if (
+            isinstance(temperature, (int, float))
+            and 40 <= temperature <= 100
+            and round(temperature) != self.temperature
+        ):
+            self.temperature = round(temperature)
+            changed = True
+        if isinstance(pattern, int) and pattern in (0, 1, 2) and pattern != self.pour_pattern:
+            self.pour_pattern = pattern
+            changed = True
+        return changed
+
     def _tracked_live_grind_size(self, s) -> int | None:
         """sensor.live_grind_size's value: the size in use by an actual
         grind, frozen at its last in-grind value otherwise (T6). Knob
@@ -315,6 +368,12 @@ class StateMixin:
             # stop here (coordinator-internal, never surfaces on the
             # event entities).
             self._apply_grinder_knob(attributes)
+            return
+        if category == "settings" and event_type == "brewer_knob":
+            self._apply_brewer_knob(attributes)
+            return
+        if category == "settings" and event_type == "brewer_page_entry":
+            self._apply_brewer_page_entry(attributes)
             return
 
         if category == "settings" and event_type == "unit_change":

@@ -32,6 +32,14 @@ _ARMED_QUIT_COMMANDS = {
     "recipe": Command.RECIPE_START_QUIT,
 }
 
+# Settle delay between 8007 ("enter pour page") and the entry push of HA's
+# temperature/pattern (4510/8016) in async_arm_pour — the machine needs to
+# finish its screen transition first (the 8007→4506 no-gap race is exactly
+# what broke manual pour once; see async_pour's docstring). Value borrowed
+# from GrinderController.start()'s analogous enter→2.0s→start sequence;
+# tune on hardware if the pushes ever land before the page opens.
+_POUR_ARM_SETTLE_S = 2.0
+
 
 class OperationsMixin:
     """Manual pour/grind/tare and pause/resume/cancel, state-aware."""
@@ -87,6 +95,12 @@ class OperationsMixin:
         missing delay that caused the original regression.
         ``async_confirm_pour()`` sends the actual start command (with
         current slider values) on a second press of the same button.
+
+        After the arm lands, HA's temperature/pattern setpoints are pushed
+        to the page (4510/8016, T7 2026-07-20) so the machine shows what
+        the entities say instead of its own remembered defaults —
+        best-effort, like the app's own ``sendMessageNoShowFail`` senders,
+        after a ``_POUR_ARM_SETTLE_S`` screen-transition delay.
         """
         if not await self._async_ensure_connected():
             return
@@ -97,6 +111,13 @@ class OperationsMixin:
             self._armed_operation = "pour"
         except Exception as exc:
             _LOGGER.error("Pour arm error: %s", exc)
+            return
+        await asyncio.sleep(_POUR_ARM_SETTLE_S)
+        try:
+            await self.client.brewer.set_temperature(float(self.temperature))
+            await self.client.brewer.set_pattern(self.pour_pattern)
+        except Exception as exc:
+            _LOGGER.warning("Pour-page entry setpoint push failed (best-effort): %s", exc)
 
     async def async_confirm_pour(self) -> None:
         """Second press of the two-stage manual-pour button flow: send
@@ -376,12 +397,23 @@ class OperationsMixin:
         except Exception as exc:
             _LOGGER.warning("Armed grinder adjust failed: %s", exc)
 
+    def _pour_page_open(self) -> bool:
+        """Whether the machine reports its pour page open with nothing
+        running — the telemetry-driven equivalent of an armed pour."""
+        status = getattr(self.client, "status", None)
+        return (
+            status is not None
+            and status.screen == "pour"
+            and not status.brewer.is_running
+        )
+
     async def async_sync_armed_brewer_temperature(self) -> None:
         """Push the current temperature to a machine sitting on the pour
-        screen after ``async_arm_pour()`` (cmd 4510, temp × 10) — mirrors
-        the official app's ``checkAndSetTemperature``. No-op unless a
-        pour is armed (see ``async_sync_armed_grinder_settings``)."""
-        if self._armed_operation != "pour":
+        screen after ``async_arm_pour()`` — or knob-opened (T7, matching
+        ``async_sync_armed_grinder_settings``'s gate) — (cmd 4510,
+        temp × 10), mirroring the official app's
+        ``checkAndSetTemperature``."""
+        if self._armed_operation != "pour" and not self._pour_page_open():
             return
         if not await self._async_ensure_connected():
             return
@@ -392,10 +424,9 @@ class OperationsMixin:
 
     async def async_sync_armed_brewer_pattern(self) -> None:
         """Push the current pour pattern to a machine sitting on the pour
-        screen after ``async_arm_pour()`` (cmd 8016) — mirrors the
-        official app's ``checkAndSetSpiral``. No-op unless a pour is
-        armed."""
-        if self._armed_operation != "pour":
+        screen after ``async_arm_pour()`` — or knob-opened (T7) — (cmd
+        8016), mirroring the official app's ``checkAndSetSpiral``."""
+        if self._armed_operation != "pour" and not self._pour_page_open():
             return
         if not await self._async_ensure_connected():
             return

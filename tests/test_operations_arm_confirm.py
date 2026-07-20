@@ -8,7 +8,17 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
+from custom_components.xbloom.coordinator import operations
 from custom_components.xbloom.coordinator.operations import OperationsMixin
+
+
+@pytest.fixture(autouse=True)
+def _no_pour_arm_settle(monkeypatch):
+    """Zero the pour-arm entry-push settle delay (T7) — the 2.0s screen
+    transition wait is hardware pacing, not test-relevant behavior."""
+    monkeypatch.setattr(operations, "_POUR_ARM_SETTLE_S", 0)
 
 
 class _FakeGrinder:
@@ -247,8 +257,10 @@ def test_armed_brewer_adjust_sends_temperature_and_pattern():
     asyncio.run(coordinator.async_sync_armed_brewer_temperature())
     asyncio.run(coordinator.async_sync_armed_brewer_pattern())
 
-    assert coordinator.client.brewer.set_temperature_calls == [88.0]
-    assert coordinator.client.brewer.set_pattern_calls == [0]
+    # First entries are the arm's own entry push (T7) of the setpoints as
+    # they were at arm time; the slider adjustments follow.
+    assert coordinator.client.brewer.set_temperature_calls == [93.0, 88.0]
+    assert coordinator.client.brewer.set_pattern_calls == [2, 0]
 
 
 def test_armed_brewer_adjust_is_a_noop_unless_pour_is_armed():

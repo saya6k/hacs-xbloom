@@ -745,7 +745,17 @@ class XBloomClient:
                 )
         elif response == Response.BREWER_TEMPERATURE:
             if len(payload) >= 4:
-                st.brewer.temperature = struct.unpack_from("<I", payload, 0)[0] / 10.0
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                # Knob-driven pushes carry LITERAL °C (hardware 2026-07-20:
+                # payload 56 → 53 as the knob was turned down a few
+                # degrees) — the old unconditional /10 showed 5.6 °C for a
+                # 56 °C knob. Values above the machine's 98 °C physical
+                # max can only be the ×10 encoding (the 4510-echo family),
+                # so scale those down.
+                st.brewer.temperature = raw / 10.0 if raw > 150 else float(raw)
+                self._fire_event(
+                    "settings", "brewer_knob", {"temperature": st.brewer.temperature}
+                )
         elif response in (Response.GRINDER_BEGIN, Response.GRINDER_RUN_BEGIN):
             # GRINDER_RUN_BEGIN (40506) is the signal that actually fires
             # on real grinds — without it here, grinder.is_running stayed
@@ -784,6 +794,14 @@ class XBloomClient:
                 volume, temperature, pattern = struct.unpack_from("<3I", payload, 0)
                 st.brewer.temperature = float(temperature)
                 _LOGGER.info("POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+                # Knob-entry seed for the entities — a separate event type
+                # from "brewer_knob" because the coordinator suppresses
+                # the snapshot (not live turns) while an HA arm is in
+                # flight, so it can't overwrite the entry push's values.
+                self._fire_event(
+                    "settings", "brewer_page_entry",
+                    {"volume": volume, "temperature": temperature, "pattern": pattern},
+                )
         elif response == Response.IN_GRINDER:
             # Grind-page entry snapshot: 2× LE u32 (size, rpm) — the size
             # is already in user units (hardware 2026-07-20: 9000 said 35
@@ -846,6 +864,7 @@ class XBloomClient:
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 if raw in _VALID_POUR_PATTERNS:
                     st.pour_pattern_live = raw
+                    self._fire_event("settings", "brewer_knob", {"pattern": raw})
         elif response == Response.UNIT_CHANGE:
             # Machine-initiated display-units/water-source sync (e.g. the
             # user changed them on the touchscreen). Payload: 3 LE u32s —
