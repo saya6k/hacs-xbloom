@@ -27,6 +27,17 @@ ERROR_EVENT_TYPES = [
     # (40522 value=1); the other errors have none (the official app just
     # toasts them, payload-less), so a derived "cleared" would be a guess.
     "water_shortage_cleared",
+    # Machine alarm channel (cmd 0xFFFE/0xCD, T14 2026-07-20) — the app's
+    # six dialog categories; each event carries the raw alarm code as a
+    # "code" attribute. The rows "Grinder Overload", "Water Intake Alert",
+    # and "Overflow Trigger" from the official troubleshooting tables have
+    # no distinct wire id — they arrive inside these categories.
+    "mismatched_power",
+    "brewing_error",
+    "dock_moving_error",
+    "grinding_error",
+    "scale_overload",
+    "upgrade_failed",
 ]
 
 NOTIFICATION_EVENT_TYPES = [

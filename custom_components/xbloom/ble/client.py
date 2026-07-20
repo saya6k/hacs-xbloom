@@ -151,6 +151,37 @@ _ERROR_MAP = {
     Response.ABNORMAL_GEAR_POSITION: "abnormal_gear_position",
 }
 
+# ── Machine alarm channel (cmd 0xFFFE, marker 0xCD) ──────────────────────
+# jadx 2026-07-20, `ErrorBle1Model`: payload first LE u32 = alarm code,
+# mapped to the app's six dialog categories. Frames carry marker 0xCD —
+# rejected by iter_frames' marker gate — so _scan_for_alarm_frame handles
+# them in a dedicated pre-scan. Same-id 0xC1 frames and all of 0xFFFD are
+# deliberately ignored (the app's ErrorBle2/ErrorBle3 handlers are empty).
+_ALARM_CMD_BYTES = (0xFFFE).to_bytes(2, "little")
+_ALARM_MARKER_BYTE = 0xCD
+_ALARM_CODE_EVENTS: dict = {}
+for _codes, _event in (
+    ((8449, 8450, 4355, 4356, 4357, 4358, 4359, 4360, 4361, 4362),
+     "mismatched_power"),
+    ((513, 4610, 5633, 5637, 6148, 6401, 6402, 6403, 6404, 6405, 9730, 9732,
+      10241, 10242, 10243, 10245, 13827, 14342, 14598, 14599, 14600, 14601,
+      14602, 14603),
+     "brewing_error"),
+    ((8961, 8962, 8963, 4868, 4869, 4871, 4873, 4874, 4875, 13062, 13064),
+     "dock_moving_error"),
+    ((1025, 5123, 5124, 5379, 9218, 9473, 9474, 9477, 9478, 13317, 13572),
+     "grinding_error"),
+    ((1793, 1795, 1796, 5890), "scale_overload"),
+    ((7169, 7170), "upgrade_failed"),
+):
+    for _code in _codes:
+        _ALARM_CODE_EVENTS[_code] = _event
+# Codes the app receives but deliberately never surfaces (no dialog; 9479
+# is additionally excluded from its cloud error log) — mirrored as
+# log-only here, and NO `*_cleared` synthesis for any alarm (the
+# water-shortage sole-type rule stands).
+_ALARM_SILENT_CODES = frozenset({2562, 2563, 2820, 2821, 6657, 6913, 6914, 6915, 9479})
+
 
 def strict_ascii(data: bytes) -> str:
     """Printable-ASCII (0x20-0x7E) bytes only, trimmed.
@@ -582,6 +613,7 @@ class XBloomClient:
             self._scan_for_machine_info(raw)
         self._scan_for_status_frame(raw)
         self._scan_for_advanced_settings(raw)
+        self._scan_for_alarm_frame(raw)
         for frame in iter_frames(raw):
             self._parse_response(frame)
 
@@ -615,6 +647,33 @@ class XBloomClient:
             # sticking the derived state at "brewing").
             self._status.grinder.is_running = False
             self._status.brewer.is_running = False
+
+    def _scan_for_alarm_frame(self, raw: bytes) -> None:
+        """Machine alarm frames (cmd 0xFFFE, marker 0xCD — see the
+        ``_ALARM_*`` constants' comment). Dedicated buffer walk because
+        the 0xCD marker never passes ``iter_frames``' marker gate.
+        Decompile-derived; not yet observed on hardware (no alarm has
+        fired during a capture session)."""
+        offset = 0
+        n = len(raw)
+        while offset + 16 <= n:
+            if (
+                raw[offset] != 0x58
+                or raw[offset + 3 : offset + 5] != _ALARM_CMD_BYTES
+                or raw[offset + 9] != _ALARM_MARKER_BYTE
+            ):
+                offset += 1
+                continue
+            code = struct.unpack_from("<I", raw, offset + 10)[0]
+            event_type = _ALARM_CODE_EVENTS.get(code)
+            if event_type is not None:
+                _LOGGER.warning("Machine alarm: %s (code %d)", event_type, code)
+                self._fire_event("error", event_type, {"code": code})
+            elif code in _ALARM_SILENT_CODES:
+                _LOGGER.debug("Machine alarm (app-silent list): code %d", code)
+            else:
+                _LOGGER.debug("Machine alarm with unmapped code %d", code)
+            offset += 16
 
     def _scan_for_advanced_settings(self, raw: bytes) -> None:
         """Raw pre-scan for cmd 11506/11507/11508/11509 responses — these

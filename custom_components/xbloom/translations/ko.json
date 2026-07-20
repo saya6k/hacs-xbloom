@@ -284,7 +284,13 @@
               "no_beans": "원두 없음",
               "abnormal_dose_or_water": "도징/물 양 이상",
               "abnormal_gear_position": "그라인더 기어 위치 이상",
-              "water_shortage_cleared": "물 부족 해소"
+              "water_shortage_cleared": "물 부족 해소",
+              "mismatched_power": "전원 어댑터 불일치",
+              "brewing_error": "추출 오류",
+              "dock_moving_error": "도크 이동 오류",
+              "grinding_error": "분쇄 오류",
+              "scale_overload": "저울 과부하",
+              "upgrade_failed": "업그레이드 실패"
             }
           }
         }
