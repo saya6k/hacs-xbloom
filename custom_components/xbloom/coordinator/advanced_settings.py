@@ -44,7 +44,7 @@ class AdvancedSettingsMixin:
         mirroring the same activity's own 180s client-side timeout
         (``Observable.just(0).delay(180000, MILLISECONDS)``) so a lost or
         delayed 85 reading doesn't leave ``is_calibrating_grinder`` (and
-        ``sensor.state == "calibrating"``) stuck forever. ``RD_Grinder_Stop``
+        ``sensor.state == "calibrating_grinder"``) stuck forever. ``RD_Grinder_Stop``
         is deliberately *not* a completion signal — an earlier version of
         this fix treated it as one, but hardware-confirmed 2026-07-17 (a
         second, longer test) that it fires within ~5s of send as part of
@@ -73,7 +73,7 @@ class AdvancedSettingsMixin:
         """Mirror CalibrateGrinderActivity's own 180s client-side timeout:
         if the real completion signal (RD_CurrentGrinder == 85) hasn't
         arrived within 180s of send, declare it done anyway rather than
-        leaving ``is_calibrating_grinder``/``sensor.state == "calibrating"``
+        leaving ``is_calibrating_grinder``/``sensor.state == "calibrating_grinder"``
         stuck indefinitely. A no-op if the real signal already cleared the
         flag (the common case) before this fires.
         """

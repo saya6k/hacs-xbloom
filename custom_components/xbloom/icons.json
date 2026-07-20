@@ -39,12 +39,6 @@
       "tare_scale": {
         "default": "mdi:scale-balance"
       },
-      "enter_scale_mode": {
-        "default": "mdi:scale"
-      },
-      "exit_scale_mode": {
-        "default": "mdi:scale-off"
-      },
       "calibrate_grinder": {
         "default": "mdi:cog-refresh"
       },
@@ -81,7 +75,13 @@
           "brewing": "mdi:coffee",
           "paused": "mdi:pause-circle",
           "error": "mdi:alert-circle",
-          "sleeping": "mdi:sleep"
+          "sleeping": "mdi:sleep",
+          "calibrating_grinder": "mdi:tune-vertical",
+          "standalone_grind": "mdi:grain",
+          "standalone_pour": "mdi:kettle-outline",
+          "standalone_scale": "mdi:scale-balance",
+          "descaling": "mdi:water-opacity",
+          "calibrating_scale": "mdi:scale-unbalanced"
         }
       },
       "weight": {

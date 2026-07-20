@@ -21,6 +21,7 @@ REGISTERED_TOOLS = (
     "delete_xbloom_recipe",
     "pour_xbloom",
     "grind_xbloom",
+    "cancel_xbloom",
     "execute_xbloom_recipe",
     "write_xbloom_easy_slot",
     "tare_xbloom_scale",

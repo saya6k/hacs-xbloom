@@ -85,19 +85,23 @@ class XBloomRPMNumber(_XBloomNumber):
 
 
 class XBloomTemperatureNumber(_XBloomNumber):
-    """Manual-pour temperature setpoint.
+    """Manual-pour temperature setpoint, spanning the machine's own
+    pour-slider semantics (T11): 39 = RT (room temperature, transmits
+    20 °C), 96 = BP (boiling, transmits 98 °C), 40–95 literal — see
+    ``coordinator._wire_temperature``.
 
     Tracks the physical pour-temperature knob in real time: any RD_
     BREWER_TEMPERATURE (8108) notification — fired on a knob turn — is
-    mirrored onto this value by coordinator._async_update_data. Dragging
-    the slider in HA overrides it until the next knob turn.
+    mirrored onto this value (inverse-mapped, so RT/BP land back on the
+    matching endpoint). Dragging the slider in HA overrides it until the
+    next knob turn.
     """
 
     _attr_translation_key = "temperature"
     _attr_unique_id = "xbloom_temperature"
     _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_native_min_value = 40
-    _attr_native_max_value = 100
+    _attr_native_min_value = 39
+    _attr_native_max_value = 96
     _attr_native_step = 1
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 

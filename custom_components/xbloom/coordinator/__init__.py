@@ -130,12 +130,18 @@ class XBloomCoordinator(
         self.grind_size: int = 50
         self.rpm: int = 80
         self.temperature: int = 93
-        self.volume: int = 200
+        # Manual/standalone pour ONLY — recipes carry per-pour volumes.
+        # 250 matches the machine's own pour-page default (hardware
+        # 2026-07-20: the 9001 entry snapshot).
+        self.volume: int = 250
         self.flow_rate: float = 3.0
         # Pour pattern for MANUAL POUR only (0=center, 1=circular, 2=spiral).
         # Default matches the app's per-pour default (center). Recipe
         # execution uses each pour's own pattern from the YAML.
         self.pour_pattern: int = 0
+        # sensor.live_grind_size's held value — only updated while a grind
+        # actually runs (see state._tracked_live_grind_size).
+        self._live_grind_size: Optional[int] = None
 
         # Recipe-execution pour tracking, so sensor.xbloom_flow_rate can
         # report the *current* pour's flow rate instead of a fixed manual
@@ -235,9 +241,12 @@ class XBloomCoordinator(
         # "pour" / "recipe" / None. No timeout: stays armed until confirmed
         # or cancelled (async_cancel() sends the per-operation quit command
         # matching whichever machine screen the arm press opened).
-        # sensor.state surfaces it as "armed_grind"/"armed_pour"/
-        # "armed_recipe" (see state.py) so the user knows a second press is
-        # needed.
+        # sensor.state surfaces "recipe" as "armed_recipe"; for grind/pour
+        # the telemetry-driven "standalone_grind"/"standalone_pour" states
+        # (from status.screen, T4 2026-07-20) cover the armed page, with
+        # this flag as the no-screen-reported fallback (see
+        # state._derive_state_string) — so the user knows a second press
+        # is needed.
         self._armed_operation: Optional[str] = None
         # Only meaningful while _armed_operation == "recipe" — which go
         # command async_confirm_recipe() must send, and (tea only) the

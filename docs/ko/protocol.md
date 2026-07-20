@@ -83,7 +83,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 4506 | `APP_BREWER_START` | 용량, 온도, 유량, 패턴 | Active | 수동 추출 |
 | 4507 | `APP_BREWER_STOP` | — | Active | 수동 추출 정지 전용 |
 | 4508 | 급수원 설정 | LE u32 (0=탱크,1=직결) | Active | `WaterSourceType.ordinal()`; J20 전용 값(8/50)은 Studio에 해당 없음 |
-| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화. 같은 날 하드웨어 확인: 880(88.0℃) 전송 시 ACK payload가 해석된 값을 float32로 echo (`00005c44` = 880.0) |
+| 4510 | `APP_BREWER_SET_TEMPERATURE` | LE u32 `round(온도℃ × 10)` | Active | jadx 2026-07-19: `BrewerActivity.checkAndSetTemperature`가 추출 페이지에서 온도 슬라이더가 바뀔 때마다 실시간 전송; 실제 추출이 도는 동안에는 앱이 슬라이더를 비활성화. 같은 날 하드웨어 확인: 880(88.0℃) 전송 시 ACK payload가 해석된 값을 float32로 echo (`00005c44` = 880.0). RT/BP 엔드포인트 (jadx 2026-07-20): 앱 추출 페이지 슬라이더 범위는 39–96℃ (`CoffeeConstantUtil.getTemperatureJ15RTBP`; 화씨 103–204°F); 최소 위치에서는 `TemperatureConstant.RT` = 20.0℃, 최대 위치에서는 `BP` = 98.0℃를 전송하고 그 사이는 리터럴 값 — 같은 분기가 4506의 온도 필드에도 쓰임 |
 | 4512 | `APP_TEA_RECIP_MAKE` | — | Active | 큐에 넣은 티 레시피 실행 |
 | 4513 | `APP_TEA_RECIP_CODE` | 티 레시피 블롭 | Active | 티 레시피 큐잉; **8004가 아님** — brewing-notes.md 참고 |
 | 8001 | `APP_RECIPE_SEND_AUTO` | 레시피 블롭 | Active | 그라인딩 포함 커피 레시피; 앱은 `recipe.isSetGrinderSize`로 8001/8004를 선택 (1 → 8001, 그 외 → 8004). 앱의 실행 체인(`8102` 바이패스 → `8104` 컵 → `8001`/`8004` → `8002`)에는 **모드 관문이 없음** — 하드웨어도 불필요함을 확인 (2026-07-19 라이브: Easy 모드 상태에서 전체 체인이 ACK되고 분쇄 단계가 시작됨; 과거의 "Easy 모드는 추출 명령 무시, 물만 나옴" 관측은 ratio footer 버그의 오귀속이었음) |
@@ -116,7 +116,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40518 | 레시피 전체 일시정지 | — | Active | `AppJ15AutoManager.pause()`; 레시피 모드 브루잉 전용, 수동 그라인딩/추출 아님 |
 | 40519 | `APP_RECIPE_STOP` | — | Active | 레시피 전체 정지 |
 | 40524 | 레시피 전체 재개 | — | Active | 40518과 짝을 이룸 |
-| 8500 | 저울 영점(tare) | — | Active | `CMD_TARE`, `xbloom-ble`에서 cherry-pick |
+| 8500 | 저울 영점(tare) | — | Active | `CMD_TARE`, `xbloom-ble`에서 cherry-pick. 저울 페이지가 아닌 **어느 화면에서든** 동작 (하드웨어 2026-07-20: 홈 화면에서 ~100g 올린 상태로 전송 — ACK 수신, 무게 즉시 0.0) — 단 부수 효과로 머신 디스플레이가 저울 페이지(`0x04` → `0x05`)로 스스로 전환됨 |
 
 ### 인바운드 (`RD_*`)
 
@@ -134,10 +134,10 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8113 | `RD_TEA_RECIP_CHANGE_SOAK_TIME` | — | Active | `"tea_soak_time_changed"` 알림에 매핑 |
 | 8203 | `RD_AbnormalGearPosition` | — | Active | 에러 이벤트 |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | 에러 이벤트 |
-| 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | — | Present, unconfirmed | 모드 진입 ACK, 이 통합에 핸들러 없음 |
-| 9003 | `RD_GRINDER_BEGIN` | — | Active, 신뢰 불가 | 이 펌웨어에서 실제 그라인딩 중 발화가 한 번도 관측되지 않음 — 실제로 발화하는 begin 신호는 40506(아래); 9003의 `grinding_started` 매핑은 40506 이전의 구형 펌웨어 대비용으로만 유지 |
-| 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Present, unconfirmed | 모드 종료 ACK, 핸들러 없음 |
-| 9005 | `RD_BREWER_BEGIN` | — | Active, 조기 발생 | 커밋 직후 즉시 발생 — 실제 추출 시작보다 훨씬 이름 |
+| 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | 9000: 2× LE u32 `(분쇄도, rpm)`; 9001: 4× LE u32 `(용량, 온도℃, 패턴, 온도℃ 반복)`; 9002: — | Active | 노브로 페이지에 진입할 때 발화 (하드웨어 2026-07-20, T2 캡처): 9000/9001은 해당 페이지의 현재 설정 스냅샷을 담음 — 9000의 분쇄도는 사용자 단위(8105의 raw−30과 일치), 9001의 용량 기본값은 250ml. 이 통합에는 아직 핸들러 없음 |
+| 9003 | `RD_GRINDER_BEGIN` | 2× LE u32 `(분쇄도, rpm)` | Active, 맥락 의존 | **노브로 시작한** 그라인딩에서는 발화함 (하드웨어 2026-07-20: 40506보다 ~1초 앞서 설정 스냅샷 payload와 함께 일관되게 발화) — 앱/레시피가 시작한 그라인딩에서는 여전히 관측된 적 없음; 모든 맥락에서 발화하는 begin 신호는 40506(아래) |
+| 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Active, 거의 신뢰 가능 | 노브로 페이지에서 나갈 때 발화 (하드웨어 2026-07-20); 추출 페이지 이탈 3회 중 1회는 9006이 오지 않았고 8023 홈 코드(`0x01`)는 매번 발화 — 8023을 1차 신호로, 이들은 보조 신호로 취급할 것. 핸들러 없음 |
+| 9005 | `RD_BREWER_BEGIN` | 노브 시작 시 4× LE u32 `(용량, 온도℃, 패턴, 온도℃ 반복)` | Active, 조기 발생 | 커밋 직후 즉시 발생 — 실제 추출 시작보다 훨씬 이름. 노브로 시작한 추출에서는 페이지 설정 스냅샷을 payload로 실어 발화 (하드웨어 2026-07-20: 직전에 4510/8016 진입 푸시로 설정한 값을 그대로 echo) |
 | 9009 | `RD_GRINDER_PAUSE` | — | Present, unconfirmed | 핸들러 없음 |
 | 9010 | `RD_BREWER_PAUSE` | — | Active | `"paused"` 알림에 매핑 |
 | 9011 | `RD_TEA_RECIP_RESTART` | — | Active | 스팀 사이 일시정지 후 재개 |
@@ -147,11 +147,11 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 20501 | `RD_CURRENT_WEIGHT2` | float32 | Telemetry | 저울 무게, 주 채널 |
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
-| 40505 | `RD_GearReport` | — | Present, unconfirmed | 핸들러 없음 |
+| 40505 | `RD_GearReport` | LE u32 기어 위치 | Active | 그라인더 캘리브레이션 스윕 중 실시간 기어 위치를 스트리밍 (하드웨어 2026-07-20: 스윕 내내 약 5Hz로 `0x40`에서 `0x02`까지 내려간 뒤 다시 올라감). 핸들러 없음 |
 | 40506 | *(APK 상수 테이블에 없음 — "grinder begin")* | — | Active | 그라인더가 도는 정확히 그 순간 발화하며 호퍼 상태와 무관 (2026-07-19 라이브 캡처 3회: 빈 호퍼 레시피 분쇄 ×2, 찬 호퍼 ×1, **수동** 3500 분쇄 포함), 모든 정지/취소에 40507(`RD_Grinder_Stop`)이 응답 — 범용 grinder begin/stop 짝. 9003 `RD_GRINDER_BEGIN`이 끝내 제공하지 못한 신뢰 가능한 분쇄-시작 신호. 앱 자체 상수 테이블에 없는 id(펌웨어가 앱보다 최신). 2026-07-19부터 처리(`Response.GRINDER_RUN_BEGIN`): `grinding_started` 이벤트와 `grinder.is_running`을 구동, 같은 날 라이브 검증; 캘리브레이션 스윕 억제도 9003/40507 짝과 동일하게 적용 |
 | 40507 | `RD_Grinder_Stop` | — | Active | 그라인딩 종료; 실시간 RPM을 0으로 설정; 캘리브레이션의 홈 이동 중에도 발생하므로 **캘리브레이션 완료 신호로 유효하지 않음** |
 | 40510 | `RD_BLOOM` | — | Active | 블룸 알림 |
-| 40511 | `RD_Brewer_Stop` | — | Active | 추출 종료 |
+| 40511 | `RD_Brewer_Stop` | — | Active, 자연 완료 전용 | 추출 종료 — **4507 정지 후에는 오지 않음** (하드웨어 2026-07-20: 4507 ACK, 물 정지, 머신 추출 페이지 복귀까지 됐는데 40511은 끝내 안 옴; 클라이언트는 대신 페이지 보고에서 실행 플래그를 클리어) |
 | 40512 / 40513 | `RD_ENJOY` / `RD_ENJOY2` | — | Active | 레시피 완료 |
 | 40515 | `RD_TEA_RECIP_PAUSE` | — | Active | 스팀 사이 일시정지/종료 |
 | 40517 | `RD_ErrorIdling` | — | Active | `"no_beans"` 에러에 매핑 |
@@ -162,8 +162,9 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40525 | `RD_EASYMODE_RECIPE_NUM` | — | Present, unconfirmed | 핸들러 없음 |
 | 40526 | `RD_CurrentGrinder` | LE u32, `-30` 오프셋 | Active | 8105와 동일 값; `is_calibrating_grinder` 중 `raw == 85`가 실제 캘리브레이션 완료 신호 |
 | 40527 | `RD_BeforeVibration` | — | Present, 페이로드 없음 확인 | 디컴파일로 확인된 페이로드 없는 펄스 |
-| 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 캘리브레이션 시작/진행 펄스; 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
-| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x03` 추출 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백). 수동 추출은 `0x03` → `0x23`(brewing) → 4507 정지 시 `0x03` 복귀로 진행하며, 4506/4507 ACK는 용량을 float32로 echo |
+| 50038 / 50039 | `RD_CalibrateStart` / `RD_Calibrating` | — | Active, best-effort | 그라인더 기어 영점 재설정 알림 ("The machine gear is being reset to zero, please try again later" — jadx 2026-07-20: 둘 다 `Device_GrindSize_Reset_Zero`를 토스트하고 `clearAllCode()`로 앱의 대기 명령 큐를 비움); 머신 쪽에서 진입한 그라인더 캘리브레이션 감지 신호 후보이나 발화 시점은 하드웨어 미검증. 모든 기기에서 안정적으로 오지 않음 — `async_calibrate_grinder()`는 시작 추적에 50038을 필요로 하지 않음 |
+| 65534 (`0xFFFE`) | 머신 알람 채널 (`ErrorBle1Model`) | LE u32 알람 코드 (payload 첫 4바이트) | 디컴파일 확인, 하드웨어 미관측 | 마커 바이트 `0xCD` 필요 (통상 `0xC1` 응답 마커와 같은 오프셋; 이 id의 `0xC1` 프레임과 `0xFFFD` 전체는 앱이 명시적으로 무시). 알람 코드 → 분류 (jadx 2026-07-20, `ErrorBle1Model` 코드 리스트 + `Alarm_*` 문자열): **전원 불일치(mismatched power)** 8449, 8450, 4355–4362; **추출 오류(brewing error)** 513, 4610, 5633, 5637, 6148, 6401–6405, 9730, 9732, 10241–10243, 10245, 13827, 14342, 14598–14603; **도크 이동 오류(dock moving error)** 8961–8963, 4868, 4869, 4871, 4873–4875, 13062, 13064; **분쇄 오류(grinding error)** 1025, 5123, 5124, 5379, 9218, 9473, 9474, 9477, 9478, 13317, 13572; **저울 과부하(scale overload)** 1793, 1795, 1796, 5890; **펌웨어 업그레이드 실패** 7169, 7170 (앱의 `FwUpgradeFailEvent` 발행); **무음 처리** 2562, 2563, 2820, 2821, 6657, 6913–6915, 그리고 9479 (앱의 클라우드 에러 로그에서도 제외). 앱 문제 해결표의 "Grinder Overload", "Water Intake Alert", "Overflow Trigger" 항목은 **별도 wire id가 없음** — 그라인더/브루어 분류 안에 포함된, 머신 디스플레이 전용 구분임 |
+| Raw status-heartbeat 프레임 (cmd id 없음, 별도 프레이밍, `type` 바이트 `0x57`) | — | state byte | Active | `starting`/`brewing`/`ready`의 유일하게 신뢰 가능한 신호; 위 cmd 태그 경로(9003/9005/40507)는 바로 이 전환 구간에서 신뢰할 수 없음 — AGENTS.md 참고. (`0x57` 타입 바이트는 cmd 8023 = `0x1F57`의 하위 바이트 — 이 프레임들은 `RD_MachineActivity`로도 파싱됨.) 2026-07-19 라이브에서 매핑 외 화면/상태 코드 추가 관측: `0x01` 홈(PRO), `0x41` 홈(Easy 모드), `0x02` 분쇄 화면, `0x03` 추출 화면, `0x04` → `0x05` 저울 화면, `0x1D` 연결 직후 홈 전 짧은 과도 상태 — 모두 `_RAW_STATE_LABEL_MAP` 미매핑(현재 `idle`로 폴백). 수동 추출은 `0x03` → `0x23`(brewing) → 4507 정지 시 `0x03` 복귀로 진행하며, 4506/4507 ACK는 용량을 float32로 echo. **T2 캡처 2026-07-20** 추가: `0x03`은 노브 진입 4회 모두 발화 (2026-07-19의 비일관성은 재현되지 않음); 조절 서브 화면 `0x06`(분쇄도, 직후 8105 push), `0x07`(RPM, 8106), `0x08`(추출 패턴, 8107), `0x09`(온도, 8108); 중간 노브 3연타 유지보수 화면 `0x2F` 디스케일 확인 (선택을 취소로 옮기면 `0x32`), `0x39` 저울 보정 확인 (취소 선택 시 `0x3A`); 그라인더 캘리브레이션(분쇄 페이지 3연타 — 별도 확인 화면 없이 즉시 시작됨)은 `0x22` + 40506 스핀업 → `0x26` → `0x27` 스윕 단계 → `0x25` 완료 화면 순 (완료 시 40526 raw=85 발화, 기존 신호와 일치); `0x0A`는 홈에서 저울에 무게가 올라간 상태로 1회 관측, 의도적 재현 시도에서 재현 안 됨 — 원인 불명 |
 
 두 개의 id는 문맥에 따라 방향과 의미가 다르며 **동일 명령이 아닙니다**:
 `4508`은 순수 아웃바운드 급수원 setter(위 표 참고)이고, `8103`은 아웃바운드
@@ -189,3 +190,19 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 - 그라인딩 없는(바이패스) 커피 레시피는 `8102` 페이로드에 실제 0이 아닌
   `dose` 값이 필요합니다 — `dose=0`이면 에러 알림 없이 조용히 arm 단계에서
   멈춥니다.
+- 디스케일링과 저울 캘리브레이션에는 **BLE 명령 계열이 없습니다** (jadx
+  2026-07-20): 앱의 `DescaleActivity`와 `CalibrateScaleJ15Activity`는 순수
+  안내 슬라이드쇼입니다 — 두 절차 모두 머신 자체 노브로만 진행되므로, HA
+  쪽 가시성은 명령이 아닌 수동 텔레메트리(하트비트/8023 코드)로만 얻을 수
+  있습니다.
+- **시작 전환 드롭 구간** (하드웨어 2026-07-20): 노브 시작의 begin 보고
+  (9003/9005)와 run-begin(40506) 사이에 도착한 명령은 조용히 드롭될 수
+  있습니다 — 9003 후 ~1.9초에 보낸 3505는 무시됐고(ACK 없음, 그라인더
+  계속 동작) 40506 이후의 동일 전송은 즉시 정지시킴. 결정적이지 않음
+  (다른 시도에서 9003 후 0.2초 전송은 동작). 정지는 실행 플래그가 실제로
+  꺼질 때까지 미확정으로 취급하고 1회 재전송할 것
+  (`coordinator._async_verify_component_stop`).
+- **연속 전송 시 두 번째 명령 드롭**: 4510과 8016을 1ms 간격으로 보내면
+  4510만 ACK되고 8016은 무시됨(머신은 기억된 패턴 유지). 공식 앱은
+  `sendMessage` 큐가 ACK 게이트(측정 지연 ~370-380ms)라 이 문제를 피함;
+  한 흐름에서 연속 전송 사이에 ≥0.5초(또는 ACK 게이트)를 둘 것.

@@ -153,11 +153,8 @@
       "tare_scale": {
         "name": "Tare Scale"
       },
-      "enter_scale_mode": {
-        "name": "Enter Scale Mode"
-      },
-      "exit_scale_mode": {
-        "name": "Exit Scale Mode"
+      "scale_mode": {
+        "name": "Scale Mode"
       },
       "calibrate_grinder": {
         "name": "Calibrate Grinder"
@@ -201,12 +198,15 @@
           "water_shortage": "Water Shortage",
           "ready": "Ready",
           "starting": "Starting",
-          "calibrating": "Calibrating",
-          "armed_grind": "Armed (Grind)",
-          "armed_pour": "Armed (Pour)",
+          "calibrating_grinder": "Calibrating Grinder",
+          "standalone_grind": "Standalone Grind",
+          "standalone_pour": "Standalone Pour",
+          "standalone_scale": "Standalone Scale",
           "armed_recipe": "Armed (Recipe)",
           "awaiting_confirm": "Awaiting confirm",
-          "recipe_loaded": "Recipe loaded"
+          "recipe_loaded": "Recipe loaded",
+          "descaling": "Descaling",
+          "calibrating_scale": "Calibrating Scale"
         }
       },
       "weight": {
@@ -286,7 +286,13 @@
               "no_beans": "No Beans",
               "abnormal_dose_or_water": "Abnormal Dose / Water",
               "abnormal_gear_position": "Abnormal Gear Position",
-              "water_shortage_cleared": "Water Shortage Cleared"
+              "water_shortage_cleared": "Water Shortage Cleared",
+              "mismatched_power": "Mismatched Power",
+              "brewing_error": "Brewing Error",
+              "dock_moving_error": "Dock Moving Error",
+              "grinding_error": "Grinding Error",
+              "scale_overload": "Scale Overload",
+              "upgrade_failed": "Upgrade Failed"
             }
           }
         }

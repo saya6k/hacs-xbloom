@@ -110,6 +110,13 @@ class DeviceStatus:
     # Live pour-pattern knob turn (RD_BREWER_MODE), same raw ints as
     # coordinator.POUR_PATTERN_OPTIONS (0=center/1=circular/2=spiral).
     pour_pattern_live: Optional[int] = None
+    # Machine screen tracking (T2 capture 2026-07-20): the raw heartbeat/8023
+    # page code, and its "home"/"grind"/"pour"/"scale" label (None for
+    # activity codes and anything unmapped — self-correcting like
+    # raw_state_label). The 9xxx IN_*/OUT_* pairs feed the label too, as an
+    # auxiliary channel.
+    screen_code: Optional[int] = None
+    screen: Optional[str] = None
 
 
 @dataclass

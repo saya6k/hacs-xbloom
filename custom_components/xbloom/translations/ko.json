@@ -153,11 +153,8 @@
       "tare_scale": {
         "name": "저울 영점"
       },
-      "enter_scale_mode": {
-        "name": "저울 모드 진입"
-      },
-      "exit_scale_mode": {
-        "name": "저울 모드 나가기"
+      "scale_mode": {
+        "name": "저울 모드"
       },
       "calibrate_grinder": {
         "name": "그라인더 캘리브레이션"
@@ -201,12 +198,15 @@
           "water_shortage": "물 부족",
           "ready": "완료 (컵 대기)",
           "starting": "시작 중",
-          "calibrating": "캘리브레이션 중",
-          "armed_grind": "예약됨 (분쇄)",
-          "armed_pour": "예약됨 (추출)",
+          "calibrating_grinder": "그라인더 캘리브레이션 중",
+          "standalone_grind": "단독 분쇄",
+          "standalone_pour": "단독 추출",
+          "standalone_scale": "단독 저울",
           "armed_recipe": "예약됨 (레시피)",
           "awaiting_confirm": "확인 대기",
-          "recipe_loaded": "레시피 준비됨"
+          "recipe_loaded": "레시피 준비됨",
+          "descaling": "디스케일링",
+          "calibrating_scale": "저울 캘리브레이션 중"
         }
       },
       "weight": {
@@ -286,7 +286,13 @@
               "no_beans": "원두 없음",
               "abnormal_dose_or_water": "도징/물 양 이상",
               "abnormal_gear_position": "그라인더 기어 위치 이상",
-              "water_shortage_cleared": "물 부족 해소"
+              "water_shortage_cleared": "물 부족 해소",
+              "mismatched_power": "전원 어댑터 불일치",
+              "brewing_error": "추출 오류",
+              "dock_moving_error": "도크 이동 오류",
+              "grinding_error": "분쇄 오류",
+              "scale_overload": "저울 과부하",
+              "upgrade_failed": "업그레이드 실패"
             }
           }
         }

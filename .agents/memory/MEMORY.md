@@ -7,6 +7,7 @@
 - [rc.19 hardware verification](project_rc19_hardware_verification.md) — PRs #80-83 (8015/4508 sync, split writes, tea events) decompile-derived, pending real-hardware checks via prerelease.
 - [Original J20 cloud protocol](xbloom_original_j20_cloud_protocol.md) — Original = J20 = Wi-Fi + AWS IoT thing-shadow, no BLE control path; mapped in docs/*/protocol-original-j20.md; support = separate cloud-only integration.
 - [Vendored src/ trees removed](project_src_vendored_trees_removed.md) — src/xbloom + src/xbloom-ble deleted 2026-07-18; parity tests → golden vectors; older `src/xbloom*` path citations are now stale/upstream-only.
+- [Standalone overhaul shipped](project_standalone_overhaul_shipped.md) — SPEC T1-T17 complete on main 2026-07-20 (breaking: standalone_* states, scale toggle, 39-96 slider, two-phase LLM); rc publish + 4 soak items pending.
 
 ## xbloom project history (extracted from AGENTS.md 2026-07-17, see ADR-001)
 - [8100 handshake + firmware history](xbloom_8100_handshake_and_firmware_history.md) — MTU handshake gates all commands; D122→D500 firmware version table.
@@ -39,3 +40,6 @@
 - [Ratio footer grind gate](xbloom_ratio_footer_grind_gate.md) — 8001 footer ratio byte undershooting the pour sum silently downgrades to no-grind (water only, no error); int()→ceil fix; 40519 cancel-probe bisection; bloom-vs-grinding_complete discriminator.
 - [Brew-start verification](xbloom_brew_start_verification.md) — 8002 ACK ≠ started; state-heartbeat verifier (0x1E/0x1F live-confirmed); 40518-as-start re-refuted; bare-40519 cancel; error-event teardown.
 - [App-parity controls jadx round 2](xbloom_app_parity_controls_jadx_round2.md) — 8023=RD_MachineActivity solved; 8003/8014 scale page; 4510/8016/8006 live-adjust; no Easy-mode gate on recipes → _ensure_pro_mode rationale in doubt; PR #127 unverified.
+- [Machine alarm channel + RT/BP](xbloom_machine_alarm_channel_and_rtbp.md) — 0xFFFE/0xCD alarm code lists per category; RT/BP slider 39-96°C → 20/98 on the wire; descale/scale-cal have NO BLE commands; 50038/50039 = gear-zeroing toasts.
+- [T2 screen-code capture](xbloom_t2_screen_code_capture.md) — full standalone screen map (0x06-0x09 subscreens, 0x2F/0x32 descale, 0x39/0x3A scale-cal, 0x25-0x27 grinder-cal); 9001 shows machine volume default 250; 8500 tares anywhere but flips display to scale page.
+- [Checkpoint 2 hardware findings](xbloom_checkpoint2_hardware_findings.md) — T3-T7 hardware-verified; 4 same-session fixes: reconcile edge-trigger, 4510/8016 back-to-back drop (0.5s gap rule), start-transition stop drop (outcome retry), 40511 completion-only (page reports clear run flags); 9003/9005 knob-start snapshots.

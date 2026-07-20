@@ -345,6 +345,23 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         }
     )
 
+    async def _async_try_prearm(self, recipe_name: str, has_overrides: bool) -> bool:
+        """Best-effort pre-arm before a confirmation ask (T13): load the
+        recipe on the machine so its start prompt is showing while the
+        user is asked. Skipped for override-carrying calls (the armed
+        payload uses stored settings only) and when an arm is already
+        standing. Returns whether an arm is in place afterwards."""
+        if has_overrides:
+            return False
+        if self.coordinator._armed_operation == "recipe":
+            return True
+        try:
+            self.coordinator.select_recipe(recipe_name)
+            await self.coordinator.async_arm_recipe()
+        except Exception as exc:
+            _LOGGER.debug("recipe pre-arm failed (best-effort): %s", exc)
+        return self.coordinator._armed_operation == "recipe"
+
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -385,30 +402,14 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
             if needs_grind and not filter_confirmed:
                 missing.append("paper coffee filter")
 
-        if missing:
-            items = " and ".join(missing)
-            confirmed_flags = {
-                ingredient: "beans_confirmed",
-                "dripper": "dripper_confirmed",
-                "paper coffee filter": "filter_confirmed",
-            }
-            retry_flags = " and ".join(
-                f"{confirmed_flags[item]}=true" for item in missing
-            )
-            return {
-                "success": False,
-                "confirmation_required": True,
-                "missing_confirmations": missing,
-                "recipe": _summarize_recipe(recipe),
-                "instruction": (
-                    f"Do NOT start the recipe yet. Ask the user to confirm "
-                    f"that the {items} have been added/installed for the "
-                    f"'{recipe_name}' recipe. The machine cannot detect the "
-                    f"filter on its own, so the user must verify it manually. "
-                    f"Once they confirm, call execute_xbloom_recipe again "
-                    f"with {retry_flags}."
-                ),
-            }
+        # Per-call overrides make the arm/confirm path unusable: the armed
+        # payload always carries the recipe's STORED settings, so a
+        # confirm would silently ignore them (T13).
+        has_overrides = bool(
+            {"grind_size", "rpm", "bypass_volume", "bypass_temperature",
+             "dose_g", "ratio", "cup_type"} & tool_input.tool_args.keys()
+            or tool_input.tool_args.get("pour_overrides")
+        )
 
         client = self.coordinator.client
         if client is None or not client.is_connected:
@@ -448,6 +449,39 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 ),
             }
 
+        if missing:
+            items = " and ".join(missing)
+            confirmed_flags = {
+                ingredient: "beans_confirmed",
+                "dripper": "dripper_confirmed",
+                "paper coffee filter": "filter_confirmed",
+            }
+            retry_flags = " and ".join(
+                f"{confirmed_flags[item]}=true" for item in missing
+            )
+            armed = await self._async_try_prearm(recipe_name, has_overrides)
+            return {
+                "success": False,
+                "confirmation_required": True,
+                "missing_confirmations": missing,
+                "recipe": _summarize_recipe(recipe),
+                "instruction": (
+                    f"Do NOT start the recipe yet. "
+                    + (
+                        "The machine has loaded the recipe and is showing "
+                        "its start prompt. "
+                        if armed
+                        else ""
+                    )
+                    + f"Ask the user to confirm "
+                    f"that the {items} have been added/installed for the "
+                    f"'{recipe_name}' recipe. The machine cannot detect the "
+                    f"filter on its own, so the user must verify it manually. "
+                    f"Once they confirm, call execute_xbloom_recipe again "
+                    f"with {retry_flags}."
+                ),
+            }
+
         # Cup presence: weight > threshold proves a cup is there. A reading
         # near 0 g is ambiguous because the machine auto-tares any weight
         # present at power-on, so a cup placed before boot reads as 0 g.
@@ -455,12 +489,20 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         weight = float((self.coordinator.data or {}).get("weight", 0.0) or 0.0)
         cup_on_scale = weight >= CUP_PRESENCE_WEIGHT_G
         if not cup_on_scale and not cup_confirmed:
+            armed = await self._async_try_prearm(recipe_name, has_overrides)
             return {
                 "success": False,
                 "error": "cup_unverified",
                 "scale_weight_g": weight,
                 "instruction": (
-                    "Do NOT start the recipe yet. The scale reads "
+                    "Do NOT start the recipe yet. "
+                    + (
+                        "The machine has loaded the recipe and is showing "
+                        "its start prompt. "
+                        if armed
+                        else ""
+                    )
+                    + "The scale reads "
                     f"{weight:.1f} g, which means either no cup is on the "
                     "machine OR a cup was placed before power-on (the "
                     "machine tares any weight at boot to 0 g). Ask the "
@@ -504,12 +546,21 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
             pour_overrides.append(entry)
 
         try:
-            await self.coordinator.async_execute_recipe(
-                overrides=overrides or None,
-                pour_overrides=pour_overrides or None,
-                bypass_volume=bypass_volume,
-                bypass_temperature=bypass_temperature,
-            )
+            if self.coordinator._armed_operation == "recipe" and not has_overrides:
+                # A standing pre-arm from the confirmation ask (T13) —
+                # confirm it instead of re-executing the whole chain.
+                await self.coordinator.async_confirm_recipe()
+            else:
+                if self.coordinator._armed_operation == "recipe":
+                    # Overrides arrived after a pre-arm: the armed payload
+                    # carries stored settings only — back out first.
+                    await self.coordinator.async_cancel()
+                await self.coordinator.async_execute_recipe(
+                    overrides=overrides or None,
+                    pour_overrides=pour_overrides or None,
+                    bypass_volume=bypass_volume,
+                    bypass_temperature=bypass_temperature,
+                )
         except Exception as exc:
             _LOGGER.exception("execute_xbloom_recipe failed: %s", exc)
             return {

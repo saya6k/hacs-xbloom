@@ -17,6 +17,196 @@ _LOGGER = logging.getLogger(__name__)
 class StateMixin:
     """DataUpdateCoordinator's ``_async_update_data`` plus BLE event dispatch."""
 
+    def _apply_grinder_knob(self, attrs: dict) -> None:
+        """Mirror a grind-page knob push (8105 size / 8106 RPM / 9000 entry
+        snapshot — the client's "grinder_knob" settings event) onto the
+        grind-size/RPM number entities (T6, 2026-07-20).
+
+        Gated on the machine actually being on its grind page with nothing
+        running: a recipe execution's own 8105 push must not clobber the
+        user's manual setpoints, and the app disables its sliders during a
+        real grind too.
+        """
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "grind" or s.grinder.is_running:
+            return
+        size = attrs.get("size")
+        rpm = attrs.get("rpm")
+        changed = False
+        if isinstance(size, int) and 1 <= size <= 80 and size != self.grind_size:
+            self.grind_size = size
+            changed = True
+        if isinstance(rpm, int) and 60 <= rpm <= 120 and rpm != self.rpm:
+            self.rpm = rpm
+            changed = True
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _apply_brewer_knob(self, attrs: dict) -> None:
+        """Mirror a pour-page knob push (8108 temperature / 8107 pattern)
+        onto the manual-pour setpoints (T7). Gated on the pour page being
+        open with no pour running — an active brew's 8108 frames are the
+        heater's own in-progress readings, not knob turns. Applies while
+        HA-armed too: an armed page's knobs are still live.
+        """
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "pour" or s.brewer.is_running:
+            return
+        changed = self._apply_brewer_values(attrs)
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _apply_brewer_page_entry(self, attrs: dict) -> None:
+        """Seed the entities from a knob-entry settings snapshot (9001,
+        T7) — volume included, unlike live knob turns (the page has no
+        live volume push, only this snapshot). Suppressed while an HA arm
+        is in flight: the snapshot carries the machine's own remembered
+        values, which the entry push (async_arm_pour) is about to
+        overwrite with HA's — mirroring them first would make that push
+        a no-op echo.
+        """
+        if self._armed_operation == "pour":
+            return
+        s = getattr(self.client, "status", None)
+        if s is None or s.screen != "pour" or s.brewer.is_running:
+            return
+        changed = self._apply_brewer_values(attrs)
+        volume = attrs.get("volume")
+        if isinstance(volume, int) and 30 <= volume <= 500 and volume != self.volume:
+            self.volume = volume
+            changed = True
+        if changed and self.hass and self.hass.loop:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _apply_brewer_values(self, attrs: dict) -> bool:
+        """Shared temperature/pattern apply for the two brewer mirrors."""
+        changed = False
+        temperature = attrs.get("temperature")
+        pattern = attrs.get("pattern")
+        if isinstance(temperature, (int, float)) and 15 <= temperature <= 100:
+            # Inverse of _wire_temperature (T11): the machine transmits
+            # 20.0 for its RT position and 98.0 for BP; anything below the
+            # literal band lands on the RT slider endpoint (39), anything
+            # above it on BP (96) — so a knob sitting in either zone
+            # round-trips to the same slider position without oscillating.
+            if temperature < 40:
+                slider = 39
+            elif temperature > 95:
+                slider = 96
+            else:
+                slider = round(temperature)
+            if slider != self.temperature:
+                self.temperature = slider
+                changed = True
+        if isinstance(pattern, int) and pattern in (0, 1, 2) and pattern != self.pour_pattern:
+            self.pour_pattern = pattern
+            changed = True
+        return changed
+
+    def _tracked_live_grind_size(self, s) -> int | None:
+        """sensor.live_grind_size's value: the size in use by an actual
+        grind, frozen at its last in-grind value otherwise (T6). Knob
+        turns while idle belong to the grind-size number entity (see
+        ``_apply_grinder_knob``), not this sensor — before this, every
+        knob click animated "live" grind size with nothing grinding.
+        """
+        if s.grinder.is_running:
+            self._live_grind_size = s.grinder.size or None
+        return self._live_grind_size
+
+    # Last screen this reconcile observed — class default so every test
+    # harness gets it without __init__ churn.
+    _last_reconcile_screen = None
+
+    def _reconcile_armed_with_screen(self, s) -> None:
+        """Drop a stale grind/pour arm once the machine LEAVES the armed
+        page for home — the user backed out with the knob (T5,
+        2026-07-20). Without this, cancel later sends a quit command for a
+        screen that is no longer open.
+
+        Edge-triggered on the page→home transition, not home itself —
+        hardware-found the same day: the machine keeps reporting home for
+        ~1s after our 8006/8007 until the page code lands, so a
+        level-triggered clear raced every arm whose next poll tick fell in
+        that window (deterministically so on a fast tick). The armed page
+        must have been *observed* before home clears it; an arm whose page
+        report never arrives at all keeps relying on cancel, as before.
+
+        Deliberately NOT applied to an armed recipe: its machine-side
+        dismissal is unverified on hardware, and the arm send chain
+        (8102→8104→8001) sits on the home screen far longer than the
+        instant 8006/8007 page opens do. Recipe arms are cleared by
+        cancel, the confirm press, or a machine-side start signal.
+        """
+        last = self._last_reconcile_screen
+        self._last_reconcile_screen = s.screen
+        if (
+            s.screen == "home"
+            and self._armed_operation in ("grind", "pour")
+            # The armed op name and its page label are the same string.
+            and last == self._armed_operation
+        ):
+            self._armed_operation = None
+
+    def _derive_state_string(self, s) -> str:
+        """The sensor.state derivation chain, in priority order.
+
+        Extracted from ``_async_update_data`` (T4, 2026-07-20) so the
+        priority table is unit-testable — see
+        tests/test_standalone_state_derivation.py.
+        """
+        if self._armed_operation == "recipe":
+            # Pure HA-side bookkeeping for the two-stage recipe button
+            # (2026-07-18): a machine-visible start prompt, not a
+            # standalone page — the machine reports it via 0x1E/0x1F
+            # anyway, but our own arm is the more immediate signal.
+            return "armed_recipe"
+        if self.client.is_calibrating_grinder():
+            # A deliberate, HA-triggered action (see
+            # async_calibrate_grinder()) we know is actually running, not
+            # inferred from ambiguous telemetry.
+            return "calibrating_grinder"
+        if self._no_beans:
+            return "no_beans"
+        if self._water_shortage:
+            return "water_shortage"
+        if s.raw_state_label:
+            # starting/brewing/ready/awaiting_confirm/… — an activity in
+            # progress always outranks whatever page the machine last
+            # reported (the screen goes stale the moment activity codes
+            # replace page codes on the heartbeat).
+            return s.raw_state_label
+        if (
+            s.screen in ("grind", "pour", "scale")
+            and not s.grinder.is_running
+            and not s.brewer.is_running
+        ):
+            # Telemetry-driven standalone modes (T2 capture 2026-07-20):
+            # the machine's own screen report covers knob-entered pages,
+            # not just HA-armed ones. The is_running guards cover the
+            # window where an operation began but no activity code has
+            # landed yet.
+            return f"standalone_{s.screen}"
+        if s.screen is None and self._armed_operation in ("grind", "pour"):
+            # Armed-bookkeeping fallback, only while the machine has not
+            # reported any screen: one 2026-07-19 run showed no page code
+            # after our own 8007. A reported home screen deliberately
+            # wins over a stale armed flag ("telemetry wins").
+            return f"standalone_{self._armed_operation}"
+        state_str = s.state.value
+        if state_str == "unknown":
+            # Vendored DeviceState defaults to UNKNOWN and only ever
+            # transitions on a Grinder/Brewer Begin/Stop event — on a
+            # connection where the machine has never ground/brewed yet,
+            # nothing ever sets it, so a genuinely idle, connected
+            # machine reports "unknown" forever (hardware-reported
+            # 2026-07-17). We're only called from the
+            # `client.is_connected` branch, so treat "connected + no
+            # error + no activity ever observed" as idle rather than a
+            # permanent placeholder.
+            return "idle"
+        return state_str
+
     async def _async_update_data(self) -> Dict[str, Any]:
         """Pull fresh data from the BLE status object (no I/O needed).
 
@@ -82,43 +272,8 @@ class StateMixin:
                 # See ble/client.py's _scan_for_status_frame /
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
-                raw_label = s.raw_state_label
-                if self._armed_operation:
-                    # Highest priority of all — the two-stage arm/confirm
-                    # manual button flow's armed state (2026-07-18) is
-                    # pure HA-side bookkeeping, not inferred from
-                    # telemetry at all, so it's even more certain than
-                    # is_calibrating_grinder() below. armed_grind /
-                    # armed_pour / armed_recipe — see _armed_operation's
-                    # docstring in __init__.py.
-                    state_str = f"armed_{self._armed_operation}"
-                elif self.client.is_calibrating_grinder():
-                    # Next-highest priority — a deliberate, HA-triggered
-                    # action (see async_calibrate_grinder()) we know is
-                    # actually running, not inferred from ambiguous
-                    # telemetry.
-                    state_str = "calibrating"
-                elif self._no_beans:
-                    state_str = "no_beans"
-                elif self._water_shortage:
-                    state_str = "water_shortage"
-                elif raw_label:
-                    state_str = raw_label
-                else:
-                    state_str = s.state.value
-                    if state_str == "unknown":
-                        # Vendored DeviceState defaults to UNKNOWN and only
-                        # ever transitions to IDLE on a Grinder/Brewer
-                        # Begin/Stop event (the upstream PyBloom's core/client.py) — on
-                        # a connection where the machine has never
-                        # ground/brewed yet, nothing ever sets it, so a
-                        # genuinely idle, connected machine reports
-                        # "unknown" forever (hardware-reported 2026-07-17).
-                        # We're inside the `client.is_connected` branch
-                        # here, so treat "connected + no error + no
-                        # activity ever observed" as idle rather than a
-                        # permanent placeholder.
-                        state_str = "idle"
+                self._reconcile_armed_with_screen(s)
+                state_str = self._derive_state_string(s)
                 data = {
                     "connected": True,
                     "weight": round(s.scale.weight, 1),
@@ -142,10 +297,10 @@ class StateMixin:
                     "error": None,
                     # Live readings from the machine's own knobs/heartbeat —
                     # see ble/client.py's RD_GRINDER_SIZE/SPEED/BREWER_MODE and
-                    # RD_MachineInfo handling. live_grind_size: None until
-                    # first observed — 0 (the dataclass default) is never a
-                    # real grind size, so it means "not yet seen".
-                    "live_grind_size": s.grinder.size or None,
+                    # RD_MachineInfo handling. live_grind_size: scoped to an
+                    # actual grind (frozen otherwise, None until the first
+                    # one) — see _tracked_live_grind_size.
+                    "live_grind_size": self._tracked_live_grind_size(s),
                     # live_grind_speed: 0 IS a real, meaningful reading
                     # (the grinder isn't currently spinning) — unlike grind
                     # size, don't coerce it to None/Unknown. ble/client.py's
@@ -233,6 +388,19 @@ class StateMixin:
         # ── Machine-side unit/water-source change (cmd 8015) ──
         # "settings" is a coordinator-internal category: the event entities
         # filter on "error"/"notification", so this never surfaces there.
+        if category == "settings" and event_type == "grinder_knob":
+            # Grind-page knob push — mirror onto the number entities and
+            # stop here (coordinator-internal, never surfaces on the
+            # event entities).
+            self._apply_grinder_knob(attributes)
+            return
+        if category == "settings" and event_type == "brewer_knob":
+            self._apply_brewer_knob(attributes)
+            return
+        if category == "settings" and event_type == "brewer_page_entry":
+            self._apply_brewer_page_entry(attributes)
+            return
+
         if category == "settings" and event_type == "unit_change":
             if self.hass and self.hass.loop:
                 attrs_copy = dict(attributes)
@@ -291,6 +459,38 @@ class StateMixin:
             # later cancel doesn't send 8017 mid-brew (never verified
             # safe in that state) instead of the real stop/quit sequence.
             self._pod_prompt_active = False
+
+        # ── Armed→active transition on machine-side starts (T5) ──
+        # The user armed in HA but pressed the machine's knob to start:
+        # transition the bookkeeping exactly as the HA confirm press would,
+        # so pause/cancel target the right command family afterwards.
+        # grinding_started with nothing armed/active is deliberately NOT
+        # inferred as a manual grind — an NFC pod brew fires it too, and
+        # the recipe cancel fallback (bare 40519) is the safe default.
+        if category == "notification" and event_type == "easy_slot_started":
+            # A brew from the machine's Easy Mode dial (8111) is a recipe
+            # execution regardless of what, if anything, was armed.
+            self._armed_operation = None
+            self._armed_recipe_is_tea = False
+            self._armed_recipe_tea_payload = None
+            self._active_operation = "recipe"
+        elif category == "notification" and event_type in (
+            "grinding_started", "brewing_started",
+        ):
+            if self._armed_operation == "recipe":
+                # Coffee-with-grind confirms via grinding_started; a
+                # no-grind (bypass) recipe's first signal is
+                # brewing_started.
+                self._armed_operation = None
+                self._armed_recipe_is_tea = False
+                self._armed_recipe_tea_payload = None
+                self._active_operation = "recipe"
+            elif self._armed_operation == "grind" and event_type == "grinding_started":
+                self._armed_operation = None
+                self._active_operation = "manual_grind"
+            elif self._armed_operation == "pour" and event_type == "brewing_started":
+                self._armed_operation = None
+                self._active_operation = "manual_pour"
 
         # ── Track the active pour during recipe execution ──
         # RD_BLOOM ("bloom") fires per pour, coffee or manual, with a

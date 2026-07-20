@@ -86,6 +86,40 @@ _RAW_STATE_LABEL_MAP = {
     0x23: "brewing",
     0x3B: "brewing",
     0x24: "ready",
+    # Knob-triple-press maintenance screens (T2 capture 2026-07-20).
+    # 0x26/0x27 are the grinder-calibration sweep phases — machine-entered
+    # calibration reads the same state as the HA-triggered flag path.
+    # 0x2F/0x32 and 0x39/0x3A are the descale / scale-calibration confirm
+    # screens (the second code of each pair = cancel selected); the codes
+    # emitted DURING an actual descale/scale-calibration run are
+    # uncaptured (both sessions were cancelled) — if they differ, the
+    # state falls back to idle for that stretch. 0x25 (calibration
+    # complete screen) is deliberately unmapped.
+    0x26: "calibrating_grinder",
+    0x27: "calibrating_grinder",
+    0x2F: "descaling",
+    0x32: "descaling",
+    0x39: "calibrating_scale",
+    0x3A: "calibrating_scale",
+}
+
+# Machine screen (page) codes from the same heartbeat/8023 channel as
+# _RAW_STATE_LABEL_MAP — hardware-captured 2026-07-20 (T2, see project memory
+# xbloom-t2-screen-code-capture). The two maps are deliberately disjoint: one
+# answers "what is the machine doing", this one "what screen is it on".
+# 0x06/0x07 (grind size / RPM adjust) and 0x08/0x09 (pattern / temperature
+# adjust) are the pages' own adjust subscreens, mapped to their parent page.
+_SCREEN_CODE_MAP = {
+    0x01: "home",   # PRO home
+    0x41: "home",   # Easy Mode home
+    0x02: "grind",
+    0x06: "grind",
+    0x07: "grind",
+    0x03: "pour",
+    0x08: "pour",
+    0x09: "pour",
+    0x04: "scale",
+    0x05: "scale",
 }
 
 _ADVANCED_SETTINGS_TYPE_CODE = 2
@@ -131,6 +165,37 @@ _ERROR_MAP = {
     Response.ABNORMAL_DOSE_OR_WATER: "abnormal_dose_or_water",
     Response.ABNORMAL_GEAR_POSITION: "abnormal_gear_position",
 }
+
+# ── Machine alarm channel (cmd 0xFFFE, marker 0xCD) ──────────────────────
+# jadx 2026-07-20, `ErrorBle1Model`: payload first LE u32 = alarm code,
+# mapped to the app's six dialog categories. Frames carry marker 0xCD —
+# rejected by iter_frames' marker gate — so _scan_for_alarm_frame handles
+# them in a dedicated pre-scan. Same-id 0xC1 frames and all of 0xFFFD are
+# deliberately ignored (the app's ErrorBle2/ErrorBle3 handlers are empty).
+_ALARM_CMD_BYTES = (0xFFFE).to_bytes(2, "little")
+_ALARM_MARKER_BYTE = 0xCD
+_ALARM_CODE_EVENTS: dict = {}
+for _codes, _event in (
+    ((8449, 8450, 4355, 4356, 4357, 4358, 4359, 4360, 4361, 4362),
+     "mismatched_power"),
+    ((513, 4610, 5633, 5637, 6148, 6401, 6402, 6403, 6404, 6405, 9730, 9732,
+      10241, 10242, 10243, 10245, 13827, 14342, 14598, 14599, 14600, 14601,
+      14602, 14603),
+     "brewing_error"),
+    ((8961, 8962, 8963, 4868, 4869, 4871, 4873, 4874, 4875, 13062, 13064),
+     "dock_moving_error"),
+    ((1025, 5123, 5124, 5379, 9218, 9473, 9474, 9477, 9478, 13317, 13572),
+     "grinding_error"),
+    ((1793, 1795, 1796, 5890), "scale_overload"),
+    ((7169, 7170), "upgrade_failed"),
+):
+    for _code in _codes:
+        _ALARM_CODE_EVENTS[_code] = _event
+# Codes the app receives but deliberately never surfaces (no dialog; 9479
+# is additionally excluded from its cloud error log) — mirrored as
+# log-only here, and NO `*_cleared` synthesis for any alarm (the
+# water-shortage sole-type rule stands).
+_ALARM_SILENT_CODES = frozenset({2562, 2563, 2820, 2821, 6657, 6913, 6914, 6915, 9479})
 
 
 def strict_ascii(data: bytes) -> str:
@@ -563,6 +628,7 @@ class XBloomClient:
             self._scan_for_machine_info(raw)
         self._scan_for_status_frame(raw)
         self._scan_for_advanced_settings(raw)
+        self._scan_for_alarm_frame(raw)
         for frame in iter_frames(raw):
             self._parse_response(frame)
 
@@ -582,6 +648,47 @@ class XBloomClient:
         if not payload:
             return
         self._status.raw_state_label = _RAW_STATE_LABEL_MAP.get(payload[0])
+        # Same self-correcting recompute for the screen map (page codes and
+        # activity codes never overlap, so exactly one of the two labels is
+        # non-None per frame).
+        self._status.screen_code = payload[0]
+        self._status.screen = _SCREEN_CODE_MAP.get(payload[0])
+        if self._status.screen is not None:
+            # The machine showing a page or home means nothing is actively
+            # running — clear any latched run flags. Needed because a
+            # 4507-stopped pour never sends 40511/RD_Brewer_Stop (hardware
+            # 2026-07-20: 4507 ACKed, water stopped, machine returned to
+            # the pour page — and brewer.is_running stayed True forever,
+            # sticking the derived state at "brewing").
+            self._status.grinder.is_running = False
+            self._status.brewer.is_running = False
+
+    def _scan_for_alarm_frame(self, raw: bytes) -> None:
+        """Machine alarm frames (cmd 0xFFFE, marker 0xCD — see the
+        ``_ALARM_*`` constants' comment). Dedicated buffer walk because
+        the 0xCD marker never passes ``iter_frames``' marker gate.
+        Decompile-derived; not yet observed on hardware (no alarm has
+        fired during a capture session)."""
+        offset = 0
+        n = len(raw)
+        while offset + 16 <= n:
+            if (
+                raw[offset] != 0x58
+                or raw[offset + 3 : offset + 5] != _ALARM_CMD_BYTES
+                or raw[offset + 9] != _ALARM_MARKER_BYTE
+            ):
+                offset += 1
+                continue
+            code = struct.unpack_from("<I", raw, offset + 10)[0]
+            event_type = _ALARM_CODE_EVENTS.get(code)
+            if event_type is not None:
+                _LOGGER.warning("Machine alarm: %s (code %d)", event_type, code)
+                self._fire_event("error", event_type, {"code": code})
+            elif code in _ALARM_SILENT_CODES:
+                _LOGGER.debug("Machine alarm (app-silent list): code %d", code)
+            else:
+                _LOGGER.debug("Machine alarm with unmapped code %d", code)
+            offset += 16
 
     def _scan_for_advanced_settings(self, raw: bytes) -> None:
         """Raw pre-scan for cmd 11506/11507/11508/11509 responses — these
@@ -721,7 +828,17 @@ class XBloomClient:
                 )
         elif response == Response.BREWER_TEMPERATURE:
             if len(payload) >= 4:
-                st.brewer.temperature = struct.unpack_from("<I", payload, 0)[0] / 10.0
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                # Knob-driven pushes carry LITERAL °C (hardware 2026-07-20:
+                # payload 56 → 53 as the knob was turned down a few
+                # degrees) — the old unconditional /10 showed 5.6 °C for a
+                # 56 °C knob. Values above the machine's 98 °C physical
+                # max can only be the ×10 encoding (the 4510-echo family),
+                # so scale those down.
+                st.brewer.temperature = raw / 10.0 if raw > 150 else float(raw)
+                self._fire_event(
+                    "settings", "brewer_knob", {"temperature": st.brewer.temperature}
+                )
         elif response in (Response.GRINDER_BEGIN, Response.GRINDER_RUN_BEGIN):
             # GRINDER_RUN_BEGIN (40506) is the signal that actually fires
             # on real grinds — without it here, grinder.is_running stayed
@@ -750,19 +867,57 @@ class XBloomClient:
             if len(payload) >= 4:
                 st.water_volume = int(struct.unpack_from("<f", payload, 0)[0])
         elif response == Response.IN_BREWER:
+            # Knob-driven pour-page ENTRY snapshot (hardware 2026-07-20, T2
+            # capture): 4× LE u32 (volume, temp_c, pattern, temp_c again).
+            # This is NOT a brewing-started signal — the old is_running/
+            # BREWING claim here made HA report "brewing" for a machine
+            # merely sitting on its pour page.
+            st.screen = "pour"
             if len(payload) >= 12:
                 volume, temperature, pattern = struct.unpack_from("<3I", payload, 0)
                 st.brewer.temperature = float(temperature)
-                st.brewer.is_running = True
-                st.state = DeviceState.BREWING
-                _LOGGER.info("BREWER STATE: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+                _LOGGER.info("POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+                # Knob-entry seed for the entities — a separate event type
+                # from "brewer_knob" because the coordinator suppresses
+                # the snapshot (not live turns) while an HA arm is in
+                # flight, so it can't overwrite the entry push's values.
+                self._fire_event(
+                    "settings", "brewer_page_entry",
+                    {"volume": volume, "temperature": temperature, "pattern": pattern},
+                )
+        elif response == Response.IN_GRINDER:
+            # Grind-page entry snapshot: 2× LE u32 (size, rpm) — the size
+            # is already in user units (hardware 2026-07-20: 9000 said 35
+            # right after 8105's raw 65), so no -30 offset here. The RPM
+            # is a setpoint, NOT a live spin reading — grinder.speed keeps
+            # its "0 = not spinning" contract and is left alone.
+            st.screen = "grind"
+            if len(payload) >= 8:
+                size, rpm = struct.unpack_from("<2I", payload, 0)
+                if size:
+                    st.grinder.size = size
+                self._fire_event(
+                    "settings", "grinder_knob", {"size": size, "rpm": rpm}
+                )
+        elif response == Response.IN_SCALE:
+            st.screen = "scale"
+        elif response in (Response.OUT_GRINDER, Response.OUT_BREWER, Response.OUT_SCALE):
+            # Near-reliable (one missed 9006 in the T2 capture) — the
+            # heartbeat home code corrects any miss on its next frame.
+            st.screen = "home"
         elif response == Response.GRINDER_SIZE:
             if len(payload) >= 4:
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 st.grinder.size = max(raw - _GRIND_SIZE_RAW_OFFSET, 1)
+                # Knob turn on the grind page — internal "settings" event
+                # (unit_change pattern): the coordinator mirrors it onto
+                # the grind-size number entity, gated on the page being
+                # open and nothing running (T6, 2026-07-20).
+                self._fire_event("settings", "grinder_knob", {"size": st.grinder.size})
         elif response == Response.GRINDER_SPEED:
             if len(payload) >= 4:
                 st.grinder.speed = struct.unpack_from("<I", payload, 0)[0]
+                self._fire_event("settings", "grinder_knob", {"rpm": st.grinder.speed})
         elif response == Response.CURRENT_GRINDER:
             # Same LE u32 grind-size value as GRINDER_SIZE (identical -30
             # offset), but fires in contexts our own brew flow doesn't
@@ -792,6 +947,7 @@ class XBloomClient:
                 raw = struct.unpack_from("<I", payload, 0)[0]
                 if raw in _VALID_POUR_PATTERNS:
                     st.pour_pattern_live = raw
+                    self._fire_event("settings", "brewer_knob", {"pattern": raw})
         elif response == Response.UNIT_CHANGE:
             # Machine-initiated display-units/water-source sync (e.g. the
             # user changed them on the touchscreen). Payload: 3 LE u32s —
