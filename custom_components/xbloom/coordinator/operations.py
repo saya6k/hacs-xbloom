@@ -374,7 +374,14 @@ class OperationsMixin:
 
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500). See ``async_pour``'s docstring —
-        same sleep-retry wrapping."""
+        same sleep-retry wrapping.
+
+        Works from ANY machine screen, not just the scale page
+        (hardware-verified 2026-07-20: sent from the home screen with
+        ~100 g loaded — ACKed, weight snapped to 0.0 instantly). Side
+        effect: the machine switches its own display to the scale page
+        afterwards, which the telemetry-driven ``standalone_scale`` state
+        reflects automatically."""
         if not await self._async_ensure_connected():
             return
         try:
