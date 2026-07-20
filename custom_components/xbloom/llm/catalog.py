@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 from ..coordinator import XBloomCoordinator
 from .base import XBloomBaseTool
 from .calibrate import XBloomCalibrateGrinderTool
+from .cancel import XBloomCancelTool
 from .cloud_recipe import (
     XBloomExportRecipeTool,
     XBloomImportCloudRecipeTool,
@@ -50,6 +51,7 @@ def build_tools(
         XBloomDeleteRecipeTool(coordinator, hass),
         XBloomPourTool(coordinator, hass),
         XBloomGrindTool(coordinator, hass),
+        XBloomCancelTool(coordinator, hass),
         XBloomExecuteRecipeTool(coordinator, hass),
         XBloomWriteEasySlotTool(coordinator, hass),
         XBloomTareScaleTool(coordinator, hass),
