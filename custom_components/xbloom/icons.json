@@ -39,6 +39,9 @@
       "tare_scale": {
         "default": "mdi:scale-balance"
       },
+      "scale_mode": {
+        "default": "mdi:scale-balance"
+      },
       "calibrate_grinder": {
         "default": "mdi:cog-refresh"
       },
