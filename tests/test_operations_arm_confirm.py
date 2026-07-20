@@ -16,9 +16,10 @@ from custom_components.xbloom.coordinator.operations import OperationsMixin
 
 @pytest.fixture(autouse=True)
 def _no_pour_arm_settle(monkeypatch):
-    """Zero the pour-arm entry-push settle delay (T7) — the 2.0s screen
-    transition wait is hardware pacing, not test-relevant behavior."""
+    """Zero the pour-arm entry-push delays (T7) — screen-transition and
+    inter-send pacing is hardware behavior, not test-relevant."""
     monkeypatch.setattr(operations, "_POUR_ARM_SETTLE_S", 0)
+    monkeypatch.setattr(operations, "_POUR_ARM_PUSH_GAP_S", 0)
 
 
 class _FakeGrinder:

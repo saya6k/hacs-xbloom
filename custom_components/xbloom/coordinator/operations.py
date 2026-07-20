@@ -32,6 +32,17 @@ _ARMED_QUIT_COMMANDS = {
     "recipe": Command.RECIPE_START_QUIT,
 }
 
+# Outcome-based stop verification (hardware 2026-07-20): a component stop
+# (3505/4507) landing inside the machine's own start-transition window —
+# between the begin report (9003/9005) and the run-begin (40506) — is
+# silently dropped even though everything around it ACKs, the same
+# mid-transition command-dropping shape as the old 8007→4506 race. A
+# cancel pressed within ~2.5s of a knob start hit exactly that window and
+# left the grinder running. Watch is_running for this long, then re-send
+# once.
+_STOP_VERIFY_ATTEMPTS = 10
+_STOP_VERIFY_INTERVAL_S = 0.25
+
 # Settle delay between 8007 ("enter pour page") and the entry push of HA's
 # temperature/pattern (4510/8016) in async_arm_pour — the machine needs to
 # finish its screen transition first (the 8007→4506 no-gap race is exactly
@@ -39,6 +50,12 @@ _ARMED_QUIT_COMMANDS = {
 # from GrinderController.start()'s analogous enter→2.0s→start sequence;
 # tune on hardware if the pushes ever land before the page opens.
 _POUR_ARM_SETTLE_S = 2.0
+# Gap between the entry push's own two sends. Hardware 2026-07-20: 4510
+# and 8016 fired 1ms apart — 4510 ACKed, 8016 was silently dropped (the
+# machine kept its remembered pattern). The app never hits this because
+# its sendMessage queue is ACK-gated (~370-380ms measured latency);
+# 0.5s approximates that serialization.
+_POUR_ARM_PUSH_GAP_S = 0.5
 
 
 class OperationsMixin:
@@ -115,6 +132,7 @@ class OperationsMixin:
         await asyncio.sleep(_POUR_ARM_SETTLE_S)
         try:
             await self.client.brewer.set_temperature(float(self.temperature))
+            await asyncio.sleep(_POUR_ARM_PUSH_GAP_S)
             await self.client.brewer.set_pattern(self.pour_pattern)
         except Exception as exc:
             _LOGGER.warning("Pour-page entry setpoint push failed (best-effort): %s", exc)
@@ -312,8 +330,10 @@ class OperationsMixin:
                     await self.client._send_command(command)
             elif active_operation == "manual_grind":
                 await self.client.grinder.stop()
+                await self._async_verify_component_stop("grinder")
             elif active_operation == "manual_pour":
                 await self.client.brewer.stop()
+                await self._async_verify_component_stop("brewer")
             else:
                 # Bare 40519, nothing else (2026-07-19) — matching the
                 # official app's AppJ15AutoManager.stop(), which sends only
@@ -327,6 +347,30 @@ class OperationsMixin:
                 await self.client.stop_recipe()
         except Exception as exc:
             _LOGGER.error("Cancel error: %s", exc)
+
+    async def _async_verify_component_stop(self, component: str) -> None:
+        """Outcome-based retry for a manual grind/pour stop (see the
+        ``_STOP_VERIFY_*`` constants' comment): if the component still
+        reports running after the watch window, re-send its stop once —
+        the first send hit the start-transition drop window. The re-send
+        is harmless when the component stopped without our noticing (a
+        stop at idle just echoes an ACK; live 2026-07-20)."""
+        status = getattr(self.client, "status", None)
+        comp = getattr(status, component, None) if status is not None else None
+        if comp is None:
+            return
+        for _ in range(_STOP_VERIFY_ATTEMPTS):
+            if not comp.is_running:
+                return
+            await asyncio.sleep(_STOP_VERIFY_INTERVAL_S)
+        _LOGGER.warning(
+            "%s still running %.1fs after stop — re-sending (start-transition drop window)",
+            component, _STOP_VERIFY_ATTEMPTS * _STOP_VERIFY_INTERVAL_S,
+        )
+        if component == "grinder":
+            await self.client.grinder.stop()
+        else:
+            await self.client.brewer.stop()
 
     async def async_tare_scale(self) -> None:
         """Zero the scale (cmd 8500). See ``async_pour``'s docstring —

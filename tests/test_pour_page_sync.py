@@ -31,6 +31,7 @@ from custom_components.xbloom.coordinator.state import StateMixin
 @pytest.fixture(autouse=True)
 def _no_settle(monkeypatch):
     monkeypatch.setattr(operations, "_POUR_ARM_SETTLE_S", 0)
+    monkeypatch.setattr(operations, "_POUR_ARM_PUSH_GAP_S", 0)
 
 
 # ── client side ──────────────────────────────────────────────────────────

@@ -129,3 +129,23 @@ def test_screen_defaults_to_none():
     client = _client()
     assert client.status.screen is None
     assert client.status.screen_code is None
+
+
+def test_page_report_clears_latched_run_flags():
+    """A 4507-stopped pour never sends 40511 (hardware 2026-07-20), so
+    brewer.is_running latched True forever and stuck the derived state at
+    "brewing". The machine showing a page or home means nothing is
+    running — page codes clear both run flags."""
+    client = _client()
+    client.status.brewer.is_running = True
+    client.status.grinder.is_running = True
+    client._on_notification(None, bytearray(_heartbeat(0x03)))
+    assert client.status.brewer.is_running is False
+    assert client.status.grinder.is_running is False
+
+
+def test_activity_code_does_not_clear_run_flags():
+    client = _client()
+    client.status.brewer.is_running = True
+    client._on_notification(None, bytearray(_heartbeat(0x23)))  # brewing
+    assert client.status.brewer.is_running is True

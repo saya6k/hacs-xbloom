@@ -606,6 +606,15 @@ class XBloomClient:
         # non-None per frame).
         self._status.screen_code = payload[0]
         self._status.screen = _SCREEN_CODE_MAP.get(payload[0])
+        if self._status.screen is not None:
+            # The machine showing a page or home means nothing is actively
+            # running — clear any latched run flags. Needed because a
+            # 4507-stopped pour never sends 40511/RD_Brewer_Stop (hardware
+            # 2026-07-20: 4507 ACKed, water stopped, machine returned to
+            # the pour page — and brewer.is_running stayed True forever,
+            # sticking the derived state at "brewing").
+            self._status.grinder.is_running = False
+            self._status.brewer.is_running = False
 
     def _scan_for_advanced_settings(self, raw: bytes) -> None:
         """Raw pre-scan for cmd 11506/11507/11508/11509 responses — these
