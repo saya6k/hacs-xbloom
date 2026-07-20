@@ -139,9 +139,9 @@ from the name alone.
 | 8203 | `RD_AbnormalGearPosition` | — | Active | error event |
 | 8204 | `RD_AbnormalDoseOrWater` | — | Active | error event |
 | 9000 / 9001 / 9002 | `RD_IN_GRINDER`/`RD_IN_BREWER`/`RD_IN_SCALE` | 9000: 2× LE u32 `(grind_size, rpm)`; 9001: 4× LE u32 `(volume, temp_c, pattern, temp_c again)`; 9002: — | Active | fire on knob-driven page entry (hardware 2026-07-20, T2 capture): 9000/9001 carry the page's current settings snapshot — 9000's size is in user units (matches 8105's raw−30), 9001's volume default is 250 ml. No handler in this integration yet |
-| 9003 | `RD_GRINDER_BEGIN` | — | Active, unreliable | has never been seen firing during a real grind on this firmware — 40506 (below) is the begin signal that actually fires; 9003's `grinding_started` mapping is kept only for any older firmware that predates 40506 |
+| 9003 | `RD_GRINDER_BEGIN` | 2× LE u32 `(grind_size, rpm)` | Active, context-dependent | fires for **knob-started** grinds (hardware 2026-07-20: consistently, ~1s before 40506, with the settings snapshot as payload) but has never been seen firing during an app/recipe-started grind on this firmware — 40506 (below) is the begin signal that fires in every context |
 | 9004 / 9006 / 9008 | `RD_OUT_GRINDER`/`RD_OUT_BREWER`/`RD_OUT_SCALE` | — | Active, near-reliable | fire on knob-driven page exit (hardware 2026-07-20); one pour-page exit out of three emitted no 9006, while the 8023 home code (`0x01`) fired every time — treat 8023 as primary, these as auxiliary. No handler yet |
-| 9005 | `RD_BREWER_BEGIN` | — | Active, early-firing | fires immediately after commit, well before real pour starts |
+| 9005 | `RD_BREWER_BEGIN` | 4× LE u32 `(volume, temp_c, pattern, temp_c again)` on knob starts | Active, early-firing | fires immediately after commit, well before real pour starts. Knob-started pours fire it with the page's settings snapshot as payload (hardware 2026-07-20: it echoed the values our 4510/8016 entry push had just set) |
 | 9009 | `RD_GRINDER_PAUSE` | — | Present, unconfirmed | no handler |
 | 9010 | `RD_BREWER_PAUSE` | — | Active | mapped to `"paused"` notification |
 | 9011 | `RD_TEA_RECIP_RESTART` | — | Active | steep resumed after a between-steep pause |
@@ -156,7 +156,7 @@ from the name alone.
 | 40506 | *(not in the APK's constant table — "grinder begin")* | — | Active | fires at the exact instant the grinder starts, hopper-independent (three live 2026-07-19 captures: recipe grinds with an empty hopper ×2 and a full one ×1, plus a **manual** 3500-started grind), with 40507 (`RD_Grinder_Stop`) answering every stop/cancel — a general grinder begin/stop pair. This is the reliable grinder-begin signal 9003 `RD_GRINDER_BEGIN` never was. Not in the app's own constant table (firmware newer than app). Handled since 2026-07-19 (`Response.GRINDER_RUN_BEGIN`): drives the `grinding_started` event and `grinder.is_running`, live-verified same day; the calibration-sweep suppression applies to it like the 9003/40507 pair |
 | 40507 | `RD_Grinder_Stop` | — | Active | grind end; zeroes live RPM; **not** a valid calibration-complete signal despite firing during calibration's homing move |
 | 40510 | `RD_BLOOM` | — | Active | bloom notification |
-| 40511 | `RD_Brewer_Stop` | — | Active | pour end |
+| 40511 | `RD_Brewer_Stop` | — | Active, completion-only | pour end — **not sent after a 4507 stop** (hardware 2026-07-20: 4507 ACKed, water stopped, machine returned to the pour page, no 40511 ever came; the client clears its run flags from the page-report instead) |
 | 40512 / 40513 | `RD_ENJOY` / `RD_ENJOY2` | — | Active | recipe complete |
 | 40515 | `RD_TEA_RECIP_PAUSE` | — | Active | steep paused/ended between-steep |
 | 40517 | `RD_ErrorIdling` | — | Active | mapped to `"no_beans"` error |
@@ -202,3 +202,15 @@ full investigation history behind each)
   pure instruction slideshows — both procedures are driven entirely from the
   machine's own knobs, so any HA-side visibility must come from passive
   telemetry (heartbeat/8023 codes), not from commands.
+- **Start-transition drop window** (hardware 2026-07-20): a command landing
+  between a knob start's begin report (9003/9005) and its run-begin (40506)
+  can be silently dropped — a 3505 sent ~1.9s after 9003 was ignored (no ACK,
+  grinder ran on) while the identical send after 40506 stops instantly. Not
+  deterministic (a 0.2s-after-9003 send later worked); treat stops as
+  unconfirmed until the run flag actually clears and retry once
+  (`coordinator._async_verify_component_stop`).
+- **Back-to-back sends can drop the second command**: 4510 and 8016 fired
+  1ms apart — 4510 ACKed, 8016 never did and the machine kept its remembered
+  pattern. The official app never hits this because its `sendMessage` queue
+  is ACK-gated (~370–380ms measured); leave ≥0.5s (or ACK-gate) between
+  consecutive sends in one flow.
