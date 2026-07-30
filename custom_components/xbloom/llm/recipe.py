@@ -466,7 +466,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 "missing_confirmations": missing,
                 "recipe": _summarize_recipe(recipe),
                 "instruction": (
-                    f"Do NOT start the recipe yet. "
+                    "Do NOT start the recipe yet. "
                     + (
                         "The machine has loaded the recipe and is showing "
                         "its start prompt. "

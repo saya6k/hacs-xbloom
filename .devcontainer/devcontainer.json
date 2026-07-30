@@ -1,6 +1,6 @@
 {
   "name": "hacs-xbloom-dev",
-  "image": "homeassistant/home-assistant:2026.8.0.dev202607110310",
+  "image": "ghcr.io/home-assistant/home-assistant:2026.8.0b0",
   "runArgs": ["--hostname=hacs-xbloom-dev", "--entrypoint", "/bin/bash", "-p", "8123:8123"],
   "overrideCommand": true,
   "postCreateCommand": "scripts/setup",
