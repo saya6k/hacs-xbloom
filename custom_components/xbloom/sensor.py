@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
     EntityCategory,
+    SensorDeviceClass,
+    SensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfElectricPotential, UnitOfTemperature, UnitOfMass
+from homeassistant.const import UnitOfElectricPotential, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -44,7 +45,7 @@ class _XBloomSensor(CoordinatorEntity[XBloomCoordinator], SensorEntity):
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
 
@@ -52,7 +53,7 @@ class XBloomStateSensor(_XBloomSensor):
     _attr_translation_key = "state"
     _attr_unique_id = "xbloom_state"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = [
+    _attr_options = [  # noqa: RUF012  HA entity-attribute convention
         "unknown", "idle", "grinding", "brewing", "paused", "error", "sleeping",
         "no_beans", "water_shortage", "ready", "starting", "calibrating_grinder",
         "standalone_grind", "standalone_pour", "standalone_scale", "armed_recipe",
@@ -71,7 +72,7 @@ class XBloomWeightSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = UnitOfMass.GRAMS
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.scale_device_info
 
     @property
@@ -86,7 +87,7 @@ class XBloomBrewerTempSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property
@@ -110,7 +111,7 @@ class XBloomFlowRateSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = "mL/s"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property
@@ -141,7 +142,7 @@ class XBloomLiveGrindSizeSensor(_XBloomSensor):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     @property
@@ -158,7 +159,7 @@ class XBloomLiveGrindSpeedSensor(_XBloomSensor):
     _attr_native_unit_of_measurement = "RPM"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     @property

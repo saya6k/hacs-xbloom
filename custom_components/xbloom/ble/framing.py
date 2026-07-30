@@ -13,7 +13,7 @@ Packet layout::
 from __future__ import annotations
 
 import struct
-from typing import Iterator, List, Sequence
+from collections.abc import Iterator, Sequence
 
 _HEADER_BYTES = (0x58, 0x02)
 _DEFAULT_DEVICE_ID = 0x01
@@ -139,7 +139,7 @@ def frame_payload(frame: bytes) -> bytes:
     return frame[10:-2] if len(frame) > 12 else b""
 
 
-def split_write_chunks(data: bytes, mtu_size: int) -> List[bytes]:
+def split_write_chunks(data: bytes, mtu_size: int) -> list[bytes]:
     """Split an outbound packet into per-write chunks.
 
     Chunk size is ``min(100, mtu-3)`` with a floor of 20 (the BLE-minimum

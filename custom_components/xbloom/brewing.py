@@ -40,9 +40,9 @@ import math
 import struct
 import time
 
-from .ble.client import ACK_TIMEOUT_RECIPE_SEND_S, ACK_TIMEOUT_S
-from .ble.models import CupType, XBloomRecipe, build_recipe_payload
+from .ble.client import ACK_TIMEOUT_RECIPE_SEND_S, ACK_TIMEOUT_S, XBloomClient
 from .ble.constants import Command
+from .ble.models import CupType, XBloomRecipe, build_recipe_payload
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ _COFFEE_CUP_BOUNDS_DEFAULT = (90.0, 40.0)
 
 
 async def async_execute_recipe(
-    client,
+    client: XBloomClient,
     recipe: XBloomRecipe,
     *,
     bypass_volume: float = 0.0,
@@ -305,7 +305,9 @@ _BREW_STARTED_LABELS = frozenset({"starting", "brewing"})
 _BREW_REFUSED_LABELS = frozenset({"water_shortage", "no_beans"})
 
 
-async def _async_verify_brew_started(client, *, timeout: float = _BREW_START_TIMEOUT_S) -> str:
+async def _async_verify_brew_started(
+    client: XBloomClient, *, timeout: float = _BREW_START_TIMEOUT_S
+) -> str:
     """Confirm a committed coffee brew actually started, from machine state.
 
     The 8002 echo ACK is not the signal — the machine's own raw status
@@ -345,7 +347,7 @@ async def _async_verify_brew_started(client, *, timeout: float = _BREW_START_TIM
 
 
 async def _ack_step(
-    client,
+    client: XBloomClient,
     command: int,
     data: list | None = None,
     *,
@@ -369,7 +371,7 @@ async def _ack_step(
 
 
 async def _async_arm_coffee(
-    client,
+    client: XBloomClient,
     recipe: XBloomRecipe,
     *,
     bypass_volume: float = 0.0,
@@ -490,7 +492,7 @@ async def _async_arm_coffee(
 
 
 async def _async_brew_coffee(
-    client,
+    client: XBloomClient,
     recipe: XBloomRecipe,
     *,
     bypass_volume: float = 0.0,
@@ -522,7 +524,7 @@ async def _async_brew_coffee(
     await _async_verify_brew_started(client)
 
 
-async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
+async def _async_arm_tea(client: XBloomClient, recipe: XBloomRecipe) -> bytes:
     """Queue a tea recipe on the machine without starting it.
 
     Everything ``_async_brew_tea`` sends up to and including 4513
@@ -592,7 +594,7 @@ async def _async_arm_tea(client, recipe: XBloomRecipe) -> bytes:
     return payload
 
 
-async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
+async def _async_brew_tea(client: XBloomClient, recipe: XBloomRecipe) -> None:
     """Send the tea brew sequence over an already-connected client.
 
     Single-shot form: ``_async_arm_tea`` followed by the same 2.0s
@@ -619,7 +621,7 @@ async def _async_brew_tea(client, recipe: XBloomRecipe) -> None:
 
 
 async def async_arm_recipe(
-    client,
+    client: XBloomClient,
     recipe: XBloomRecipe,
     *,
     bypass_volume: float = 0.0,
@@ -645,7 +647,7 @@ async def async_arm_recipe(
 
 
 async def async_confirm_recipe(
-    client, *, is_tea: bool, tea_payload: bytes | None = None
+    client: XBloomClient, *, is_tea: bool, tea_payload: bytes | None = None
 ) -> None:
     """Send the "go" command for a recipe previously queued by
     ``async_arm_recipe`` — the second half of the two-stage manual
@@ -663,7 +665,7 @@ async def async_confirm_recipe(
         await _async_verify_brew_started(client)
 
 
-async def async_tare(client) -> None:
+async def async_tare(client: XBloomClient) -> None:
     """Zero the scale (cmd 8500).
 
     Mirrors ``send_command.py tare`` in the upstream xbloom-ble. No payload.
@@ -674,7 +676,7 @@ async def async_tare(client) -> None:
     await client._send_command(_CMD_TARE)
 
 
-async def async_enter_scale(client) -> None:
+async def async_enter_scale(client: XBloomClient) -> None:
     """Show the scale screen on the machine (cmd 8003). No payload."""
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -682,7 +684,7 @@ async def async_enter_scale(client) -> None:
     await client._send_command(_CMD_SCALE_IN)
 
 
-async def async_exit_scale(client) -> None:
+async def async_exit_scale(client: XBloomClient) -> None:
     """Leave the scale screen on the machine (cmd 8014). No payload."""
     if not client.is_connected:
         raise ConnectionError("XBloom not connected")
@@ -691,7 +693,7 @@ async def async_exit_scale(client) -> None:
 
 
 async def async_write_easy_slots(
-    client,
+    client: XBloomClient,
     slot_recipes: dict,
     *,
     scale_on: bool = True,

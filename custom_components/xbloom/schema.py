@@ -7,17 +7,18 @@ root (which would create a circular import during config-flow setup).
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Container
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
-import voluptuous as vol
-
 import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 
 _PATTERN_NAME_TO_INT = {"center": 0, "circular": 1, "spiral": 2}
 
 
-def _coerce_pour_pattern(value):
+def _coerce_pour_pattern(value: Any) -> int:
     """Accept either the int (0/1/2) or the name (center/circular/spiral)."""
     if isinstance(value, bool):
         raise vol.Invalid(f"pattern must be a string or int (got {value!r})")
@@ -43,7 +44,7 @@ def _coerce_pour_pattern(value):
 _TEMPERATURE_NAME_TO_C = {"rt": 20, "bp": 98}
 
 
-def _coerce_temperature_c(value):
+def _coerce_temperature_c(value: Any) -> int:
     """Accept either a positive int (literal °C) or the name (RT/BP)."""
     if isinstance(value, bool):
         raise vol.Invalid(f"temperature_c must be a string or int (got {value!r})")
@@ -195,7 +196,7 @@ def find_recipe(recipes: dict, identifier: str) -> tuple[str, dict] | None:
     return None
 
 
-def dedupe_name(name: str, existing) -> str:
+def dedupe_name(name: str, existing: Container[str]) -> str:
     """Return ``name``, or ``name (2)`` / ``name (3)`` … if already taken."""
     if name not in existing:
         return name

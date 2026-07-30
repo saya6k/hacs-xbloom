@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, callback
 
-from ..const import DATA_COORDINATOR, DOMAIN, XBLOOM_LLM_API_ID, XBLOOM_LLM_PROMPT
+from custom_components.xbloom.const import (
+    DATA_COORDINATOR,
+    DOMAIN,
+    XBLOOM_LLM_API_ID,
+    XBLOOM_LLM_PROMPT,
+)
 
 if TYPE_CHECKING:
     from homeassistant.components.llm import LLMTools
@@ -44,8 +49,13 @@ def async_get_tools(
         # Unknown id, or the entry was unloaded since the API was requested.
         return None
 
-    from homeassistant.components.llm import LLMTools
-    from .catalog import build_tools
+    # Imported here, not at module scope: this module is an HA `llm`
+    # platform, discovered and loaded only on first use, and importing
+    # `homeassistant.components.llm` (or the tool code) from the setup
+    # path would defeat that lazy loading.
+    from homeassistant.components.llm import LLMTools  # noqa: PLC0415
+
+    from .catalog import build_tools  # noqa: PLC0415
 
     return LLMTools(
         tools=build_tools(entry_data[DATA_COORDINATOR], hass),

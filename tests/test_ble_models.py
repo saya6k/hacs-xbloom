@@ -30,8 +30,14 @@ def _make_recipe(**overrides):
         name="Test",
         bean_weight=18.0,
         pours=[
-            PourStep(volume=50, temperature=93, flow_rate=3.0, pausing=30, pattern=PourPattern.SPIRAL),
-            PourStep(volume=200, temperature=92, flow_rate=3.0, pausing=0, pattern=PourPattern.SPIRAL),
+            PourStep(
+                volume=50, temperature=93, flow_rate=3.0, pausing=30,
+                pattern=PourPattern.SPIRAL,
+            ),
+            PourStep(
+                volume=200, temperature=92, flow_rate=3.0, pausing=0,
+                pattern=PourPattern.SPIRAL,
+            ),
         ],
     )
     defaults.update(overrides)

@@ -6,13 +6,14 @@ import logging
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import (
-    XBloomCoordinator,
     POUR_PATTERN_OPTIONS,
+    XBloomCoordinator,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class XBloomRecipeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
     @property
@@ -107,13 +108,16 @@ class XBloomPourPatternSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity
     _attr_translation_key = "pour_pattern"
     _attr_unique_id = "xbloom_pour_pattern"
     _attr_has_entity_name = True
-    _attr_options = list(POUR_PATTERN_OPTIONS.keys())  # center/circular/spiral
+    # RUF012: `_attr_options` is HA's own entity-attribute convention — the
+    # base class owns the name and subclasses may reassign it per instance,
+    # so ClassVar would misdescribe it.
+    _attr_options = list(POUR_PATTERN_OPTIONS)  # noqa: RUF012  center/circular/spiral
 
     def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property
@@ -143,13 +147,13 @@ class XBloomModeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):
     _attr_translation_key = "mode"
     _attr_unique_id = "xbloom_mode"
     _attr_has_entity_name = True
-    _attr_options = ["pro", "easy"]
+    _attr_options = ["pro", "easy"]  # noqa: RUF012  see XBloomPourPatternSelect
 
     def __init__(self, coordinator: XBloomCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
     @property

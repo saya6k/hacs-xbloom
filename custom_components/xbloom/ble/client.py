@@ -16,14 +16,16 @@ command sequences) and are not carried over.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import struct
 import time
-from typing import Callable, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from .components import BrewerController, GrinderController
 from .connection import HABleakConnection
-from .constants import Command, NOTIFY_UUID, READ_CHAR_UUID, Response, WRITE_UUID, command_name
+from .constants import NOTIFY_UUID, READ_CHAR_UUID, WRITE_UUID, Command, Response, command_name
 from .framing import (
     MAX_PACKET_LEN,
     TYPE2_MARKER_BYTE,
@@ -220,8 +222,8 @@ class XBloomClient:
         self.mac_address = mac_address
         self._connection = connection
         self._status = DeviceStatus()
-        self._status_callbacks: List[StatusCallback] = []
-        self._event_callbacks: List[EventCallback] = []
+        self._status_callbacks: list[StatusCallback] = []
+        self._event_callbacks: list[EventCallback] = []
         self._device_id = 0x01
         # Cleanup-on-disconnect is opt-out: the coordinator disables it so
         # an unexpected drop doesn't reset in-progress brew state on the
@@ -233,9 +235,9 @@ class XBloomClient:
         self._last_notification_monotonic: float = time.monotonic()
         # Waiters registered by send_and_wait(), keyed by the command id
         # whose echoed response resolves them.
-        self._pending_acks: dict[int, List[asyncio.Future]] = {}
+        self._pending_acks: dict[int, list[asyncio.Future]] = {}
         # Scale glitch filter state — see _filter_weight.
-        self._last_accepted_weight: Optional[float] = None
+        self._last_accepted_weight: float | None = None
         self._weight_out_of_limit_count: int = 0
 
         self.grinder = GrinderController(self)
@@ -298,7 +300,9 @@ class XBloomClient:
         raw = self._status.mode_bytes
         if not raw or len(raw) < _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN:
             return "pro"
-        mode_slice = raw[_MACHINE_INFO_MODE_OFFSET : _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN]
+        mode_slice = raw[
+            _MACHINE_INFO_MODE_OFFSET : _MACHINE_INFO_MODE_OFFSET + _MACHINE_INFO_MODE_LEN
+        ]
         return "easy" if mode_slice.hex() == _MACHINE_INFO_MODE_EASY_HEX else "pro"
 
     # ------------------------------------------------------------------
@@ -316,10 +320,8 @@ class XBloomClient:
         if not self._connection.is_connected:
             return False
         await self._connection.start_notify(NOTIFY_UUID, self._on_notification)
-        try:
+        with contextlib.suppress(Exception):
             await self._connection.start_notify(self.READ_CHAR, self._on_notification)
-        except Exception:
-            pass
         self._status.connected = True
         await self._reset_state()
         await asyncio.sleep(0.5)  # settle time for the first status push
@@ -328,14 +330,10 @@ class XBloomClient:
     async def disconnect(self) -> None:
         if self._connection.is_connected:
             if self._cleanup_on_disconnect:
-                try:
+                with contextlib.suppress(Exception):
                     await self._reset_state()
-                except Exception:
-                    pass
-            try:
+            with contextlib.suppress(Exception):
                 await self._connection.stop_notify(NOTIFY_UUID)
-            except Exception:
-                pass
             await self._connection.disconnect()
         self._status.connected = False
         self._fail_pending_acks("BLE link closed while awaiting ACK")
@@ -379,8 +377,8 @@ class XBloomClient:
     async def _send_command(
         self,
         command: int,
-        data: Optional[list] = None,
-        device_id: Optional[int] = None,
+        data: list | None = None,
+        device_id: int | None = None,
         type_code: int = 0x01,
     ) -> bool:
         if not self.is_connected:
@@ -398,7 +396,7 @@ class XBloomClient:
         self,
         command: int,
         data: bytes,
-        device_id: Optional[int] = None,
+        device_id: int | None = None,
         type_code: int = 0x01,
     ) -> bool:
         if not self.is_connected:
@@ -415,11 +413,11 @@ class XBloomClient:
     async def send_and_wait(
         self,
         command: int,
-        data: Optional[list] = None,
+        data: list | None = None,
         *,
-        raw: Optional[bytes] = None,
+        raw: bytes | None = None,
         timeout: float = ACK_TIMEOUT_S,
-        device_id: Optional[int] = None,
+        device_id: int | None = None,
         type_code: int = 0x01,
     ) -> bytes:
         """Send a command and wait for the machine to echo it back.
@@ -457,7 +455,7 @@ class XBloomClient:
                     command, data, device_id=device_id, type_code=type_code
                 )
             return await asyncio.wait_for(future, timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise AckTimeout(
                 f"No ACK for {command} ({command_name(command)}) after {timeout:.1f}s"
             ) from None
@@ -495,8 +493,10 @@ class XBloomClient:
                 )
         self._pending_acks.clear()
 
-    async def stop_recipe(self, type_code: int = 1, device_id: Optional[int] = None) -> bool:
-        return await self._send_command(Command.RECIPE_STOP, type_code=type_code, device_id=device_id)
+    async def stop_recipe(self, type_code: int = 1, device_id: int | None = None) -> bool:
+        return await self._send_command(
+            Command.RECIPE_STOP, type_code=type_code, device_id=device_id
+        )
 
     # Argument packing is split out from the send so an ACK-gated caller
     # (``brewing``'s recipe chains) can reuse it with ``send_and_wait``
@@ -514,7 +514,7 @@ class XBloomClient:
         return [vol_bits, temp_bits, int(dose)]
 
     async def set_cup(
-        self, f1: float, f2: float, type_code: int = 1, device_id: Optional[int] = None
+        self, f1: float, f2: float, type_code: int = 1, device_id: int | None = None
     ) -> bool:
         return await self._send_command(
             Command.SET_CUP, self._cup_args(f1, f2),
@@ -527,14 +527,14 @@ class XBloomClient:
         temp: float,
         dose: int,
         type_code: int = 1,
-        device_id: Optional[int] = None,
+        device_id: int | None = None,
     ) -> bool:
         return await self._send_command(
             Command.SET_BYPASS, self._bypass_args(volume, temp, dose),
             type_code=type_code, device_id=device_id,
         )
 
-    async def execute_coffee_recipe(self, device_id: Optional[int] = None) -> None:
+    async def execute_coffee_recipe(self, device_id: int | None = None) -> None:
         await self._send_command(Command.RECIPE_EXECUTE, device_id=device_id)
 
     # ------------------------------------------------------------------
@@ -546,7 +546,9 @@ class XBloomClient:
 
     async def async_get_pour_radius(self) -> None:
         if self.is_connected:
-            await self._send_command(Command.POUR_RADIUS_GET, type_code=_ADVANCED_SETTINGS_TYPE_CODE)
+            await self._send_command(
+                Command.POUR_RADIUS_GET, type_code=_ADVANCED_SETTINGS_TYPE_CODE
+            )
 
     async def async_set_pour_radius(self, value: int) -> None:
         await self._send_command(
@@ -581,7 +583,7 @@ class XBloomClient:
     # Notification handling
     # ------------------------------------------------------------------
 
-    def _fire_event(self, category: str, event_type: str, attributes: Optional[dict] = None) -> None:
+    def _fire_event(self, category: str, event_type: str, attributes: dict | None = None) -> None:
         for cb in self._event_callbacks:
             try:
                 cb(category, event_type, attributes or {})
@@ -614,7 +616,7 @@ class XBloomClient:
         self._weight_out_of_limit_count = 0
         return new
 
-    def _on_notification(self, char, data: bytearray) -> None:
+    def _on_notification(self, char: Any, data: bytearray) -> None:
         self._last_notification_monotonic = time.monotonic()
         raw = bytes(data)
         char_uuid = str(getattr(char, "uuid", char))
@@ -804,7 +806,9 @@ class XBloomClient:
                 st.water_volume = payload[36]
             st.mode_bytes = payload
             if len(payload) > _MACHINE_INFO_GRIND_SIZE_OFFSET:
-                st.grinder.size = max(payload[_MACHINE_INFO_GRIND_SIZE_OFFSET] - _GRIND_SIZE_RAW_OFFSET, 1)
+                st.grinder.size = max(
+                    payload[_MACHINE_INFO_GRIND_SIZE_OFFSET] - _GRIND_SIZE_RAW_OFFSET, 1
+                )
             if len(payload) > _MACHINE_INFO_VOLTAGE_OFFSET:
                 st.voltage = payload[_MACHINE_INFO_VOLTAGE_OFFSET]
             _LOGGER.info(
@@ -876,7 +880,12 @@ class XBloomClient:
             if len(payload) >= 12:
                 volume, temperature, pattern = struct.unpack_from("<3I", payload, 0)
                 st.brewer.temperature = float(temperature)
-                _LOGGER.info("POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s", volume, temperature, pattern)
+                _LOGGER.info(
+                    "POUR PAGE ENTRY: vol=%s temp=%sC pattern=%s",
+                    volume,
+                    temperature,
+                    pattern,
+                )
                 # Knob-entry seed for the entities — a separate event type
                 # from "brewer_knob" because the coordinator suppresses
                 # the snapshot (not live turns) while an HA arm is in
@@ -961,12 +970,11 @@ class XBloomClient:
                     {"weight_unit": weight_raw, "temp_unit": temp_raw, "water_source": water_raw},
                 )
 
-        if response == Response.EASYMODE_TYPE:
-            # ACK for a mode-switch command (cmd 11511) — the machine
-            # echoes the newly-applied mode code back as its payload.
-            if len(payload) >= 4:
-                st.mode_ack_hex = payload[:4].hex()
-                _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
+        # ACK for a mode-switch command (cmd 11511) — the machine echoes the
+        # newly-applied mode code back as its payload.
+        if response == Response.EASYMODE_TYPE and len(payload) >= 4:
+            st.mode_ack_hex = payload[:4].hex()
+            _LOGGER.info("Mode switch ACK: mode=%s", self._machine_mode())
 
         if response in _NOTIFICATION_MAP:
             event_type = _NOTIFICATION_MAP[response]
@@ -978,12 +986,14 @@ class XBloomClient:
                 # xid is the first 6 raw payload bytes (12 hex chars,
                 # hex-decoded to ASCII).
                 attrs["xid"] = strict_ascii(payload[:6])
-            elif response == Response.EASYMODE_BEGIN:
-                if len(payload) >= 4:
-                    raw = struct.unpack_from("<I", payload, 0)[0]
-                    if 0 <= raw <= 2:
-                        attrs["slot"] = chr(ord("A") + raw)
-            if event_type in ("grinding_started", "grinding_complete") and st.is_calibrating_grinder:
+            elif response == Response.EASYMODE_BEGIN and len(payload) >= 4:
+                raw = struct.unpack_from("<I", payload, 0)[0]
+                if 0 <= raw <= 2:
+                    attrs["slot"] = chr(ord("A") + raw)
+            if (
+                event_type in ("grinding_started", "grinding_complete")
+                and st.is_calibrating_grinder
+            ):
                 # A grinder calibration sweep genuinely stops/restarts the
                 # motor several times while searching for the zero
                 # position — suppress the generic pair so an automation
@@ -1000,7 +1010,9 @@ class XBloomClient:
             value = struct.unpack_from("<I", payload, 0)[0] if len(payload) >= 4 else 0
             st.water_level_ok = value == 1
             _LOGGER.info(
-                "RD_ErrorLackOfWater: value=%d (%s)", value, "restored" if value == 1 else "shortage"
+                "RD_ErrorLackOfWater: value=%d (%s)",
+                value,
+                "restored" if value == 1 else "shortage",
             )
             if value == 1:
                 self._fire_event("notification", "water_refilled")

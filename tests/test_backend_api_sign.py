@@ -20,7 +20,7 @@ def test_sign_matches_manual_md5_formula():
     nonce = "abc123"
     ts = "1700000000"
     expected = hashlib.md5(
-        f"{_BACKEND_APP_ID},{_BACKEND_APP_SECRET},{nonce},{ts}".encode("utf-8")
+        f"{_BACKEND_APP_ID},{_BACKEND_APP_SECRET},{nonce},{ts}".encode()
     ).hexdigest().upper()
     assert _backend_api_sign(nonce, ts) == expected
 

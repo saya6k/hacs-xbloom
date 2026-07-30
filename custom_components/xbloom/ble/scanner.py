@@ -8,15 +8,13 @@ text field the user can freely overwrite, unlike the actual connect path
 """
 from __future__ import annotations
 
-from typing import List
-
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
 from .constants import SERVICE_UUID
 
 
-async def discover_devices(timeout: float = 5.0) -> List[BLEDevice]:
+async def discover_devices(timeout: float = 5.0) -> list[BLEDevice]:
     """Discover XBloom devices in range.
 
     Tries the advertised service UUID first; falls back to scanning

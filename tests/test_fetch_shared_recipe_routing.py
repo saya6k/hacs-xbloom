@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 
-
 from custom_components.xbloom._cloud_client import XBloomCloudClient
 
 

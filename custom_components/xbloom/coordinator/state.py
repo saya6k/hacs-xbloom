@@ -5,9 +5,13 @@ constants.py's module docstring).
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
+
+from custom_components.xbloom.ble.models import DeviceStatus
 
 from .constants import _BLE_SILENCE_TIMEOUT_S, DEFAULT_STATE
 
@@ -103,7 +107,7 @@ class StateMixin:
             changed = True
         return changed
 
-    def _tracked_live_grind_size(self, s) -> int | None:
+    def _tracked_live_grind_size(self, s: DeviceStatus) -> int | None:
         """sensor.live_grind_size's value: the size in use by an actual
         grind, frozen at its last in-grind value otherwise (T6). Knob
         turns while idle belong to the grind-size number entity (see
@@ -118,7 +122,7 @@ class StateMixin:
     # harness gets it without __init__ churn.
     _last_reconcile_screen = None
 
-    def _reconcile_armed_with_screen(self, s) -> None:
+    def _reconcile_armed_with_screen(self, s: DeviceStatus) -> None:
         """Drop a stale grind/pour arm once the machine LEAVES the armed
         page for home — the user backed out with the knob (T5,
         2026-07-20). Without this, cancel later sends a quit command for a
@@ -148,7 +152,7 @@ class StateMixin:
         ):
             self._armed_operation = None
 
-    def _derive_state_string(self, s) -> str:
+    def _derive_state_string(self, s: DeviceStatus) -> str:
         """The sensor.state derivation chain, in priority order.
 
         Extracted from ``_async_update_data`` (T4, 2026-07-20) so the
@@ -207,7 +211,7 @@ class StateMixin:
             return "idle"
         return state_str
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Pull fresh data from the BLE status object (no I/O needed).
 
         Also drives the connection supervisor, on the same tick cadence as
@@ -358,10 +362,9 @@ class StateMixin:
 
     def unregister_event_listener(self, callback: Callable[[str, str, dict], None]) -> None:
         """Unregister an entity event callback (safe to call even if not registered)."""
-        try:
+        # Already removed or never registered — harmless.
+        with contextlib.suppress(ValueError):
             self._event_listeners.remove(callback)
-        except ValueError:
-            pass  # already removed or never registered — harmless
 
     def _finish_run(self) -> None:
         """Tear down the in-flight-run bookkeeping on any terminal signal.

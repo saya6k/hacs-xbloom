@@ -26,8 +26,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -36,9 +37,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .._cloud_client import XBloomCloudClient
-from ..ble.client import XBloomClient
-from ..const import (
+from custom_components.xbloom._cloud_client import XBloomCloudClient
+from custom_components.xbloom.ble.client import XBloomClient
+from custom_components.xbloom.const import (
     DEFAULT_MODE,
     DEFAULT_SESSION_TIMEOUT,
     DEFAULT_TEMP_UNIT,
@@ -46,11 +47,9 @@ from ..const import (
     DEFAULT_WEIGHT_UNIT,
     DOMAIN,
 )
+
 from .advanced_settings import AdvancedSettingsMixin
 from .connection import ConnectionMixin
-from .operations import OperationsMixin
-from .recipes import RecipesMixin
-from .state import StateMixin
 
 # Re-exported for backward-compatible imports — other modules import these
 # names via `from .coordinator import X` (now a package, same import path).
@@ -69,6 +68,9 @@ from .constants import (  # noqa: F401
     _pour_radius_level_to_raw,
     _vibration_level_to_raw,
 )
+from .operations import OperationsMixin
+from .recipes import RecipesMixin
+from .state import StateMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ class XBloomCoordinator(
     RecipesMixin,
     AdvancedSettingsMixin,
     OperationsMixin,
-    DataUpdateCoordinator[Dict[str, Any]],
+    DataUpdateCoordinator[dict[str, Any]],
 ):
     """Coordinate data updates from XBloom via BLE."""
 
@@ -94,8 +96,8 @@ class XBloomCoordinator(
         initial_weight_unit: str = DEFAULT_WEIGHT_UNIT,
         initial_temp_unit: str = DEFAULT_TEMP_UNIT,
         session_timeout: int = DEFAULT_SESSION_TIMEOUT,
-        cloud_email: Optional[str] = None,
-        cloud_password: Optional[str] = None,
+        cloud_email: str | None = None,
+        cloud_password: str | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -105,9 +107,9 @@ class XBloomCoordinator(
         )
         self.mac_address = mac_address
         self.entry_id = entry_id
-        self.client: Optional[XBloomClient] = None
+        self.client: XBloomClient | None = None
         self._connect_lock = asyncio.Lock()
-        self._machine_info_task: Optional[asyncio.Task] = None
+        self._machine_info_task: asyncio.Task | None = None
 
         # Cloud account (recipe sync) — entirely optional. The client is
         # always constructed (fetch_shared_recipe needs no login at all),
@@ -123,8 +125,8 @@ class XBloomCoordinator(
         # source of truth; the cloud is only consulted by the one-time
         # seed (async_seed_recipes) and the explicit import/export
         # services.
-        self.recipes: Dict[str, dict] = {}
-        self.selected_recipe: Optional[str] = None
+        self.recipes: dict[str, dict] = {}
+        self.selected_recipe: str | None = None
 
         # Slider/parameter values stored here; entities read & write these
         self.grind_size: int = 50
@@ -141,7 +143,7 @@ class XBloomCoordinator(
         self.pour_pattern: int = 0
         # sensor.live_grind_size's held value — only updated while a grind
         # actually runs (see state._tracked_live_grind_size).
-        self._live_grind_size: Optional[int] = None
+        self._live_grind_size: int | None = None
 
         # Recipe-execution pour tracking, so sensor.xbloom_flow_rate can
         # report the *current* pour's flow rate instead of a fixed manual
@@ -152,8 +154,8 @@ class XBloomCoordinator(
         # or cancel, at which point self.flow_rate reverts to being the
         # manual-pour setpoint again.
         self._executing_recipe: bool = False
-        self._active_recipe_pours: Optional[List] = None
-        self.current_pour_index: Optional[int] = None
+        self._active_recipe_pours: list | None = None
+        self.current_pour_index: int | None = None
 
         # Water source for MANUAL POUR only (0=tank, 1=direct).
         # Loaded from entry.options so it survives HA restarts.
@@ -189,7 +191,7 @@ class XBloomCoordinator(
 
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.
-        self._event_listeners: List[Callable[[str, str, dict], None]] = []
+        self._event_listeners: list[Callable[[str, str, dict], None]] = []
 
         # Track last-known device info so we can update the device registry
         # when MachineInfo notification arrives (possibly well after first setup).
@@ -228,7 +230,7 @@ class XBloomCoordinator(
         # not the whole-recipe 40518/40524/40519 family, which only applies
         # to an actual recipe execution. Cleared in _dispatch_event() on
         # the matching completion event.
-        self._active_operation: Optional[str] = None
+        self._active_operation: str | None = None
 
         # Two-stage arm/confirm manual button flow (2026-07-18) — a first
         # button press queues the operation on the machine (enter grinder/
@@ -247,14 +249,14 @@ class XBloomCoordinator(
         # this flag as the no-screen-reported fallback (see
         # state._derive_state_string) — so the user knows a second press
         # is needed.
-        self._armed_operation: Optional[str] = None
+        self._armed_operation: str | None = None
         # Only meaningful while _armed_operation == "recipe" — which go
         # command async_confirm_recipe() must send, and (tea only) the
         # exact payload bytes 4512 must re-send (brewing.async_confirm_recipe
         # can't rebuild them itself; the firmware expects the identical
         # bytes from the matching 4513).
         self._armed_recipe_is_tea: bool = False
-        self._armed_recipe_tea_payload: Optional[bytes] = None
+        self._armed_recipe_tea_payload: bytes | None = None
 
         # Set just before a user/HA-initiated disconnect so
         # _handle_unexpected_disconnect() can tell it apart from the

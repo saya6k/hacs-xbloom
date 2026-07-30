@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class GrinderController:
-    def __init__(self, client: "XBloomClient") -> None:
+    def __init__(self, client: XBloomClient) -> None:
         self._client = client
         self._size: int = 50
         self._speed: int = 100
@@ -85,7 +85,7 @@ class GrinderController:
 
 
 class BrewerController:
-    def __init__(self, client: "XBloomClient") -> None:
+    def __init__(self, client: XBloomClient) -> None:
         self._client = client
 
     async def enter_mode(self) -> bool:

@@ -130,7 +130,7 @@ class XBloomPourTool(XBloomBaseTool):
 
         # Mirror the slider state so the corresponding number entities reflect
         # what was actually requested.
-        self.coordinator.temperature = int(round(temperature))
+        self.coordinator.temperature = round(temperature)
         self.coordinator.volume = volume
         if flow_rate is not None:
             self.coordinator.flow_rate = float(flow_rate)

@@ -8,15 +8,13 @@ opposite: hold still unless a grind is actually running.
 """
 from __future__ import annotations
 
+import asyncio
 import struct
 from types import SimpleNamespace
-
-import asyncio
 
 from custom_components.xbloom.ble.client import XBloomClient
 from custom_components.xbloom.coordinator.operations import OperationsMixin
 from custom_components.xbloom.coordinator.state import StateMixin
-
 
 # ── client side: knob pushes fire the internal settings event ────────────
 

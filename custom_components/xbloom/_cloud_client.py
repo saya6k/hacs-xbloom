@@ -21,7 +21,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import aiohttp
@@ -410,7 +410,7 @@ def _backend_api_sign(nonce: str, ts: str) -> str:
     interceptor (``bit32()``); live-verified 2026-07-16 (real account,
     real device, ``get_pour_radius_init_center`` returned a real value)."""
     return hashlib.md5(
-        f"{_BACKEND_APP_ID},{_BACKEND_APP_SECRET},{nonce},{ts}".encode("utf-8")
+        f"{_BACKEND_APP_ID},{_BACKEND_APP_SECRET},{nonce},{ts}".encode()
     ).hexdigest().upper()
 
 
@@ -429,7 +429,7 @@ def _parse_latest_firmware_response(resp: dict | None) -> dict | None:
         return None
     published_ms = payload.get("publishTimestamp")
     published = (
-        datetime.fromtimestamp(published_ms / 1000, tz=timezone.utc)
+        datetime.fromtimestamp(published_ms / 1000, tz=UTC)
         if isinstance(published_ms, (int, float))
         else None
     )

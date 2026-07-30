@@ -7,6 +7,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -35,7 +36,7 @@ class _XBloomBinarySensor(CoordinatorEntity[XBloomCoordinator], BinarySensorEnti
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
 
@@ -45,7 +46,7 @@ class XBloomGrinderRunningBinarySensor(_XBloomBinarySensor):
     _attr_device_class = BinarySensorDeviceClass.RUNNING
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     @property
@@ -59,7 +60,7 @@ class XBloomBrewerRunningBinarySensor(_XBloomBinarySensor):
     _attr_device_class = BinarySensorDeviceClass.RUNNING
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property

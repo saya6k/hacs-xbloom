@@ -8,12 +8,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Awaitable, Callable, Dict, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 from homeassistant.helpers import device_registry as dr
 
-from ..ble.client import strict_ascii
-from ..ble.connection import HABleakConnection
+from custom_components.xbloom.ble.client import XBloomClient, strict_ascii
+from custom_components.xbloom.ble.connection import HABleakConnection
+from custom_components.xbloom.ble.models import DeviceStatus
+from custom_components.xbloom.const import (
+    CONF_MODE,
+    CONF_TEMP_UNIT,
+    CONF_WATER_SOURCE,
+    CONF_WEIGHT_UNIT,
+    DOMAIN,
+)
+
 from .constants import (
     _BLE_SILENCE_TIMEOUT_S,
     _CMD_SWITCH_WATER_FEED,
@@ -35,7 +45,6 @@ from .constants import (
     WATER_SOURCE_TANK,
     WEIGHT_UNIT_OPTIONS,
 )
-from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,7 +171,7 @@ class ConnectionMixin:
         finally:
             self._idle_standby_pending = False
 
-    def _maybe_update_device_registry(self, data: Dict[str, Any]) -> None:
+    def _maybe_update_device_registry(self, data: dict[str, Any]) -> None:
         """Push updated serial/firmware version to the HA device registry."""
         serial = data.get("serial_number", "")
         version = data.get("version", "")
@@ -180,7 +189,7 @@ class ConnectionMixin:
             registry = dr.async_get(self.hass)
             device = registry.async_get_device(identifiers={(DOMAIN, self.entry_id)})
             if device is not None:
-                updates: Dict[str, Any] = {}
+                updates: dict[str, Any] = {}
                 if serial and device.serial_number != serial:
                     updates["serial_number"] = serial
                 if version and device.sw_version != version:
@@ -212,8 +221,6 @@ class ConnectionMixin:
         ``client.is_connected`` false and replace it properly once this
         call releases the lock.
         """
-        from ..ble.client import XBloomClient
-
         async with self._connect_lock:
             if self.client and self.client.is_connected:
                 return True
@@ -235,7 +242,7 @@ class ConnectionMixin:
                 client._cleanup_on_disconnect = False
 
                 # Propagate BLE notifications → coordinator refresh
-                def _on_status(_status) -> None:
+                def _on_status(_status: DeviceStatus) -> None:
                     if self.hass:
                         self.hass.loop.call_soon_threadsafe(
                             lambda: self.hass.async_create_task(self.async_refresh())
@@ -517,7 +524,7 @@ class ConnectionMixin:
     # Display units / water source
     # ------------------------------------------------------------------
 
-    async def _apply_unit_preferences(self, client=None) -> None:
+    async def _apply_unit_preferences(self, client: XBloomClient | None = None) -> None:
         """Push the configured display units (8005 weight, 8010 temp) and
         water-feed setting (4508) to the machine, once per connection.
 
@@ -561,8 +568,6 @@ class ConnectionMixin:
         this never reloads the entry (and therefore never drops the BLE
         connection). No-op if the options already match.
         """
-        from ..const import CONF_TEMP_UNIT, CONF_WATER_SOURCE, CONF_WEIGHT_UNIT
-
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None:
             return
@@ -620,8 +625,6 @@ class ConnectionMixin:
         connect instead of silently dropping the change — see that flag's
         docstring for why this isn't unconditional on every connect.
         """
-        from ..const import CONF_TEMP_UNIT, CONF_WATER_SOURCE, CONF_WEIGHT_UNIT
-
         weight = options.get(CONF_WEIGHT_UNIT, self._weight_unit)
         temp = options.get(CONF_TEMP_UNIT, self._temp_unit)
         water = options.get(CONF_WATER_SOURCE, self.water_source)
@@ -708,7 +711,6 @@ class ConnectionMixin:
             # couldn't confirm the switch — this is the user's stated
             # preference regardless of whether we could verify it landed.
             self._mode = mode
-            from ..const import CONF_MODE
             entry = self.hass.config_entries.async_get_entry(self.entry_id)
             if entry is not None:
                 new_options = {**entry.options, CONF_MODE: mode}

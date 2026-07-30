@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 
-
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
 from custom_components.xbloom.coordinator.constants import (
     _WAKE_RETRY_DELAY_S,

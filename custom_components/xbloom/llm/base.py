@@ -4,7 +4,7 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
-from ..coordinator import XBloomCoordinator
+from custom_components.xbloom.coordinator import XBloomCoordinator
 
 
 class XBloomBaseTool(llm.Tool):
