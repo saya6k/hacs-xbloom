@@ -11,7 +11,6 @@ and is excluded, matching the app's exclusion of ErrorLackOfWater.
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 
 from custom_components.xbloom.coordinator.operations import OperationsMixin
 from custom_components.xbloom.coordinator.state import StateMixin

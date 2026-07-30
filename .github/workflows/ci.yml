@@ -20,5 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   validate:
     uses: ./.github/workflows/validate.yml

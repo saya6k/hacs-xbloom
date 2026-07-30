@@ -1,2 +1,10 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# Pin the rule set instead of inheriting whatever the installed ruff defaults
+# to: ruff 0.16 widened its defaults (UP/BLE/I/TRY/... on top of pycodestyle +
+# pyflakes), which would turn a routine ruff upgrade into ~200 new CI failures
+# on untouched code. This is the set the repo has actually been linted with.
+# Widening it is a deliberate cleanup, not something a release should decide.
+select = ["E4", "E7", "E9", "F"]
