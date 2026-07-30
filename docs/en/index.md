@@ -193,7 +193,7 @@ official quick-fix guidance.
 
 ## Development
 
-See `AGENTS.md` for the architecture and coding conventions used in this repo. For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md); for the full packet framing and command-id reference see [`protocol.md`](./protocol.md). For the decompile-derived (unverified) map of the XBloom **Original** Wi-Fi/cloud protocol see [`protocol-original-j20.md`](./protocol-original-j20.md). See [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) for why the BLE client is a clean-room native implementation rather than a vendored-and-patched one.
+For BLE-level details of the brew sequences, firmware behavior, and Tea Brewer siphon mechanics see [`brewing-notes.md`](./brewing-notes.md); for the full packet framing and command-id reference see [`protocol.md`](./protocol.md). For the decompile-derived (unverified) map of the XBloom **Original** Wi-Fi/cloud protocol see [`protocol-original-j20.md`](./protocol-original-j20.md). See [ADR-001](../../adr/001-clean-room-reimplementation-of-xbloom-ble.md) for why the BLE client is a clean-room native implementation rather than a vendored-and-patched one.
 
 A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA **dev-nightly** Docker image (pinned in `.devcontainer/devcontainer.json` to the same version as `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 

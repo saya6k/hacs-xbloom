@@ -2,7 +2,7 @@
 — the level-to-raw-device-value conversion backing the advanced_settings
 service's pour_radius_level / vibration_amplitude_level fields. Formulas
 decompiled from the official app 2026-07-16 (MachineSetPourRadiusActivity /
-MachineSetVibrationAmplitudeActivity) — see AGENTS.md.
+MachineSetVibrationAmplitudeActivity).
 """
 from __future__ import annotations
 

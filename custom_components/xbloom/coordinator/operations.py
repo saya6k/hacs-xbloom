@@ -215,8 +215,8 @@ class OperationsMixin:
         pour (started via ``async_grind()``/``async_pour()``) must use the
         ``GrinderController``/``BrewerController``'s own pause/restart
         (cmds 8018/8020 grinder, 8019/8021 brewer — decompile-confirmed
-        real, see AGENTS.md), not the whole-recipe pause/restart (40518/
-        40524 — see ``_CMD_RECIPE_PAUSE``/``_CMD_RECIPE_RESTART``'s module
+        real), not the whole-recipe pause/restart (40518/40524 — see
+        ``_CMD_RECIPE_PAUSE``/``_CMD_RECIPE_RESTART``'s module
         comment), which only applies to an actual recipe execution.
 
         When the machine is brewing or grinding the button PAUSES.
@@ -275,7 +275,7 @@ class OperationsMixin:
         actually queued or executing, the heavier stop/quit sequence below
         doesn't apply — 8017/quitRecipeStart is the one command the
         official app itself uses to dismiss that exact prompt (decompiled
-        2026-07-17, see AGENTS.md).
+        2026-07-17).
 
         Also branches on ``_armed_operation`` (2026-07-18): this is the
         escape hatch for the two-stage arm/confirm manual button flow,

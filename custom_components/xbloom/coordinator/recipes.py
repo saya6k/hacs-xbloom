@@ -483,12 +483,13 @@ class RecipesMixin:
         # 8001/8004 auto-brew recipe blob (brewing.async_write_easy_slots
         # builds them with the same _build_coffee_recipe_payload used
         # there) — there is no dedicated tea slot format, and 8004 itself
-        # is hardware-confirmed to NOT enter tea mode (see AGENTS.md's tea
-        # firmware-quirks entry). So a tea recipe written to a slot can
-        # never brew as real tea from the physical button — at best it
-        # silently runs as a flat no-siphon multi-pour, and at worst (if
-        # the recipe's grind_size/dose_g were left at RECIPE_SCHEMA's
-        # coffee-oriented defaults, 50/15.0g, instead of explicitly zeroed)
+        # is hardware-confirmed to NOT enter tea mode (see the tea
+        # sections in docs/en/brewing-notes.md). So a tea recipe written
+        # to a slot can never brew as real tea from the physical button
+        # — at best it silently runs as a flat no-siphon multi-pour, and
+        # at worst (if the recipe's grind_size/dose_g were left at
+        # RECIPE_SCHEMA's coffee-oriented defaults, 50/15.0g, instead of
+        # explicitly zeroed)
         # it grinds beans for a tea recipe, which is what this check exists
         # to catch. Checked before any BLE traffic (mode switch included).
         if str(raw.get("cup_type", "")).strip().lower() == "tea":
@@ -1146,7 +1147,7 @@ class RecipesMixin:
 
         Recipes with a non-zero ``bypass_volume`` get a ``warning`` field:
         bypass-ON cloud payload requirements are still unverified live
-        (see AGENTS.md) — the export proceeds anyway.
+        — the export proceeds anyway.
         """
         resolved = find_recipe(self.recipes or {}, identifier)
         if resolved is None:
@@ -1179,7 +1180,7 @@ class RecipesMixin:
                 "message": f"Recipe does not match the schema: {exc}",
             }
         # Only enforced for bypass-off recipes — that's the formula
-        # actually confirmed live (see AGENTS.md). For bypass>0 the
+        # actually confirmed live. For bypass>0 the
         # `warning` above already covers it; hard-rejecting here would
         # contradict "the export proceeds anyway" and block recipes
         # where bypass water sits on top of the dose*ratio budget

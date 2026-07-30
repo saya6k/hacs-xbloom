@@ -97,8 +97,8 @@ _CMD_EASY_RECIPE_SEND = 11510
 # 11512 — Easy Mode slot order. Type-2 packet, hex-string payload.
 # Confirmed as real (not a third-party embellishment) by decompiling the
 # official app 2026-07-16: `com/xbloom/util/BleCodeFactory$Companion
-# .easyModeRecipesOrder(String)` — see AGENTS.md's "full command-id table"
-# entry for the full validation sweep.
+# .easyModeRecipesOrder(String)` — see the command table in
+# docs/en/protocol.md for the full validation sweep.
 _CMD_EASY_RECIPE_ORDER = 11512
 
 # Easy Mode slot flag byte. Cherry-picked from the upstream
@@ -723,8 +723,8 @@ async def async_write_easy_slots(
 
     After all three slots, sends cmd 11512 (Easy Mode slot order) once —
     confirmed as a real official-app call, not a third-party embellishment
-    (decompiled `BleCodeFactory$Companion.easyModeRecipesOrder()` 2026-07-16,
-    see AGENTS.md). Our A/B/C batch write already reaches idle without it
+    (decompiled `BleCodeFactory$Companion.easyModeRecipesOrder()`
+    2026-07-16). Our A/B/C batch write already reaches idle without it
     (2026-07-15 hardware confirmation, above), so its effect here is
     untested — sent to match official-app behavior now that it's known to
     be real, not because we've observed it change anything.

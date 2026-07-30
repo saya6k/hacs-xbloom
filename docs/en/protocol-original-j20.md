@@ -7,7 +7,7 @@
 > only, never published or redistributed). **Unlike [`protocol.md`](./protocol.md)
 > (Studio BLE), nothing here has been verified against real hardware** — this
 > integration has no XBloom Original unit, does not implement Original, and
-> Original is out of scope per `AGENTS.md` hard rule #6. This is a decompile-
+> Original is out of scope for this integration. This is a decompile-
 > derived map kept so a future contributor with Original hardware has a
 > starting point, not a spec this integration follows. Every claim traces to a
 > specific class/method; anything not cross-checked is marked unconfirmed.
@@ -189,9 +189,8 @@ share **no transport surface**.
 
 So Original support is effectively a **second, cloud-only integration** sharing
 only the recipe store and the `_cloud_client.py`-style HTTP plumbing — not a
-small branch on the BLE coordinator. This is exactly what `AGENTS.md` hard rule
-#6 anticipated; this document is the evidence behind that decision, not a plan to
-reverse it.
+small branch on the BLE coordinator. That is why Original is out of scope;
+this document is the evidence behind that decision, not a plan to reverse it.
 
 ## Open questions (blocked without Original hardware)
 

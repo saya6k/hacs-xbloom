@@ -1,7 +1,7 @@
 """XBloomCoordinator — manages BLE lifecycle and state.
 
 Package split from a single ~2900-line coordinator.py (Phase 3 of the
-de-vendoring refactor, structural only — see AGENTS.md and
+de-vendoring refactor, structural only — see
 adr/001-clean-room-reimplementation-of-xbloom-ble.md). Composed via mixins
 so every method body carried over unchanged from the original file; this
 module defines only ``__init__`` and the handful of methods too small to
@@ -224,7 +224,7 @@ class XBloomCoordinator(
         # command family: a manual grind/pour started via async_grind()/
         # async_pour() must use the GrinderController/BrewerController's
         # own pause/restart/stop (cmds 8018/8020/3505 grinder,
-        # 8019/8021/4507 brewer — decompile-confirmed real, see AGENTS.md),
+        # 8019/8021/4507 brewer — decompile-confirmed real),
         # not the whole-recipe 40518/40524/40519 family, which only applies
         # to an actual recipe execution. Cleared in _dispatch_event() on
         # the matching completion event.

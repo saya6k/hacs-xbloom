@@ -77,8 +77,8 @@ neither is imported by any runtime code once this migration completes.
   historical reference for anyone comparing our reimplementation against
   the original reverse-engineering work — they are documentation, not code,
   from this point on.
-- Hard rule #1 in `AGENTS.md` is updated to describe this as the current
-  state rather than "wrap or override."
+- The repo's own "wrap or override the vendored client" rule is retired:
+  the native implementation is the current state.
 
 ## Amendment (2026-07-18): vendored reference copies removed
 

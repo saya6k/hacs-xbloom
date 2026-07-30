@@ -5,8 +5,7 @@ community recipe id (just the digits, no `collective.xbloom.com/recipe/`
 prefix) — fetch_shared_recipe only recognized the community-recipe-id
 shape when embedded in the full collective.xbloom.com URL, so a bare id
 fell through to being treated as an opaque share-h5.xbloom.com share id
-(a different identifier space entirely — see AGENTS.md/project memory
-xbloom-collective-hub-and-backend-api), which the real API rejects.
+(a different identifier space entirely), which the real API rejects.
 
 These tests exercise only the routing decision (which resolution path a
 given input takes), not real network I/O: _resolve_collective_link and

@@ -11,9 +11,8 @@ sequence for the identical "enter mode, let the machine transition, then
 start" shape, 4506 had nothing giving the machine time to finish
 switching into the pour page before it arrived, and was apparently
 getting dropped mid-transition. Fixed by removing the 8007 send
-entirely, reverting to the bare-4506 behavior that was the one actually
-confirmed working (see AGENTS.md / project memory
-xbloom-manual-operation-command-targeting).
+entirely, reverting to the bare-4506 behavior that was the one
+actually confirmed working.
 """
 from __future__ import annotations
 

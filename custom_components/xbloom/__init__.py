@@ -257,17 +257,17 @@ def _coordinators_for_call(hass: HomeAssistant, call: ServiceCall) -> list:
     (there is usually exactly one). A ``config_entry`` selector (not
     ``device``) is used so the picker offers exactly one item per
     physical XBloom machine — a device selector would also list the
-    Grinder/Scale/Brewer child devices (see the device-registry section
-    in AGENTS.md), and there's no way to filter those out of a plain
-    fields-level device selector (hassfest rejects an ``entity:`` filter
-    key there; that's only valid inside a ``target:`` block, which these
-    services don't use). Each config entry maps 1:1 to a coordinator
-    already, so no device-registry lookup is needed at all.
+    Grinder/Scale/Brewer child devices, and there's no way to filter
+    those out of a plain fields-level device selector (hassfest
+    rejects an ``entity:`` filter key there; that's only valid inside a
+    ``target:`` block, which these services don't use). Each config
+    entry maps 1:1 to a coordinator already, so no device-registry
+    lookup is needed at all.
 
     ``config_entry_id`` is a bare string, not a list — HA's
     ``ConfigEntrySelector`` has no ``multiple`` option (confirmed against
-    core's own ``helpers/selector.py``, see AGENTS.md), so a real call
-    only ever carries at most one id. Hardware-reported 2026-07-17: this
+    core's own ``helpers/selector.py``), so a real call only ever
+    carries at most one id. Hardware-reported 2026-07-17: this
     used to do ``for eid in entry_ids`` over that string, which iterates
     it character-by-character — no single character ever matches a real
     config entry id, so every service call that actually specified a

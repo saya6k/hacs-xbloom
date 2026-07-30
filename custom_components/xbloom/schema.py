@@ -37,7 +37,7 @@ def _coerce_pour_pattern(value):
 
 # RT (Room Temperature) / BP (Boiling Point) — the official app's own pour-
 # temperature slider snaps to these exact literal values at its min/max
-# (decompiled 2026-07-17, TemperatureConstant.RT/BP — see AGENTS.md). Not
+# (decompiled 2026-07-17, TemperatureConstant.RT/BP). Not
 # protocol-level sentinels: a recipe already using 20/98 directly behaves
 # identically, this just accepts the app's own names for them too.
 _TEMPERATURE_NAME_TO_C = {"rt": 20, "bp": 98}

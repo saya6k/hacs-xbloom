@@ -122,7 +122,7 @@ This section documents the **hardware (Pythagorean cup) behavior**, not firmware
 5. Tried 8006 → no effect → rolled back
 6. Tried switching tea path to 8004/8002 → firmware did not enter tea mode → reverted to 4513/4512
 7. `bypass_volume` / `bypass_temperature` now actually reach packet 8102 — YAML bypass fields became functional for the first time
-8. Confirmed AGENTS.md's "8004 tea path" claim was inferred, not measured; recorded the invalidation in code comments
+8. Confirmed the repo's "8004 tea path" claim was inferred, not measured; recorded the invalidation in code comments
 
 ## 2026-05-29 session changelog
 
