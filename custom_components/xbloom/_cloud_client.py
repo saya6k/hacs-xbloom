@@ -770,8 +770,7 @@ class XBloomCloudClient:
         2026-07-18: import silently failed for exactly this input shape.
         collective.xbloom.com/recipe/{id} uses a different identifier
         space than share-h5.xbloom.com (a plain numeric
-        ``communityRecipeId``, not an opaque base64-ish share id — see
-        AGENTS.md/project memory xbloom-collective-hub-and-backend-api),
+        ``communityRecipeId``, not an opaque base64-ish share id),
         so a purely-numeric bare string is unambiguous: a real share-h5
         share id is never plain decimal digits only.
         """

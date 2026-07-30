@@ -95,10 +95,8 @@ class BrewerController:
         only — the "arm" press. NOT sent automatically before start(); an
         earlier attempt at that sent this immediately before start() with
         no gap and raced the machine's screen transition, dropping the
-        start command (see AGENTS.md / project memory
-        xbloom-manual-operation-command-targeting). Safe here because a
-        real user-paced gap (waiting for the second button press)
-        separates the two.
+        start command. Safe here because a real user-paced gap (waiting
+        for the second button press) separates the two.
         """
         return await self._client._send_command(Command.BREWER_IN)
 

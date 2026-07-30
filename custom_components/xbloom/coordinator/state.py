@@ -211,11 +211,11 @@ class StateMixin:
         """Pull fresh data from the BLE status object (no I/O needed).
 
         Also drives the connection supervisor, on the same tick cadence as
-        the official Android app's AppDeviceManager poll loop (see
-        AGENTS.md): reconnect if not connected (unless the user explicitly
-        disconnected this session or we are in idle standby), drop the link
-        if it has gone silent for too long (``_BLE_SILENCE_TIMEOUT_S``), and
-        drop it after ``_session_timeout`` seconds of inactivity.
+        the official Android app's AppDeviceManager poll loop: reconnect
+        if not connected (unless the user explicitly disconnected this
+        session or we are in idle standby), drop the link if it has gone
+        silent for too long (``_BLE_SILENCE_TIMEOUT_S``), and drop it
+        after ``_session_timeout`` seconds of inactivity.
         """
         if self.client and self.client.is_connected:
             if (
@@ -248,8 +248,8 @@ class StateMixin:
                 # only ever set from the one-shot connect-time
                 # RD_MachineInfo snapshot (payload[33]), which multiple
                 # firmwares report as False at idle regardless of the
-                # tank's real state (see the firmware-quirks section in
-                # AGENTS.md). Hardware-reported 2026-07-17: this used to
+                # tank's real state (see docs/en/brewing-notes.md).
+                # Hardware-reported 2026-07-17: this used to
                 # trust the flag once MachineInfo had been observed
                 # (proxied by serial_number), which showed a permanent
                 # "problem" after a normal reconnect on a unit whose

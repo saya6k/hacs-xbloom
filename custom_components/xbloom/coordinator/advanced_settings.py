@@ -104,8 +104,8 @@ class AdvancedSettingsMixin:
         the response entirely on a firmware that needs a *second* 8100
         handshake before MachineInfo shows up (the same "machine isn't
         really awake yet" quirk documented for the initial connect
-        handshake — see AGENTS.md). This request/response command is just
-        as vulnerable to that dead window as MachineInfo itself, so it's
+        handshake). This request/response command is just as vulnerable
+        to that dead window as MachineInfo itself, so it's
         gated on the same signal (see ``async_connect``/
         ``_machine_info_retry_loop``, both of which now only call this
         once serial_number is confirmed non-empty).
@@ -154,8 +154,8 @@ class AdvancedSettingsMixin:
         ``config_entry_id`` resolution at all.
 
         Levels, not raw device values — mirrors the official app's own
-        L1-L5 / L1-L6 / L1-L3 picker UIs (decompiled 2026-07-16, see
-        AGENTS.md) rather than asking users to type an opaque number:
+        L1-L5 / L1-L6 / L1-L3 picker UIs (decompiled 2026-07-16)
+        rather than asking users to type an opaque number:
 
         - ``vibration_amplitude_level`` (0-5, L1-L6): a fixed absolute
           scale, ``raw = 1000 + level * 100`` — no ambiguity, matches

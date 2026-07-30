@@ -1,7 +1,7 @@
 """Shared constants and pure helper functions for the coordinator package.
 
 Phase 3 of the de-vendoring refactor: split out of the former monolithic
-coordinator.py — see AGENTS.md and adr/001-clean-room-reimplementation-of-xbloom-ble.md.
+coordinator.py — see adr/001-clean-room-reimplementation-of-xbloom-ble.md.
 Structural only; no behavior changed by this split.
 """
 from __future__ import annotations
@@ -14,11 +14,11 @@ _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
 # Connection-supervisor watchdog: if a still-"connected" client hasn't seen a
 # single BLE notification in this long, the link is presumed stale/wedged and
 # force-reconnected. Mirrors the official Android app's AppDeviceManager
-# heartbeat watchdog (see AGENTS.md's BLE connection management section),
-# which uses ~2s — widened here since our telemetry-flood assumption is
-# unverified on real hardware in this environment (no BLE-capable devcontainer
-# host) and a false-positive reconnect is more disruptive for an
-# always-running HA integration than for a foregrounded phone app.
+# heartbeat watchdog, which uses ~2s — widened here since our telemetry-flood
+# assumption is unverified on real hardware in this environment (no
+# BLE-capable devcontainer host) and a false-positive reconnect is more
+# disruptive for an always-running HA integration than for a foregrounded
+# phone app.
 _BLE_SILENCE_TIMEOUT_S = 15.0
 
 # Reconnect-supervisor backoff. Without it the supervisor retries on every
@@ -80,9 +80,8 @@ def _firmware_at_least(version: Optional[str], minimum: str) -> bool:
 
 # Advanced Features level->raw conversion. Decompiled from the official
 # app 2026-07-16 (MachineSetPourRadiusActivity / MachineSetVibrationAmplitudeActivity)
-# — see AGENTS.md's command-id validation sweep and
-# async_set_advanced_settings's docstring for the pour-radius "center"
-# caveat.
+# — see async_set_advanced_settings's docstring for the pour-radius
+# "center" caveat.
 def _vibration_level_to_raw(level: int) -> int:
     """L1-L6 (0-5) -> raw device value. Fixed absolute scale, no
     per-device reference needed."""
@@ -179,7 +178,7 @@ _CMD_SWITCH_WATER_FEED = 4508
 # what 40518/40524 target. This coordinator used to send 8018/8019 (and
 # 8020/8021 to resume) here — inherited unchanged from the vendored
 # PyBloom library's naming, never actually decompile- or hardware-verified
-# for this use. See AGENTS.md for the full investigation.
+# for this use.
 _CMD_RECIPE_PAUSE = 40518
 _CMD_RECIPE_RESTART = 40524
 

@@ -1,8 +1,8 @@
 """Tests for brewing.async_write_easy_slots' cmd 11512 (Easy Mode slot
 order) frame — added after decompiling the official app confirmed
 `BleCodeFactory$Companion.easyModeRecipesOrder()` is a real call, not a
-third-party embellishment (see AGENTS.md's command-id validation sweep,
-2026-07-16)."""
+third-party embellishment (decompiled 2026-07-16; see the command
+table in docs/en/protocol.md)."""
 from __future__ import annotations
 
 import asyncio
