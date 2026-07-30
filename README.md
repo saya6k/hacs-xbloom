@@ -228,9 +228,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 ## Development
 
-See `AGENTS.md` for the architecture and coding conventions used in this repo.
-
-A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA **dev-nightly** Docker image (pinned in `.devcontainer/devcontainer.json` to the same version as `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
+A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA image pinned to the **2026.8.0b0** beta (in `.devcontainer/devcontainer.json`, matching `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 
 ```bash
 scripts/develop
