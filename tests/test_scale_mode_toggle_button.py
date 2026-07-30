@@ -51,11 +51,15 @@ def test_translation_keys_swapped_in_all_three_files():
 
 
 def test_icons_json_swapped():
-    """The dynamic icon lives in the class — icons.json must not carry a
-    static default for it (hard rule: one source per icon), and the old
-    keys must be gone."""
+    """The merged key replaces the old pair in icons.json.
+
+    The entry stays even though the class computes the icon dynamically: the
+    in-class ``icon`` property wins at runtime, and ``pause`` — the precedent
+    this button's docstring names — carries both the same way. The static
+    default is the fallback for anything reading icons.json directly.
+    """
     data = json.loads((ROOT / "icons.json").read_text())
     buttons = data["entity"]["button"]
     assert "enter_scale_mode" not in buttons
     assert "exit_scale_mode" not in buttons
-    assert "scale_mode" not in buttons
+    assert "scale_mode" in buttons
