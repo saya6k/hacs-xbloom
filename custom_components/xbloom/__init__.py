@@ -79,12 +79,11 @@ from .const import (
     SERVICE_LIST_RECIPES,
     SERVICE_WRITE_RECIPE_TO_EASY_SLOT,
 )
-# WATER_SOURCE_TANK and POUR_SCHEMA are re-exported, not used here — the
-# `as` aliases mark that intent (see the schema note below).
-from .coordinator import WATER_SOURCE_TANK as WATER_SOURCE_TANK
 from .coordinator import XBloomCoordinator
 from .default_recipes import DEFAULT_RECIPES
 from .llm_api import register_llm_api
+# POUR_SCHEMA is re-exported, not used here — the `as` alias marks that
+# intent (see the schema note below).
 from .schema import (
     POUR_SCHEMA as POUR_SCHEMA,
 )
