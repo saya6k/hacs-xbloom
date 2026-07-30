@@ -12,7 +12,6 @@ import pytest
 pytest.importorskip("homeassistant")
 
 from custom_components.xbloom.event import ERROR_EVENT_TYPES
-
 from tests.test_finish_run_and_pause_gate import _Coordinator
 
 

@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from homeassistant.components.update import UpdateEntity, UpdateDeviceClass
+from homeassistant.components.update import UpdateDeviceClass, UpdateEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -65,7 +66,7 @@ class XBloomFirmwareUpdateEntity(CoordinatorEntity[XBloomCoordinator], UpdateEnt
         self._latest: dict | None = None
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
     @property

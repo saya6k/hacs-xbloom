@@ -8,7 +8,7 @@ file byte-for-byte.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from custom_components.xbloom._cloud_client import _parse_latest_firmware_response
 
@@ -37,7 +37,7 @@ def test_parses_real_captured_response():
     assert parsed["md5"] == "5E351B943FA5DA82BA40DE4ADF740259"
     assert parsed["download_url"].endswith("68e8aa51c0b9e.bin")
     assert parsed["force_upgrade"] is False
-    assert parsed["published"] == datetime(2025, 10, 9, 16, 0, tzinfo=timezone.utc)
+    assert parsed["published"] == datetime(2025, 10, 9, 16, 0, tzinfo=UTC)
     assert parsed["release_notes"].splitlines()[0] == "1. Added offline functionality in the app"
     assert "<br/>" not in parsed["release_notes"]
 

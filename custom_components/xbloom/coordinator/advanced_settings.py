@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from .constants import _pour_radius_level_to_raw, _vibration_level_to_raw
 
@@ -130,9 +129,9 @@ class AdvancedSettingsMixin:
     async def async_set_advanced_settings(
         self,
         *,
-        pour_radius_level: Optional[int] = None,
-        vibration_amplitude_level: Optional[int] = None,
-        display_brightness_level: Optional[int] = None,
+        pour_radius_level: int | None = None,
+        vibration_amplitude_level: int | None = None,
+        display_brightness_level: int | None = None,
     ) -> dict:
         """Advanced Features — pour radius / vibration amplitude / display
         brightness, grouped into one service (matching the official app's
@@ -190,7 +189,10 @@ class AdvancedSettingsMixin:
             return {
                 "success": False,
                 "error": "no_action",
-                "message": "Specify at least one of pour_radius_level, vibration_amplitude_level, or display_brightness_level.",
+                "message": (
+                    "Specify at least one of pour_radius_level, "
+                    "vibration_amplitude_level, or display_brightness_level."
+                ),
             }
         if pour_radius_level is not None and not 0 <= pour_radius_level <= 4:
             return {
@@ -219,7 +221,11 @@ class AdvancedSettingsMixin:
             return {
                 "success": False,
                 "error": "cloud_login_required",
-                "message": "pour_radius_level requires an XBloom cloud account login (Options → Account) — this integration has no other way to know the machine's factory-default pour-radius center.",
+                "message": (
+                    "pour_radius_level requires an XBloom cloud account login "
+                    "(Options → Account) — this integration has no other way to "
+                    "know the machine's factory-default pour-radius center."
+                ),
             }
         if not await self._async_ensure_connected():
             return {
@@ -238,21 +244,31 @@ class AdvancedSettingsMixin:
                     return {
                         "success": False,
                         "error": "pour_radius_unknown",
-                        "message": "Could not read the current pour radius from the machine — try again once connected.",
+                        "message": (
+                            "Could not read the current pour radius from the "
+                            "machine — try again once connected."
+                        ),
                     }
                 serial = self.data.get("serial_number")
                 if not serial:
                     return {
                         "success": False,
                         "error": "serial_unknown",
-                        "message": "The machine's serial number isn't known yet — try again once MachineInfo has been read.",
+                        "message": (
+                            "The machine's serial number isn't known yet — try "
+                            "again once MachineInfo has been read."
+                        ),
                     }
                 center = await self.cloud_client.get_pour_radius_init_center(serial, current)
                 if center is None:
                     return {
                         "success": False,
                         "error": "cloud_center_unavailable",
-                        "message": "Could not fetch the factory-default pour-radius center from XBloom's cloud account — try again later.",
+                        "message": (
+                            "Could not fetch the factory-default pour-radius "
+                            "center from XBloom's cloud account — try again "
+                            "later."
+                        ),
                     }
                 await self.client.async_set_pour_radius(
                     _pour_radius_level_to_raw(pour_radius_level, center)

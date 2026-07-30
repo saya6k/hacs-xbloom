@@ -45,7 +45,10 @@ def test_reconstructed_total_never_undershoots_the_pour_sum():
         for total in (150, 200, 225, 250, 252, 300):
             if total / dose > 25.5:
                 continue
-            byte = _ratio_byte(_recipe(dose, [min(total, 127), total - min(total, 127)] if total > 127 else [total]))
+            pours = (
+                [min(total, 127), total - min(total, 127)] if total > 127 else [total]
+            )
+            byte = _ratio_byte(_recipe(dose, pours))
             assert dose * byte / 10 >= total - 1e-9, (
                 f"dose={dose} total={total}: byte {byte} reconstructs "
                 f"{dose * byte / 10:.1f}ml < {total}ml — machine would not grind"

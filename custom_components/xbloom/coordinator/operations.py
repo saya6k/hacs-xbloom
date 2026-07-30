@@ -8,8 +8,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .. import brewing
-from ..ble.constants import Command
+from custom_components.xbloom import brewing
+from custom_components.xbloom.ble.constants import Command
+
 from .constants import _CMD_RECIPE_PAUSE, _CMD_RECIPE_RESTART
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,8 +123,12 @@ class OperationsMixin:
         if not await self._async_ensure_connected():
             return
         try:
+            # The lambda is not redundant: _async_retry_while_sleeping calls
+            # it again per retry, and a reconnect in between replaces
+            # self.client — binding the method once would retry against the
+            # dead client.
             await self._async_retry_while_sleeping(
-                lambda: self.client.brewer.enter_mode()
+                lambda: self.client.brewer.enter_mode()  # noqa: PLW0108
             )
             self._armed_operation = "pour"
         except Exception as exc:
@@ -200,8 +205,9 @@ class OperationsMixin:
             return
         try:
             self._active_operation = "manual_grind"
+            # Deferred per-retry lookup — see async_arm_pour's note.
             await self._async_retry_while_sleeping(
-                lambda: self.client.grinder.confirm_start()
+                lambda: self.client.grinder.confirm_start()  # noqa: PLW0108
             )
         except Exception as exc:
             _LOGGER.error("Grind confirm error: %s", exc)

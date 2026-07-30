@@ -8,21 +8,26 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import service as service_helper
 
-from .. import brewing
-from .._cloud_client import (
+from custom_components.xbloom import brewing
+from custom_components.xbloom._cloud_client import (
     cloud_recipe_to_local,
     local_recipe_to_cloud,
     validate_pour_volume_consistency,
 )
-from ..ble.models import CupType, PourPattern, PourStep, VibrationPattern, XBloomRecipe
-from ..const import (
+from custom_components.xbloom.ble.models import (
+    CupType,
+    PourPattern,
+    PourStep,
+    VibrationPattern,
+    XBloomRecipe,
+)
+from custom_components.xbloom.const import (
     CONF_ACCOUNT_RECIPES_SEEDED,
     CONF_EASY_SLOTS,
     CONF_RECIPES,
@@ -30,7 +35,7 @@ from ..const import (
     DATA_COORDINATOR,
     DOMAIN,
 )
-from ..schema import (
+from custom_components.xbloom.schema import (
     RECIPE_SCHEMA,
     compute_total_water_ml,
     dedupe_name,
@@ -39,6 +44,7 @@ from ..schema import (
     scale_pours_to_total,
     strip_protected_recipe_fields,
 )
+
 from .constants import (
     _CLOUD_EDIT_PRESERVE_KEYS,
     _OFFICIAL_RECIPE_SYNC_LIMIT,
@@ -88,7 +94,7 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     else:
         cup_val = int(cup_raw)
 
-    pours: List[PourStep] = []
+    pours: list[PourStep] = []
     for p in raw.get("pours", []):
         vib_raw = p.get("vibration", "none")
         vib = (
@@ -116,7 +122,7 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     # actual brewed total. A zero footer byte 2 causes the machine to
     # skip grinding (hot water only) on Easy Mode slots and may also
     # confuse live brew, so the fallback still matters here.
-    total_water = int(round(compute_total_water_ml(raw)))
+    total_water = round(compute_total_water_ml(raw))
 
     return XBloomRecipe(
         grind_size=int(raw.get("grind_size", 0)),
@@ -129,7 +135,7 @@ def _build_recipe_from_yaml(raw: dict) -> XBloomRecipe:
     )
 
 
-def _apply_pour_overrides(recipe: XBloomRecipe, overrides: List[dict]) -> None:
+def _apply_pour_overrides(recipe: XBloomRecipe, overrides: list[dict]) -> None:
     """Override individual pours' volume / flow_rate / pattern by index.
 
     Each entry is a dict with a 0-based ``pour_index`` plus any of
@@ -155,7 +161,7 @@ def _apply_pour_overrides(recipe: XBloomRecipe, overrides: List[dict]) -> None:
 class RecipesMixin:
     """Recipe selection/execution, Easy Mode slots, local store CRUD, cloud."""
 
-    def select_recipe(self, name: Optional[str]) -> None:
+    def select_recipe(self, name: str | None) -> None:
         """Set the active recipe and sync the grind/RPM sliders to it.
 
         Only coffee recipes that actually grind push their grind_size /
@@ -183,11 +189,11 @@ class RecipesMixin:
     def _prepare_recipe_execution(
         self,
         *,
-        overrides: Optional[dict],
-        pour_overrides: Optional[List[dict]],
-        bypass_volume: Optional[float],
-        bypass_temperature: Optional[float],
-    ):
+        overrides: dict | None,
+        pour_overrides: list[dict] | None,
+        bypass_volume: float | None,
+        bypass_temperature: float | None,
+    ) -> tuple[XBloomRecipe, bool, float, float] | None:
         """Shared pre-brew logic for :meth:`async_execute_recipe` (full
         single-shot) and :meth:`async_arm_recipe` (arm half of the
         two-stage manual button flow, 2026-07-18): water check, firmware
@@ -276,10 +282,10 @@ class RecipesMixin:
     async def async_execute_recipe(
         self,
         *,
-        overrides: Optional[dict] = None,
-        pour_overrides: Optional[List[dict]] = None,
-        bypass_volume: Optional[float] = None,
-        bypass_temperature: Optional[float] = None,
+        overrides: dict | None = None,
+        pour_overrides: list[dict] | None = None,
+        bypass_volume: float | None = None,
+        bypass_temperature: float | None = None,
     ) -> None:
         """Execute the currently selected YAML recipe.
 
@@ -320,7 +326,7 @@ class RecipesMixin:
         )
         if prepared is None:
             return
-        recipe, is_tea, bypass_vol, bypass_temp = prepared
+        recipe, _is_tea, bypass_vol, bypass_temp = prepared
         try:
             # No Easy→Pro switch here — Easy Mode runs the 8001/8002 brew
             # sequence fine (hardware-confirmed 2026-07-19; the old "hot
@@ -419,7 +425,7 @@ class RecipesMixin:
             self._armed_recipe_tea_payload = None
 
     async def async_write_easy_slot(
-        self, slot_letter: str, identifier: Optional[str] = None
+        self, slot_letter: str, identifier: str | None = None
     ) -> dict:
         """Write a recipe to Easy Mode slot A/B/C (11510, type-2 packet).
 
@@ -618,7 +624,7 @@ class RecipesMixin:
         return {"success": True, "slot": target_letter, "name": name,
                 "uid": raw.get("uid")}
 
-    def easy_slot_contents(self, slot_letter: str) -> Optional[dict]:
+    def easy_slot_contents(self, slot_letter: str) -> dict | None:
         """What HA last wrote to a slot — ``{"uid", "name"}`` or None."""
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None:
@@ -729,7 +735,7 @@ class RecipesMixin:
         recipe via the UI). Mirrored by ``config_flow._all_visible_recipes``.
         Safe to call at any time; does not touch the network.
         """
-        merged: Dict[str, dict] = {}
+        merged: dict[str, dict] = {}
         merged.update(self.hass.data.get(DOMAIN, {}).get("yaml_recipes", {}))
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         options_recipes = (entry.options.get(CONF_RECIPES) if entry else None) or {}
@@ -775,7 +781,7 @@ class RecipesMixin:
         Called after every recipe-list change (see _rebuild_recipes);
         never touches the network.
         """
-        merged: Dict[str, Any] = {}
+        merged: dict[str, Any] = {}
         for data in self.hass.data.get(DOMAIN, {}).values():
             if not isinstance(data, dict) or DATA_COORDINATOR not in data:
                 continue
@@ -808,7 +814,7 @@ class RecipesMixin:
     # select entity and the list/create/edit/delete services & LLM tools.
     # ------------------------------------------------------------------
 
-    def _write_options_recipes(self, options_recipes: Dict[str, Any]) -> None:
+    def _write_options_recipes(self, options_recipes: dict[str, Any]) -> None:
         """Persist the store and refresh the merged view + entities."""
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None:
@@ -819,7 +825,7 @@ class RecipesMixin:
         self._rebuild_recipes()
         self.async_update_listeners()
 
-    def _options_recipes(self) -> Dict[str, Any]:
+    def _options_recipes(self) -> dict[str, Any]:
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         raw = (entry.options.get(CONF_RECIPES) if entry else None) or {}
         return dict(raw) if isinstance(raw, dict) else {}
@@ -862,7 +868,7 @@ class RecipesMixin:
             summary["share_url"] = recipe["share_url"]
         return summary
 
-    def list_local_recipes(self, query: Optional[str] = None) -> dict:
+    def list_local_recipes(self, query: str | None = None) -> dict:
         """List every local recipe (merged YAML + store view), optionally
         filtered by a case-insensitive name substring."""
         rows = [
@@ -1000,7 +1006,7 @@ class RecipesMixin:
             return
         if entry.options.get(CONF_RECIPES) or entry.options.get(CONF_RECIPES_SEEDED):
             return
-        seeded: Dict[str, dict] = {}
+        seeded: dict[str, dict] = {}
         defaults = self.hass.data.get(DOMAIN, {}).get("default_recipes") or {}
         for name, recipe in defaults.items():
             local = dict(recipe)
@@ -1037,7 +1043,7 @@ class RecipesMixin:
         if entry.options.get(flag):
             return
 
-        fetched: Optional[list] = None
+        fetched: list | None = None
         source = ""
         if account:
             if await self.async_ensure_cloud_login():
@@ -1110,7 +1116,7 @@ class RecipesMixin:
         self.async_update_listeners()
         _LOGGER.info("Recipe seed complete: source=%s added=%d", source, added)
 
-    async def async_search_collective_recipes(self, **filters) -> dict:
+    async def async_search_collective_recipes(self, **filters: Any) -> dict:
         """Search the public collective.xbloom.com community recipe hub.
 
         Unlike the private cloud-account calls (login required), this is a
@@ -1166,7 +1172,7 @@ class RecipesMixin:
             )
 
         if not self.cloud_login_configured:
-            out: Dict[str, Any] = {"success": True, "recipe": raw}
+            out: dict[str, Any] = {"success": True, "recipe": raw}
             if warning:
                 out["warning"] = warning
             return out
@@ -1204,7 +1210,7 @@ class RecipesMixin:
                 ),
             }
 
-        result: Optional[dict] = None
+        result: dict | None = None
         table_id = raw.get("cloud_table_id")
         if table_id:
             current_raw = await self.cloud_client.get_recipe(int(table_id))

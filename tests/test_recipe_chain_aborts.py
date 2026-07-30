@@ -9,13 +9,13 @@ tests pin.
 from __future__ import annotations
 
 import asyncio
+import itertools
 
 import pytest
 
 from custom_components.xbloom import brewing
 from custom_components.xbloom.ble.client import AckTimeout, XBloomClient
 from custom_components.xbloom.ble.models import CupType, PourStep, XBloomRecipe
-
 
 # Captured before the autouse fixture below can shrink them.
 _REAL_COFFEE_SETTLE = brewing._STEP_SETTLE_COFFEE_S
@@ -152,7 +152,7 @@ def _step_gaps(monkeypatch, arm, recipe, settle: float) -> list[float]:
 
     client.send_and_wait = timed
     asyncio.run(arm(client, recipe))
-    return [b - a for a, b in zip(stamps, stamps[1:])]
+    return [b - a for a, b in itertools.pairwise(stamps)]
 
 
 def test_steps_are_floor_spaced_even_when_acks_are_instant(monkeypatch):

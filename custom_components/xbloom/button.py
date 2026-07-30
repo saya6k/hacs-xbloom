@@ -6,6 +6,7 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -43,7 +44,7 @@ class _XBloomButton(CoordinatorEntity[XBloomCoordinator], ButtonEntity):
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
 
@@ -61,7 +62,7 @@ class XBloomGrindButton(_XBloomButton):
     _attr_unique_id = "xbloom_grind"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     async def async_press(self) -> None:
@@ -80,7 +81,7 @@ class XBloomPourButton(_XBloomButton):
     _attr_unique_id = "xbloom_pour"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     async def async_press(self) -> None:
@@ -138,7 +139,7 @@ class XBloomTareButton(_XBloomButton):
     _attr_unique_id = "xbloom_tare"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.scale_device_info
 
     async def async_press(self) -> None:
@@ -157,7 +158,7 @@ class XBloomScaleModeButton(_XBloomButton):
     _attr_unique_id = "xbloom_scale_mode"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.scale_device_info
 
     @property
@@ -178,7 +179,7 @@ class XBloomCalibrateGrinderButton(_XBloomButton):
     _attr_unique_id = "xbloom_calibrate_grinder"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     async def async_press(self) -> None:

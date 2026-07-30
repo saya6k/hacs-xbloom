@@ -7,7 +7,7 @@ Structural only; no behavior changed by this split.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
 
@@ -54,7 +54,7 @@ MIN_FIRMWARE_TEA = "V12.0D.300"
 _FIRMWARE_BUILD_RE = re.compile(r"^V12\.0D\.(\d+)$")
 
 
-def _firmware_build(version: Optional[str]) -> Optional[int]:
+def _firmware_build(version: str | None) -> int | None:
     """Parse the trailing build number out of a ``V12.0D.NNN`` firmware
     string (the only scheme xBloom has used so far). Returns ``None`` for
     blank/unrecognized strings — MachineInfo hasn't arrived yet, or a
@@ -66,7 +66,7 @@ def _firmware_build(version: Optional[str]) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def _firmware_at_least(version: Optional[str], minimum: str) -> bool:
+def _firmware_at_least(version: str | None, minimum: str) -> bool:
     """True if ``version`` is parseable and >= ``minimum``. An unparseable
     or unknown current version fails open (returns True) — we'd rather let
     a firmware-gated brew attempt hit the machine's own silent refusal than
@@ -108,7 +108,7 @@ _DI_SERIAL_UUID = "00002a25-0000-1000-8000-00805f9b34fb"
 _DI_FIRMWARE_UUID = "00002a26-0000-1000-8000-00805f9b34fb"
 _DI_SOFTWARE_UUID = "00002a28-0000-1000-8000-00805f9b34fb"
 
-DEFAULT_STATE: Dict[str, Any] = {
+DEFAULT_STATE: dict[str, Any] = {
     "connected": False,
     "weight": 0.0,
     "temperature": None,

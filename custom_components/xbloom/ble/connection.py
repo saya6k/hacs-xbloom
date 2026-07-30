@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from bleak import BleakClient
 from bleak_retry_connector import establish_connection
@@ -34,10 +34,10 @@ class HABleakConnection:
     def __init__(
         self,
         hass: HomeAssistant,
-        disconnected_callback: Optional[Callable[[], None]] = None,
+        disconnected_callback: Callable[[], None] | None = None,
     ) -> None:
         self._hass = hass
-        self._client: Optional[BleakClient] = None
+        self._client: BleakClient | None = None
         self._disconnected_callback = disconnected_callback
 
     async def connect(self, address: str, timeout: float = 20.0) -> bool:

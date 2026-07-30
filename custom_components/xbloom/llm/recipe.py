@@ -7,8 +7,13 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
-from ..coordinator import POUR_PATTERN_OPTIONS, WATER_SOURCE_TANK
-from ..schema import compute_total_water_ml, find_recipe
+from custom_components.xbloom.coordinator import (
+    POUR_PATTERN_OPTIONS,
+    WATER_SOURCE_TANK,
+    XBloomCoordinator,
+)
+from custom_components.xbloom.schema import compute_total_water_ml, find_recipe
+
 from .base import XBloomBaseTool
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +53,9 @@ _RECIPE_ID_DESCRIPTION = (
 )
 
 
-def _resolve_or_error(coordinator, identifier: str):
+def _resolve_or_error(
+    coordinator: XBloomCoordinator, identifier: str
+) -> tuple[tuple[str, dict] | None, dict | None]:
     """find_recipe + the shared not-found tool response."""
     resolved = find_recipe(coordinator.recipes or {}, identifier)
     if resolved is not None:

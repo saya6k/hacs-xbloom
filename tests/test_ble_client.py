@@ -61,7 +61,11 @@ def _frame_notag(payload: bytes) -> bytes:
 
 def _tagged_frame(cmd: int, payload: bytes = b"", marker: int = 0xC1) -> bytes:
     total_len = 12 + len(payload)
-    header = bytes([0x58, 0x07, 0x01 if marker == 0xC1 else 0x02]) + cmd.to_bytes(2, "little") + total_len.to_bytes(4, "little")
+    header = (
+        bytes([0x58, 0x07, 0x01 if marker == 0xC1 else 0x02])
+        + cmd.to_bytes(2, "little")
+        + total_len.to_bytes(4, "little")
+    )
     return header + bytes([marker]) + payload + b"\x00\x00"
 
 
@@ -174,7 +178,10 @@ def test_shortage_then_refill_round_trip():
     assert client._status.water_level_ok is False
     client._handle_response(Response.ERROR_LACK_OF_WATER, _frame_notag((1).to_bytes(4, "little")))
     assert client._status.water_level_ok is True
-    assert [e[:2] for e in events] == [("error", "water_shortage"), ("notification", "water_refilled")]
+    assert [e[:2] for e in events] == [
+        ("error", "water_shortage"),
+        ("notification", "water_refilled"),
+    ]
 
 
 def test_truncated_payload_defaults_to_shortage():
@@ -289,20 +296,28 @@ def test_on_notification_resets_the_watchdog():
 
 
 def _unit_frame(weight: int, temp: int, water: int) -> bytes:
-    payload = weight.to_bytes(4, "little") + temp.to_bytes(4, "little") + water.to_bytes(4, "little")
+    payload = (
+        weight.to_bytes(4, "little")
+        + temp.to_bytes(4, "little")
+        + water.to_bytes(4, "little")
+    )
     return _frame_notag(payload)
 
 
 def test_unit_change_fires_settings_event_with_parsed_values():
     client, events = _client_with_events()
     client._handle_response(Response.UNIT_CHANGE, _unit_frame(2, 1, 1))
-    assert events == [("settings", "unit_change", {"weight_unit": 2, "temp_unit": 1, "water_source": 1})]
+    assert events == [
+        ("settings", "unit_change", {"weight_unit": 2, "temp_unit": 1, "water_source": 1})
+    ]
 
 
 def test_unit_change_zero_values_parse_correctly():
     client, events = _client_with_events()
     client._handle_response(Response.UNIT_CHANGE, _unit_frame(0, 0, 0))
-    assert events == [("settings", "unit_change", {"weight_unit": 0, "temp_unit": 0, "water_source": 0})]
+    assert events == [
+        ("settings", "unit_change", {"weight_unit": 0, "temp_unit": 0, "water_source": 0})
+    ]
 
 
 def test_truncated_payload_is_ignored():

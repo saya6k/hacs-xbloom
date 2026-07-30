@@ -1,10 +1,78 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
 [tool.ruff.lint]
-# Pin the rule set instead of inheriting whatever the installed ruff defaults
-# to: ruff 0.16 widened its defaults (UP/BLE/I/TRY/... on top of pycodestyle +
-# pyflakes), which would turn a routine ruff upgrade into ~200 new CI failures
-# on untouched code. This is the set the repo has actually been linted with.
-# Widening it is a deliberate cleanup, not something a release should decide.
-select = ["E4", "E7", "E9", "F"]
+# Pinned explicitly rather than inherited from ruff's defaults: those widened
+# in 0.16, so an unpinned set makes a routine ruff upgrade rewrite CI's verdict
+# on untouched code. This is the same set the sibling ha-* integrations use.
+select = [
+  "E", "F", "W",      # pycodestyle / pyflakes
+  "I",                # isort
+  "UP",               # pyupgrade
+  "B",                # bugbear
+  "SIM",              # simplify
+  "RUF",              # ruff-specific
+  "PL",               # pylint subset
+  "ANN",              # annotations
+  "ASYNC",
+  "TID",
+]
+ignore = [
+  "ANN401",  # Any allowed in narrow places
+  "PLR2004", # magic numbers in tests are fine
+  # ASYNC109 wants callers to wrap the await in `asyncio.timeout` instead of
+  # passing a `timeout=`. Here the parameter is not ours to move: `connect`
+  # forwards it to bleak's own `timeout=`, and `send_and_wait`/`_ack_step`
+  # gate on a per-command ACK deadline the retry logic reads back. The test
+  # doubles must mirror those signatures to stand in for the real client.
+  "ASYNC109",
+]
+# Typographic punctuation is deliberate here: en dash for numeric ranges
+# ("Espresso 0–18", "40–95"), × for multiplication ("total water = dose_g ×
+# ratio"), − for a signed offset. Most of these sit in the LLM tool
+# descriptions — prose a model and the user read, never an identifier or
+# parsed input — so the homoglyph confusion RUF001-003 guards against does
+# not apply, and "fixing" them would edit user-visible copy.
+allowed-confusables = ["–", "×", "−"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ANN", "PL", "S"]
+
+# The PLR complexity caps below are waived per file, not silenced globally.
+# Every one of them is a protocol- or API-shaped function whose size comes
+# from the surface it mirrors, so splitting it would scatter one contract
+# across several call sites without removing a branch. Anything new should
+# still meet the caps.
+
+# _register_services registers every service in one idempotent block, guarded
+# by a single has_service() check.
+"custom_components/xbloom/__init__.py" = ["PLR0915"]
+# search_collective_recipes mirrors the collective hub's query string, which
+# takes 14 independent, individually-optional filters.
+"custom_components/xbloom/_cloud_client.py" = ["PLR0913", "PLR0917"]
+# _handle_response is the single demultiplexer for the BLE notification
+# stream — one branch per command id, by design. send_and_wait's arguments
+# are the packet fields.
+"custom_components/xbloom/ble/client.py" = ["PLR0912", "PLR0913", "PLR0915"]
+# _ack_step takes the packet fields plus the ACK deadline and settle time.
+"custom_components/xbloom/brewing.py" = ["PLR0913"]
+# The coordinator takes each config-entry option as its own argument rather
+# than a bag, so a missing one is a TypeError instead of a silent default.
+"custom_components/xbloom/coordinator/__init__.py" = ["PLR0913", "PLR0917"]
+# These service entry points validate a batch of independent preconditions
+# and return a distinct error dict for each, so the return and branch counts
+# track the number of documented failure modes.
+"custom_components/xbloom/coordinator/advanced_settings.py" = ["PLR0911", "PLR0912"]
+"custom_components/xbloom/coordinator/recipes.py" = ["PLR0911", "PLR0912", "PLR0915"]
+"custom_components/xbloom/llm/recipe.py" = ["PLR0911", "PLR0912", "PLR0915"]
+# _derive_state_string is an ordered priority chain (first match wins) and
+# _dispatch_event fans one BLE event out to every entity category; both are
+# single decision tables that only read as tables when kept whole.
+"custom_components/xbloom/coordinator/state.py" = ["PLR0911", "PLR0912", "PLR0915"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.xbloom"]

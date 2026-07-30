@@ -89,7 +89,7 @@ def test_temperature_knob_push_is_literal_celsius():
 def test_temperature_x10_encoding_still_decodes():
     """Values above the machine's physical maximum can only be the ×10
     encoding (the 4510-echo family)."""
-    client, events = _ble_client()
+    client, _events = _ble_client()
     client._on_notification(None, bytearray(_frame(8108, struct.pack("<I", 880))))
     assert client.status.brewer.temperature == 88.0
 

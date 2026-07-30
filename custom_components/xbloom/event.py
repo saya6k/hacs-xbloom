@@ -6,6 +6,7 @@ import logging
 from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_COORDINATOR, DOMAIN
@@ -87,7 +88,7 @@ class _XBloomBaseEvent(EventEntity):
         self._category = category  # "error" | "notification"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self._coordinator.device_info
 
     async def async_added_to_hass(self) -> None:

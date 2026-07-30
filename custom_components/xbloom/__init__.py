@@ -5,7 +5,6 @@ import logging
 
 import voluptuous as vol
 import yaml
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import (
@@ -24,13 +23,15 @@ from .const import (
     ATTR_CATEGORY,
     ATTR_CHANGES,
     ATTR_CUP_TYPE,
+    ATTR_DISPLAY_BRIGHTNESS_LEVEL,
+    ATTR_DOSE_G,
     ATTR_FLAVOR,
     ATTR_GRIND_SIZE,
     ATTR_KEYWORD,
     ATTR_MACHINE,
     ATTR_ORIGIN,
+    ATTR_POUR_RADIUS_LEVEL,
     ATTR_PROCESS,
-    ATTR_DOSE_G,
     ATTR_QUERY,
     ATTR_RATIO,
     ATTR_RECIPE,
@@ -39,14 +40,12 @@ from .const import (
     ATTR_ROAST,
     ATTR_RPM,
     ATTR_SHARE_URL,
+    ATTR_SLOT,
     ATTR_SORT,
     ATTR_SORT_DIRECTION,
     ATTR_SRC,
     ATTR_VARIETAL,
-    ATTR_SLOT,
-    ATTR_POUR_RADIUS_LEVEL,
     ATTR_VIBRATION_AMPLITUDE_LEVEL,
-    ATTR_DISPLAY_BRIGHTNESS_LEVEL,
     CONF_ACCOUNT_RECIPES_SEEDED,
     CONF_EASY_SLOTS,
     CONF_EMAIL,
@@ -61,6 +60,7 @@ from .const import (
     CONF_WATER_SOURCE,
     CONF_WEIGHT_UNIT,
     DATA_COORDINATOR,
+    DEFAULT_MODE,
     DEFAULT_SESSION_TIMEOUT,
     DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_TEMP_UNIT,
@@ -82,6 +82,7 @@ from .const import (
 from .coordinator import XBloomCoordinator
 from .default_recipes import DEFAULT_RECIPES
 from .llm_api import register_llm_api
+
 # POUR_SCHEMA is re-exported, not used here — the `as` alias marks that
 # intent (see the schema note below).
 from .schema import (
@@ -217,8 +218,12 @@ WRITE_RECIPE_TO_EASY_SLOT_SCHEMA = vol.Schema(
 ADVANCED_SETTINGS_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_POUR_RADIUS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=4)),
-        vol.Optional(ATTR_VIBRATION_AMPLITUDE_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
-        vol.Optional(ATTR_DISPLAY_BRIGHTNESS_LEVEL): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
+        vol.Optional(ATTR_VIBRATION_AMPLITUDE_LEVEL): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=5)
+        ),
+        vol.Optional(ATTR_DISPLAY_BRIGHTNESS_LEVEL): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=3)
+        ),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -785,8 +790,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # water_source, mode, and the display units are stored in options so
     # they survive HA restarts.  Falls back to sensible defaults if never set.
     initial_water_source = entry.options.get(CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE)
-
-    from .const import DEFAULT_MODE
     initial_mode = entry.options.get(CONF_MODE, DEFAULT_MODE)
     initial_weight_unit = entry.options.get(CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT)
     initial_temp_unit = entry.options.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT)

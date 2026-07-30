@@ -17,7 +17,8 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 
-from ..coordinator import POUR_PATTERN_OPTIONS
+from custom_components.xbloom.coordinator import POUR_PATTERN_OPTIONS
+
 from .base import XBloomBaseTool
 
 _LOGGER = logging.getLogger(__name__)

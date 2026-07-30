@@ -5,6 +5,7 @@ from homeassistant.components.number import NumberDeviceClass, NumberEntity, Num
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, UnitOfVolume
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -34,7 +35,7 @@ class _XBloomNumber(CoordinatorEntity[XBloomCoordinator], NumberEntity):
         super().__init__(coordinator)
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.device_info
 
 
@@ -46,7 +47,7 @@ class XBloomGrindSizeNumber(_XBloomNumber):
     _attr_native_step = 1
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     @property
@@ -69,7 +70,7 @@ class XBloomRPMNumber(_XBloomNumber):
     _attr_native_step = 10
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.grinder_device_info
 
     @property
@@ -106,7 +107,7 @@ class XBloomTemperatureNumber(_XBloomNumber):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property
@@ -131,7 +132,7 @@ class XBloomVolumeNumber(_XBloomNumber):
     _attr_native_unit_of_measurement = UnitOfVolume.MILLILITERS
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         return self.coordinator.brewer_device_info
 
     @property

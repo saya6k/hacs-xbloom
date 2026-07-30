@@ -14,7 +14,6 @@ import struct
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, IntEnum
-from typing import List, Optional
 
 
 class DeviceState(Enum):
@@ -96,27 +95,27 @@ class DeviceStatus:
     last_update: datetime = field(default_factory=datetime.now)
 
     # Raw MachineInfo mode-field bytes, cached at connect time.
-    mode_bytes: Optional[bytes] = None
+    mode_bytes: bytes | None = None
     # Freshest mode signal: the cmd-11511 mode-switch ACK payload as hex,
     # once at least one switch has been observed this session.
-    mode_ack_hex: Optional[str] = None
+    mode_ack_hex: str | None = None
     # Raw status-heartbeat label (starting/brewing/ready), overriding the
     # cmd-tagged `state` above only for the codes it covers.
-    raw_state_label: Optional[str] = None
+    raw_state_label: str | None = None
     is_calibrating_grinder: bool = False
     is_sleeping: bool = False
-    pour_radius: Optional[int] = None
-    vibration_amplitude: Optional[int] = None
+    pour_radius: int | None = None
+    vibration_amplitude: int | None = None
     # Live pour-pattern knob turn (RD_BREWER_MODE), same raw ints as
     # coordinator.POUR_PATTERN_OPTIONS (0=center/1=circular/2=spiral).
-    pour_pattern_live: Optional[int] = None
+    pour_pattern_live: int | None = None
     # Machine screen tracking (T2 capture 2026-07-20): the raw heartbeat/8023
     # page code, and its "home"/"grind"/"pour"/"scale" label (None for
     # activity codes and anything unmapped — self-correcting like
     # raw_state_label). The 9xxx IN_*/OUT_* pairs feed the label too, as an
     # auxiliary channel.
-    screen_code: Optional[int] = None
-    screen: Optional[str] = None
+    screen_code: int | None = None
+    screen: str | None = None
 
 
 @dataclass
@@ -129,11 +128,10 @@ class PourStep:
     vibration: VibrationPattern = VibrationPattern.NONE
 
     def __post_init__(self) -> None:
-        if self.flow_rate < 3.0 or self.flow_rate > 3.5:
-            if self.flow_rate != 0:
-                raise ValueError(
-                    f"Flow rate {self.flow_rate} out of range (3.0-3.5)"
-                )
+        if (self.flow_rate < 3.0 or self.flow_rate > 3.5) and self.flow_rate != 0:
+            raise ValueError(
+                f"Flow rate {self.flow_rate} out of range (3.0-3.5)"
+            )
         if self.temperature != 0 and (self.temperature < 40 or self.temperature > 100):
             raise ValueError(
                 f"Temperature {self.temperature} out of range (40-100)"
@@ -153,14 +151,13 @@ class XBloomRecipe:
     name: str = "Unknown"
     bean_weight: float = 15.0
     id: int = 0
-    pours: List[PourStep] = field(default_factory=list)
+    pours: list[PourStep] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if not (0 <= self.grind_size <= 150):
-            if self.grind_size != 0:
-                raise ValueError(
-                    f"Grind size {self.grind_size} out of range (1-150)"
-                )
+        if not (0 <= self.grind_size <= 150) and self.grind_size != 0:
+            raise ValueError(
+                f"Grind size {self.grind_size} out of range (1-150)"
+            )
         valid_rpms = {0, 60, 70, 80, 90, 100, 110, 120}
         if self.rpm not in valid_rpms:
             raise ValueError(f"RPM {self.rpm} invalid (Must be multiple of 10 in 60-120)")
@@ -187,10 +184,10 @@ def build_recipe_payload(recipe: XBloomRecipe) -> bytes:
     Dose (bean weight) and cup type are NOT in this payload — they go via
     the separate bypass (8102) and set-cup (8104) commands.
     """
-    parts: List[bytes] = []
+    parts: list[bytes] = []
     for i, pour in enumerate(recipe.pours):
         remaining_vol = pour.volume
-        sub_steps: List[bytes] = []
+        sub_steps: list[bytes] = []
         if remaining_vol > 127:
             chunks, remainder = divmod(remaining_vol, 127)
             sub_steps.extend(

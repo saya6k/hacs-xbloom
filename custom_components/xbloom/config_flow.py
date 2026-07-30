@@ -1,16 +1,15 @@
 """Config flow for XBloom integration."""
 from __future__ import annotations
 
-import re
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
 import yaml
-
 from homeassistant import config_entries
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
     SelectSelector,
@@ -21,18 +20,21 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .ble.client import XBloomClient
+from .ble.connection import HABleakConnection
+from .ble.scanner import discover_devices
 from .const import (
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
     CONF_PASSWORD,
     CONF_RECIPES,
-    CONF_TELEMETRY_INTERVAL,
     CONF_SESSION_TIMEOUT,
+    CONF_TELEMETRY_INTERVAL,
     CONF_TEMP_UNIT,
     CONF_WATER_SOURCE,
     CONF_WEIGHT_UNIT,
-    DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_SESSION_TIMEOUT,
+    DEFAULT_TELEMETRY_INTERVAL,
     DEFAULT_TEMP_UNIT,
     DEFAULT_WATER_SOURCE,
     DEFAULT_WEIGHT_UNIT,
@@ -106,9 +108,6 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                from .ble.client import XBloomClient
-                from .ble.connection import HABleakConnection
-
                 client = XBloomClient(
                     mac_address=mac, connection=HABleakConnection(self.hass)
                 )
@@ -150,9 +149,6 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # Quick connection test
                 try:
-                    from .ble.client import XBloomClient
-                    from .ble.connection import HABleakConnection
-
                     client = XBloomClient(
                         mac_address=mac, connection=HABleakConnection(self.hass)
                     )
@@ -179,8 +175,6 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Show form — optionally pre-fill with discovered device
         discovered_mac = ""
         try:
-            from .ble.scanner import discover_devices
-
             _LOGGER.debug("Scanning for XBloom devices…")
             devices = await discover_devices(timeout=5.0)
             if devices:
@@ -287,7 +281,9 @@ def _options_recipes(entry: config_entries.ConfigEntry) -> dict[str, dict]:
     return {k: v for k, v in raw.items() if v is not None}
 
 
-def _all_visible_recipes(entry: config_entries.ConfigEntry, hass) -> dict[str, dict]:
+def _all_visible_recipes(
+    entry: config_entries.ConfigEntry, hass: HomeAssistant
+) -> dict[str, dict]:
     """Merge YAML + options recipes, respecting tombstones.
 
     A ``None`` value in options is a tombstone that hides a same-named
