@@ -6,7 +6,6 @@
 # Tracked directories
 !/.github/
 !/.devcontainer/
-!/.agents/
 !/adr/
 !/custom_components/
 !/docs/
@@ -25,20 +24,13 @@
 !/zensical.en.toml
 !/zensical.ko.toml
 
-# AGENTS.md is the agent source of truth. CLAUDE.md / GEMINI.md are local
-# symlinks to it; .gemini and .claude's per-item symlinks are local per-tool
-# scaffolding into .agents. Only .claude/settings.json (Claude-specific,
-# shared) is tracked; settings.local.json stays per-developer.
-!/AGENTS.md
-!/.claude
-/.claude/*
-!/.claude/settings.json
+# Agent scaffolding (AGENTS.md and its CLAUDE.md / GEMINI.md symlinks,
+# .agents/ with skills, workflows, agents and memory, .claude/, .gemini) is
+# local-only and deliberately not whitelisted above — it stays on each
+# developer's machine, out of the published repo. `.agents/memory/` in
+# particular is now backed up nowhere but the working copy.
 
 # Noise inside tracked directories
 __pycache__/
 *.py[cod]
 .DS_Store
-
-# .agents is the agent source of truth (skills/, workflows/, agents/, memory/).
-# Per-developer local settings never belong in it.
-/.agents/settings.local.json
