@@ -30,8 +30,21 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from custom_components.xbloom.ble.client import AckTimeout
+from custom_components.xbloom.coordinator import connection as connection_module
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
+
+# Captured before the autouse fixture below patches it out.
+_REAL_SETTLE_S = connection_module._SETTINGS_PAGE_SETTLE_S
+
+
+@pytest.fixture(autouse=True)
+def _no_settle_delay(monkeypatch):
+    """Skip the real back-to-home settle wait (see the test at the bottom
+    for why it exists) so the suite doesn't sleep through it."""
+    monkeypatch.setattr(connection_module, "_SETTINGS_PAGE_SETTLE_S", 0)
 
 
 class _FakeHass:
@@ -258,3 +271,13 @@ def _async_recording(sink):
     async def _call(*args, **kwargs):
         sink.append(True)
     return _call
+
+
+def test_back_to_home_waits_for_the_page_to_open():
+    """Hardware 2026-08-24: the setting's page opens ~0.46s *after* its
+    command is acknowledged, so an 8022 fired on the ACK lands before the
+    page exists and the machine stays on it. Verified live at 2.5s — also
+    the official app's own backToHomeIn default (2500 ms).
+    """
+    assert _REAL_SETTLE_S >= 2.0
+

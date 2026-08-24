@@ -56,6 +56,17 @@ _T = TypeVar("_T")
 # keys the user actually changed are ever sent.
 _UNIT_PUSH_ORDER = (CONF_WEIGHT_UNIT, CONF_TEMP_UNIT, CONF_WATER_SOURCE)
 
+# How long to wait after the last settings ACK before sending 8022 (back
+# to home). The setting's page opens on the machine *after* its command is
+# acknowledged — measured on hardware 2026-08-24: 4508 ACKed 0.38s after
+# the send, the TAP/TANK page (status code 0x19) appeared 0.46s after
+# that. An 8022 fired immediately on the ACK therefore lands before the
+# page exists and does nothing (verified: the machine sat on 0x19), while
+# the same command 2.5s later returns it home within 0.5s. 2.5s is also
+# the official app's own constant — MachineJ15Fragment.backToHomeIn's
+# default delay is 2500 ms (jadx 2026-08-24).
+_SETTINGS_PAGE_SETTLE_S = 2.5
+
 
 class ConnectionMixin:
     """Connect/disconnect, reconnect supervisor, mode switching, unit sync."""
@@ -633,7 +644,12 @@ class ConnectionMixin:
         ours. Best-effort, exactly like the app's own
         ``sendMessageNoShowFail``: a settings change that landed must not
         be reported as failed because the display never went home.
+
+        The wait is not optional — see ``_SETTINGS_PAGE_SETTLE_S``: the
+        page opens after the SET is acknowledged, so an immediate 8022
+        arrives too early and the machine stays on it.
         """
+        await asyncio.sleep(_SETTINGS_PAGE_SETTLE_S)
         try:
             await client.send_and_wait(int(Command.BACK_TO_HOME), type_code=1)
         except Exception as exc:
