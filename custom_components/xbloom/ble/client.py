@@ -106,45 +106,21 @@ _RAW_STATE_LABEL_MAP = {
     0x3A: "calibrating_scale",
 }
 
-# Scale-calibration run tracking. Two hardware captures (2026-08-24):
+# Scale-calibration run codes — hardware capture 2026-08-24, the first
+# run carried through to completion (both earlier sessions cancelled at
+# the confirm screen for want of calibration weights):
 #
-#   run A  0x39 confirm → 0x3A "NO LOAD" → 0x3B → 0x3F "+100 g"
-#          → 0x3B → 0x25 DONE → 0x01 home
-#   run B  0x39 → 0x3A → 0x3B → 0x3F → 0x3B → 0x3C → 0x3B
-#          → 0x25 DONE → 0x01 home
+#   0x39 confirm → 0x3A "NO LOAD" → 0x3B measuring → 0x3F "+100 g"
+#   → 0x3B "+500 g" / final measuring → 0x25 DONE → 0x01 home
 #
 # 0x3B is *also* the brewing code, so the run can only be recognized from
 # context: `_scale_calibrating` is armed by the confirm screen and
-# dropped when the run ends.
-#
-# The first version of this listed the run's own codes and dropped the
-# latch on anything else — which broke on run B, whose extra 0x3C step
-# was not in that list: the latch dropped mid-run and the 0x3B that
-# followed reported "brewing" again. Enumerating the run is the wrong
-# way round, because the procedure's step codes are exactly what we
-# don't know. So the *exit* condition is enumerated instead: the run
-# ends at 0x25 (DONE, shared with grinder calibration) or at the first
-# code that carries a known non-calibration meaning — a page from
-# _SCREEN_CODE_MAP, or a state from _RAW_STATE_LABEL_MAP other than the
-# ambiguous 0x3B. Unmapped codes are treated as further calibration
-# steps, so a firmware that adds one more prompt stays covered.
-#
-# A brew can't be swallowed by this: every brew reaches its 0x3B through
-# a page code or through 0x22/0x1F/0x23 first, all of which end the run.
+# dropped by the first code outside the run set (0x25 DONE, home, or an
+# activity code), which makes it self-correcting in the same way the
+# label/screen recompute is. Without it a scale calibration reports
+# "brewing" for most of its duration.
 _SCALE_CAL_ENTRY_CODES = frozenset({0x39, 0x3A})
-_CALIBRATION_DONE_CODE = 0x25
-# Known state codes that do NOT end a calibration run — 0x3B doubles as
-# the run's measuring step and as brewing.
-_SCALE_CAL_AMBIGUOUS_CODES = frozenset({0x3B})
-
-
-def _ends_scale_calibration(code: int) -> bool:
-    """Whether this status code means the calibration run is over."""
-    if code == _CALIBRATION_DONE_CODE:
-        return True
-    if code in _SCALE_CAL_ENTRY_CODES or code in _SCALE_CAL_AMBIGUOUS_CODES:
-        return False
-    return code in _RAW_STATE_LABEL_MAP or code in _SCREEN_CODE_MAP
+_SCALE_CAL_RUN_CODES = frozenset({0x39, 0x3A, 0x3B, 0x3F})
 
 # Free-running telemetry streams — their RECV CMD line logs at DEBUG, not
 # INFO. Measured on hardware 2026-08-24: of 6307 frames in a 4-minute
@@ -299,8 +275,7 @@ class XBloomClient:
         self._last_accepted_weight: float | None = None
         self._weight_out_of_limit_count: int = 0
         # Armed by the scale-calibration confirm screen, dropped by the
-        # first status code that ends the run — see
-        # _ends_scale_calibration().
+        # first status code outside the run — see _SCALE_CAL_RUN_CODES.
         self._scale_calibrating: bool = False
 
         self.grinder = GrinderController(self)
@@ -715,7 +690,7 @@ class XBloomClient:
         code = payload[0]
         if code in _SCALE_CAL_ENTRY_CODES:
             self._scale_calibrating = True
-        elif self._scale_calibrating and _ends_scale_calibration(code):
+        elif code not in _SCALE_CAL_RUN_CODES:
             self._scale_calibrating = False
         self._status.raw_state_label = (
             "calibrating_scale"
