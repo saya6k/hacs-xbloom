@@ -8,6 +8,7 @@ page-entry settings snapshot — NOT a "brewing started" signal.
 """
 from __future__ import annotations
 
+import logging
 import struct
 
 import pytest
@@ -149,3 +150,91 @@ def test_activity_code_does_not_clear_run_flags():
     client.status.brewer.is_running = True
     client._on_notification(None, bytearray(_heartbeat(0x23)))  # brewing
     assert client.status.brewer.is_running is True
+
+
+def test_unknown_status_code_is_logged_once_per_transition(caplog):
+    """Codes emitted *during* a machine-driven procedure (scale
+    calibration, descaling) are still uncaptured — both prior capture
+    sessions cancelled at the confirm screen. Since neither procedure has
+    a BLE command family, passive observation is the only way to collect
+    them, so an unmapped code logs at INFO (once per transition, not once
+    per multi-Hz heartbeat frame).
+    """
+    client = _client()
+    with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
+        client._on_notification(None, bytearray(_heartbeat(0x77)))
+        client._on_notification(None, bytearray(_heartbeat(0x77)))
+    assert sum("0x77" in record.message for record in caplog.records) == 1
+
+
+def test_known_status_code_does_not_log_at_info(caplog):
+    client = _client()
+    with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
+        client._on_notification(None, bytearray(_heartbeat(0x39)))  # scale-cal confirm
+    assert not [
+        record for record in caplog.records if "status code" in record.message
+    ]
+
+
+# Hardware capture 2026-08-24 — a scale calibration carried through to
+# completion with 100 g / 500 g weights (both earlier sessions cancelled
+# at the confirm screen, which is why the run codes were unknown until
+# now). Exact heartbeat sequence, reconstructed from the raw frame log.
+_SCALE_CAL_RUN = [
+    (0x04, "scale page"),
+    (0x05, "scale page"),
+    (0x39, "confirm screen"),
+    (0x3A, "NO LOAD"),
+    (0x3B, "measuring"),
+    (0x3F, "+100 g"),
+    (0x3B, "+500 g / final measuring"),
+]
+
+
+def test_scale_calibration_run_never_reports_brewing():
+    """0x3B is also the brewing code — during a calibration run it must
+    not surface as brewing, which is what the state sensor showed for
+    most of the captured run before the latch existed.
+    """
+    client = _client()
+    for code, step in _SCALE_CAL_RUN:
+        client._on_notification(None, bytearray(_heartbeat(code)))
+        if code in (0x04, 0x05):
+            continue
+        assert client.status.raw_state_label == "calibrating_scale", step
+
+
+def test_scale_calibration_completion_ends_the_run():
+    """0x25 (DONE, shared with grinder calibration) drops the latch, and
+    the machine returns home."""
+    client = _client()
+    for code, _ in _SCALE_CAL_RUN:
+        client._on_notification(None, bytearray(_heartbeat(code)))
+    client._on_notification(None, bytearray(_heartbeat(0x25)))
+    assert client.status.raw_state_label is None
+    client._on_notification(None, bytearray(_heartbeat(0x01)))
+    assert client.status.screen == "home"
+    assert client.status.raw_state_label is None
+
+
+def test_cancelling_at_the_confirm_screen_ends_the_run():
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x39)))
+    client._on_notification(None, bytearray(_heartbeat(0x3A)))
+    client._on_notification(None, bytearray(_heartbeat(0x01)))
+    assert client.status.raw_state_label is None
+    assert client.status.screen == "home"
+
+
+def test_a_real_brew_after_a_calibration_still_reports_brewing():
+    """The latch must not swallow the next brew's 0x3B: every brew
+    reaches it through codes outside the run set, which drop the latch."""
+    client = _client()
+    for code, _ in _SCALE_CAL_RUN:
+        client._on_notification(None, bytearray(_heartbeat(code)))
+    client._on_notification(None, bytearray(_heartbeat(0x25)))   # DONE
+    client._on_notification(None, bytearray(_heartbeat(0x01)))   # home
+    client._on_notification(None, bytearray(_heartbeat(0x22)))   # starting
+    assert client.status.raw_state_label == "starting"
+    client._on_notification(None, bytearray(_heartbeat(0x3B)))
+    assert client.status.raw_state_label == "brewing"

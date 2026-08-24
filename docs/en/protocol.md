@@ -201,6 +201,14 @@ command id.
   pure instruction slideshows — both procedures are driven entirely from the
   machine's own knobs, so any HA-side visibility must come from passive
   telemetry (heartbeat/8023 codes), not from commands.
+- **A scale-calibration run reuses the brewing code** (hardware 2026-08-24,
+  first run carried to completion): `0x39` confirm → `0x3A` NO LOAD → `0x3B`
+  measuring → `0x3F` "+100 g" → `0x3B` "+500 g"/final measuring → `0x25` DONE
+  → `0x01` home. `0x3B` is also brewing, so the run is only distinguishable
+  by context — `client._scale_calibrating` latches on the confirm screen and
+  drops on the first code outside the run set. Without it the state sensor
+  reports `brewing` for most of a calibration. Descaling's run codes are
+  still uncaptured (that session was cancelled at its confirm screen).
 - **Start-transition drop window** (hardware 2026-07-20): a command landing
   between a knob start's begin report (9003/9005) and its run-begin (40506)
   can be silently dropped — a 3505 sent ~1.9s after 9003 was ignored (no ACK,
