@@ -2,10 +2,9 @@ name: Test
 
 # Reusable: ruff lint + pytest suite. Called by ci.yml on every push/PR.
 #
-# The suite runs against the same Home Assistant the integration targets:
-# requirements_test.txt names the pinned 2026.9 dev build; tests use pytest with a
-# sys.path conftest, so there is no pytest-homeassistant-custom-component pin
-# dragging CI back to an older core.
+# The suite runs in the same pinned Home Assistant image as the devcontainer.
+# Dev nightlies are published to GHCR before PyPI, so installing the target
+# version into a standalone venv is not reliable.
 # yamllint disable-line rule:truthy
 on:
   workflow_call:
@@ -17,19 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v8.2.0
-
-      - name: Create the Python 3.14 environment
-        run: uv venv --python 3.14
-
-      - name: Install test dependencies
-        run: uv pip install ruff -r requirements_test.txt
-
-      # Call the venv binaries directly — `uv run` would treat the repo as a
-      # project and editable-install it, but this is a custom_components
-      # layout (tests import custom_components.xbloom from the tree).
-      - name: Ruff
-        run: .venv/bin/ruff check .
-
-      - name: Pytest
-        run: .venv/bin/pytest
+      - name: Ruff + pytest in the pinned Home Assistant image
+        run: |
+          HA_IMAGE=$(jq -r .image .devcontainer/devcontainer.json)
+          docker run --rm \
+            --volume "$PWD:/workspace" \
+            --workdir /workspace \
+            --entrypoint /bin/bash \
+            "$HA_IMAGE" \
+            -c 'pip3 install --no-cache-dir pytest ruff && ruff check . && pytest'

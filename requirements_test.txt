@@ -1,6 +1,6 @@
 # Must match the devcontainer image tag and hacs.json's `homeassistant` floor
-# — one version string across all three. Inside the devcontainer this is
-# satisfied by the image's preinstalled copy; CI installs it from PyPI.
+# — one version string across all three. The devcontainer and CI use the
+# image's preinstalled copy because dev nightlies may not be on PyPI yet.
 homeassistant>=2026.9.0.dev202608241354
 pytest
 
