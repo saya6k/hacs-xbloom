@@ -27,7 +27,7 @@ category shown here (decompile-confirmed 2026-07-20).
 
 | Event type | Official issue | Quick fix |
 | --- | --- | --- |
-| `water_shortage` | Water Shortage alert (cmd 40522) | Check whether the water source is depleted and refill. The machine reports refills too — `water_shortage_cleared` fires when resolved. |
+| `water_shortage` | Water Shortage alert (cmd 40522) | Check whether the water source is depleted and refill. The machine reports refills too — `water_shortage_cleared` fires when resolved. Only reported while the water source is the built-in **tank**: on a plumbed line the tank is meant to be empty, so the machine's own "lack of water" report is ignored (the official app does the same). |
 | `no_beans` | Bean Shortage alert (cmd 40517) | Check for foreign objects or stuck beans (tap the grinder), then add beans. |
 | `abnormal_dose_or_water` | Overflow / abnormal dose (cmd 8204) | Ensure a cup is under the dispenser before starting and don't remove it mid-brew. Espresso-fine grinds are not recommended for pour-over. |
 | `abnormal_gear_position` | Grinder gear position (cmd 8203) | Run the grinder calibration (button or `calibrate_xbloom_grinder`). |
