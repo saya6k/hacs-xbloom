@@ -92,11 +92,12 @@ _RAW_STATE_LABEL_MAP = {
     # 0x26/0x27 are the grinder-calibration sweep phases — machine-entered
     # calibration reads the same state as the HA-triggered flag path.
     # 0x2F/0x32 and 0x39/0x3A are the descale / scale-calibration confirm
-    # screens (the second code of each pair = cancel selected); the codes
-    # emitted DURING an actual descale/scale-calibration run are
-    # uncaptured (both sessions were cancelled) — if they differ, the
-    # state falls back to idle for that stretch. 0x25 (calibration
-    # complete screen) is deliberately unmapped.
+    # screens; the descale run's own codes are still uncaptured (that
+    # session was cancelled), so the state falls back to idle for that
+    # stretch. 0x25 (calibration complete screen, shared by both
+    # calibrations) is deliberately unmapped. Scale calibration's run
+    # codes are handled by the latch below, not here — one of them
+    # collides with brewing.
     0x26: "calibrating_grinder",
     0x27: "calibrating_grinder",
     0x2F: "descaling",
@@ -104,6 +105,22 @@ _RAW_STATE_LABEL_MAP = {
     0x39: "calibrating_scale",
     0x3A: "calibrating_scale",
 }
+
+# Scale-calibration run codes — hardware capture 2026-08-24, the first
+# run carried through to completion (both earlier sessions cancelled at
+# the confirm screen for want of calibration weights):
+#
+#   0x39 confirm → 0x3A "NO LOAD" → 0x3B measuring → 0x3F "+100 g"
+#   → 0x3B "+500 g" / final measuring → 0x25 DONE → 0x01 home
+#
+# 0x3B is *also* the brewing code, so the run can only be recognized from
+# context: `_scale_calibrating` is armed by the confirm screen and
+# dropped by the first code outside the run set (0x25 DONE, home, or an
+# activity code), which makes it self-correcting in the same way the
+# label/screen recompute is. Without it a scale calibration reports
+# "brewing" for most of its duration.
+_SCALE_CAL_ENTRY_CODES = frozenset({0x39, 0x3A})
+_SCALE_CAL_RUN_CODES = frozenset({0x39, 0x3A, 0x3B, 0x3F})
 
 # Machine screen (page) codes from the same heartbeat/8023 channel as
 # _RAW_STATE_LABEL_MAP — hardware-captured 2026-07-20 (T2, see project memory
@@ -239,6 +256,9 @@ class XBloomClient:
         # Scale glitch filter state — see _filter_weight.
         self._last_accepted_weight: float | None = None
         self._weight_out_of_limit_count: int = 0
+        # Armed by the scale-calibration confirm screen, dropped by the
+        # first status code outside the run — see _SCALE_CAL_RUN_CODES.
+        self._scale_calibrating: bool = False
 
         self.grinder = GrinderController(self)
         self.brewer = BrewerController(self)
@@ -649,12 +669,22 @@ class XBloomClient:
         payload = raw[10:-2]
         if not payload:
             return
-        self._status.raw_state_label = _RAW_STATE_LABEL_MAP.get(payload[0])
+        code = payload[0]
+        if code in _SCALE_CAL_ENTRY_CODES:
+            self._scale_calibrating = True
+        elif code not in _SCALE_CAL_RUN_CODES:
+            self._scale_calibrating = False
+        self._status.raw_state_label = (
+            "calibrating_scale"
+            if self._scale_calibrating
+            else _RAW_STATE_LABEL_MAP.get(code)
+        )
         # Same self-correcting recompute for the screen map (page codes and
         # activity codes never overlap, so exactly one of the two labels is
         # non-None per frame).
-        self._status.screen_code = payload[0]
-        self._status.screen = _SCREEN_CODE_MAP.get(payload[0])
+        self._log_status_code_change(code)
+        self._status.screen_code = code
+        self._status.screen = _SCREEN_CODE_MAP.get(code)
         if self._status.screen is not None:
             # The machine showing a page or home means nothing is actively
             # running — clear any latched run flags. Needed because a
@@ -664,6 +694,34 @@ class XBloomClient:
             # sticking the derived state at "brewing").
             self._status.grinder.is_running = False
             self._status.brewer.is_running = False
+
+    def _log_status_code_change(self, code: int) -> None:
+        """Log each heartbeat status-code transition, once per transition.
+
+        The frames themselves stream at multi-Hz (hence the DEBUG-only
+        raw-notify line), but the code only changes when the machine
+        actually changes screen or activity, so one line per change is
+        cheap. Unmapped codes log at INFO: every map entry in this module
+        came from a maintainer-at-the-machine capture session, and the
+        codes a machine-driven procedure emits *while it runs* can only be
+        collected by someone running that procedure — scale calibration
+        and descaling in particular have no BLE command family at all
+        (jadx 2026-07-20), so passive observation is the only channel.
+        That is exactly how the scale-calibration run codes were finally
+        pinned down (2026-08-24); descaling's are still missing, and its
+        run reports idle until someone runs one with this logging on.
+        """
+        if code == self._status.screen_code:
+            return
+        label = _RAW_STATE_LABEL_MAP.get(code) or _SCREEN_CODE_MAP.get(code)
+        if label is None:
+            _LOGGER.info(
+                "Machine status code 0x%02X — not in the known-code map; "
+                "please report it (with what the machine was showing) so it "
+                "can be mapped", code,
+            )
+        else:
+            _LOGGER.debug("Machine status code 0x%02X → %s", code, label)
 
     def _scan_for_alarm_frame(self, raw: bytes) -> None:
         """Machine alarm frames (cmd 0xFFFE, marker 0xCD — see the
