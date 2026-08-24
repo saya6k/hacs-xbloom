@@ -132,19 +132,47 @@ _RAW_STATE_LABEL_MAP = {
 # A brew can't be swallowed by this: every brew reaches its 0x3B through
 # a page code or through 0x22/0x1F/0x23 first, all of which end the run.
 _SCALE_CAL_ENTRY_CODES = frozenset({0x39, 0x3A})
+# Run steps that have only ever been seen inside a scale calibration and
+# mean nothing else — they arm the latch too, so connecting *into* a run
+# already in progress (hardware-reported 2026-08-24: the confirm screen
+# had come and gone before HA connected, and the run's 0x3B stretches
+# then surfaced as "brewing") recovers at the next step instead of
+# staying wrong for the whole run.
+_SCALE_CAL_STEP_CODES = frozenset({0x3C, 0x3F})
+_SCALE_CAL_ARMING_CODES = _SCALE_CAL_ENTRY_CODES | _SCALE_CAL_STEP_CODES
 _CALIBRATION_DONE_CODE = 0x25
 # Known state codes that do NOT end a calibration run — 0x3B doubles as
 # the run's measuring step and as brewing.
 _SCALE_CAL_AMBIGUOUS_CODES = frozenset({0x3B})
+
+# 0x3B is only reported as brewing with a brew actually in context: one
+# of these codes since the last page/ready/maintenance code, or a run
+# flag set by the cmd-tagged path. Without that (the mid-run connect
+# above) it is genuinely ambiguous, so no label is claimed at all rather
+# than announcing a brew that isn't happening.
+_BREW_CONTEXT_CODES = frozenset({0x1E, 0x1F, 0x22, 0x10, 0x23})
+# Known meanings that end a brew context. Unmapped codes leave it alone,
+# for the same reason the calibration latch tolerates them: a brew's own
+# intermediate codes are not fully enumerated.
+_ENDS_BREW_CONTEXT_LABELS = frozenset(
+    {"ready", "descaling", "calibrating_grinder", "calibrating_scale"}
+)
 
 
 def _ends_scale_calibration(code: int) -> bool:
     """Whether this status code means the calibration run is over."""
     if code == _CALIBRATION_DONE_CODE:
         return True
-    if code in _SCALE_CAL_ENTRY_CODES or code in _SCALE_CAL_AMBIGUOUS_CODES:
+    if code in _SCALE_CAL_ARMING_CODES or code in _SCALE_CAL_AMBIGUOUS_CODES:
         return False
     return code in _RAW_STATE_LABEL_MAP or code in _SCREEN_CODE_MAP
+
+
+def _ends_brew_context(code: int) -> bool:
+    """Whether this status code means no brew is under way any more."""
+    if code == _CALIBRATION_DONE_CODE or code in _SCREEN_CODE_MAP:
+        return True
+    return _RAW_STATE_LABEL_MAP.get(code) in _ENDS_BREW_CONTEXT_LABELS
 
 # Free-running telemetry streams — their RECV CMD line logs at DEBUG, not
 # INFO. Measured on hardware 2026-08-24: of 6307 frames in a 4-minute
@@ -181,6 +209,16 @@ _SCREEN_CODE_MAP = {
     0x09: "pour",
     0x04: "scale",
     0x05: "scale",
+    # The machine's own settings pages, seen 2026-08-24 in a maintainer
+    # log: 0x18/0x17 alternated while the user walked the unit pages the
+    # 8005/8010/4508 SET commands had opened, 0x19 was the last one before
+    # the machine reported the new values back (cmd 8015) and returned to
+    # 0x01 home. Which page is which is not pinned down, so all three map
+    # to the one label — enough to stop them reading as "unknown code" and
+    # to keep the run/arm flags from going stale behind a settings screen.
+    0x17: "settings",
+    0x18: "settings",
+    0x19: "settings",
 }
 
 _ADVANCED_SETTINGS_TYPE_CODE = 2
@@ -302,6 +340,9 @@ class XBloomClient:
         # first status code that ends the run — see
         # _ends_scale_calibration().
         self._scale_calibrating: bool = False
+        # Whether a brew is in context — see _BREW_CONTEXT_CODES. False on
+        # a fresh connection: nothing observed yet is not "brewing".
+        self._brew_context: bool = False
 
         self.grinder = GrinderController(self)
         self.brewer = BrewerController(self)
@@ -713,15 +754,12 @@ class XBloomClient:
         if not payload:
             return
         code = payload[0]
-        if code in _SCALE_CAL_ENTRY_CODES:
+        if code in _SCALE_CAL_ARMING_CODES:
             self._scale_calibrating = True
         elif self._scale_calibrating and _ends_scale_calibration(code):
             self._scale_calibrating = False
-        self._status.raw_state_label = (
-            "calibrating_scale"
-            if self._scale_calibrating
-            else _RAW_STATE_LABEL_MAP.get(code)
-        )
+        self._update_brew_context(code)
+        self._status.raw_state_label = self._state_label_for(code)
         # Same self-correcting recompute for the screen map (page codes and
         # activity codes never overlap, so exactly one of the two labels is
         # non-None per frame).
@@ -737,6 +775,38 @@ class XBloomClient:
             # sticking the derived state at "brewing").
             self._status.grinder.is_running = False
             self._status.brewer.is_running = False
+
+    def _update_brew_context(self, code: int) -> None:
+        """Track whether a brew is actually under way — see
+        ``_BREW_CONTEXT_CODES``. A calibration run is never a brew."""
+        if self._scale_calibrating:
+            self._brew_context = False
+        elif code in _BREW_CONTEXT_CODES:
+            self._brew_context = True
+        elif _ends_brew_context(code):
+            self._brew_context = False
+
+    def _state_label_for(self, code: int) -> str | None:
+        """The activity label for one heartbeat code.
+
+        ``0x3B`` means brewing *or* the scale-calibration measuring step,
+        so it is only reported as brewing with a brew in context — the
+        latch above, or a run flag already set by the cmd-tagged path.
+        Reported by neither, it stays unlabelled: hardware-reported
+        2026-08-24, connecting mid-calibration (past its confirm screen,
+        which is what arms the calibration latch) showed the machine as
+        brewing for the rest of the run.
+        """
+        if self._scale_calibrating:
+            return "calibrating_scale"
+        if (
+            code in _SCALE_CAL_AMBIGUOUS_CODES
+            and not self._brew_context
+            and not self._status.brewer.is_running
+            and not self._status.grinder.is_running
+        ):
+            return None
+        return _RAW_STATE_LABEL_MAP.get(code)
 
     def _log_status_code_change(self, code: int) -> None:
         """Log each heartbeat status-code transition, once per transition.
@@ -756,7 +826,11 @@ class XBloomClient:
         """
         if code == self._status.screen_code:
             return
-        label = _RAW_STATE_LABEL_MAP.get(code) or _SCREEN_CODE_MAP.get(code)
+        label = (
+            _RAW_STATE_LABEL_MAP.get(code)
+            or _SCREEN_CODE_MAP.get(code)
+            or ("calibrating_scale" if code in _SCALE_CAL_STEP_CODES else None)
+        )
         if label is None:
             _LOGGER.info(
                 "Machine status code 0x%02X — not in the known-code map; "

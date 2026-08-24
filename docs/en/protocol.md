@@ -214,6 +214,20 @@ command id.
   state sensor reports `brewing` for most of a calibration. Descaling's run
   codes are still uncaptured (that session was cancelled at its confirm
   screen).
+- **Connecting into a calibration already in progress** (hardware-reported
+  2026-08-24) misses the confirm screen that arms that latch, so the run's
+  `0x3B` stretches surfaced as `brewing` again. Two-part fix: `0x3C`/`0x3F`
+  (seen only inside a calibration run) arm the latch as well, and `0x3B` is
+  reported as brewing **only with a brew in context** — one of
+  `0x1E`/`0x1F`/`0x22`/`0x10`/`0x23` since the last page/ready/maintenance
+  code, or a grinder/brewer run flag already set by the cmd-tagged path.
+  With neither, no label is claimed (the state falls through to the
+  cmd-tagged one) rather than announcing a brew that isn't happening.
+- **Settings pages `0x17`/`0x18`/`0x19`** (maintainer log 2026-08-24):
+  reported while the user walked the machine's own unit-settings pages —
+  the ones the `8005`/`8010`/`4508` SET commands open — ending with the new
+  values pushed back on `8015` and a return to `0x01` home. Which page is
+  which isn't pinned down; all three map to one `settings` screen label.
 - **Start-transition drop window** (hardware 2026-07-20): a command landing
   between a knob start's begin report (9003/9005) and its run-begin (40506)
   can be silently dropped — a 3505 sent ~1.9s after 9003 was ignored (no ACK,
@@ -223,6 +237,11 @@ command id.
   (`coordinator._async_verify_component_stop`).
 - **Back-to-back sends can drop the second command**: 4510 and 8016 fired
   1ms apart — 4510 ACKed, 8016 never did and the machine kept its remembered
-  pattern. The official app never hits this because its `sendMessage` queue
+  pattern. Same shape hit `8005`/`8010`/`4508` (hardware-reported
+  2026-08-24): all three left within 5 ms of each other, only `8005` was
+  ever echoed, and the water-source change never reached the machine — they
+  are ACK-gated one at a time now (`_apply_unit_preferences`), and only the
+  setting the user actually changed is sent at all, since each SET opens its
+  own page on the machine's screen. The official app never hits this because its `sendMessage` queue
   is ACK-gated (~370–380ms measured); leave ≥0.5s (or ACK-gate) between
   consecutive sends in one flow.

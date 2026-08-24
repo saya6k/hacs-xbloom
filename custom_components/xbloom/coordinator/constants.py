@@ -148,8 +148,10 @@ WATER_SOURCE_OPTIONS = {
 # machine DOES push cmd 8015 (RD_UNIT_CHANGE) with all three values —
 # weight unit, temp unit, water source — when they change on its own
 # touchscreen; _async_sync_units_from_machine() folds that back into these
-# stored preferences. Applied once per connection in async_connect(), not on
-# every recipe/telemetry refresh — see _apply_unit_preferences.
+# stored preferences. Only ever sent for a setting the user actually
+# changed, one ACK-gated command at a time — never re-asserted on connect
+# or on a telemetry refresh, since each SET opens that setting's own page
+# on the machine's screen. See _apply_unit_preferences.
 WEIGHT_UNIT_OPTIONS = {"g": 0, "oz": 1, "ml": 2}
 TEMP_UNIT_OPTIONS = {"c": 0, "f": 1}
 _RAW_TO_WEIGHT_UNIT = {v: k for k, v in WEIGHT_UNIT_OPTIONS.items()}

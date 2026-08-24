@@ -168,26 +168,34 @@ class XBloomCoordinator(
 
         # Machine display units (config_flow's Settings step only — see
         # WEIGHT_UNIT_OPTIONS/TEMP_UNIT_OPTIONS). Only pushed to the machine
-        # (_apply_unit_preferences) when _unit_preferences_dirty is set — see
-        # that flag's own comment for why this isn't unconditional per
-        # connection anymore.
+        # (_apply_unit_preferences) for the keys sitting in
+        # _pending_unit_pushes — see that set's own comment for why this
+        # isn't unconditional per connection anymore.
         self._weight_unit: str = initial_weight_unit
         self._temp_unit: str = initial_temp_unit
 
-        # Set whenever a unit/water-source preference is changed via the
-        # config_flow Settings step while not connected (connection.py's
-        # _handle_unit_options_change) — the change is stored locally but
-        # couldn't be pushed to the machine yet. async_connect() checks this
-        # and pushes once, then clears it. Deliberately NOT set on every
-        # connect: the official app (decompiled 2026-07-18, MachineJ15Fragment)
-        # only ever sends the 8005/8010/4508 SET commands from an explicit
-        # button tap in its own Settings screen, never automatically on
-        # connect — hardware-reported that unconditionally resending them on
-        # every reconnect (the previous behavior) made the machine's own
-        # unit-settings screen pop up first on every single reconnect, since
-        # receiving those SET commands is indistinguishable to the firmware
-        # from a user tapping that screen's buttons.
-        self._unit_preferences_dirty: bool = False
+        # Option keys (CONF_WEIGHT_UNIT/CONF_TEMP_UNIT/CONF_WATER_SOURCE)
+        # whose machine-side SET command still has to go out, filled by a
+        # config_flow Settings-step change (connection.py's
+        # _handle_unit_options_change) and emptied as each send lands.
+        # async_connect() pushes whatever is still in here.
+        #
+        # Deliberately NOT filled on every connect: the official app
+        # (decompiled 2026-07-18, MachineJ15Fragment) only ever sends the
+        # 8005/8010/4508 SET commands from an explicit button tap in its own
+        # Settings screen, never automatically on connect — hardware-reported
+        # that unconditionally resending them on every reconnect (the
+        # behavior before that) made the machine's own unit-settings screen
+        # pop up first on every single reconnect, since receiving those SET
+        # commands is indistinguishable to the firmware from a user tapping
+        # that screen's buttons.
+        #
+        # Per key rather than one dirty flag for the same reason
+        # (hardware-reported 2026-08-24): pushing all three whenever any one
+        # of them changed sent the user through the machine's whole settings
+        # wizard, starting at the weight-unit page, for what was only a
+        # water-source change.
+        self._pending_unit_pushes: set[str] = set()
 
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.

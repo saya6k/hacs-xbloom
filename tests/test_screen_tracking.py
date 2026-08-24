@@ -294,3 +294,68 @@ def test_a_known_state_code_mid_run_ends_the_run():
     client._on_notification(None, bytearray(_heartbeat(0x39)))
     client._on_notification(None, bytearray(_heartbeat(0x22)))  # starting
     assert client.status.raw_state_label == "starting"
+
+
+# ── Connecting into a run already in progress (hardware-reported
+# 2026-08-24) ──────────────────────────────────────────────────────────
+# The confirm screen that arms the calibration latch had already come and
+# gone when HA connected, so the run's 0x3B stretches surfaced as
+# "brewing" — the state sensor showed the machine extracting coffee for
+# the length of a scale calibration.
+
+
+def test_ambiguous_code_without_context_is_not_reported_as_brewing():
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x3B)))
+    assert client.status.raw_state_label is None
+
+
+def test_a_mid_run_step_code_arms_the_calibration_latch():
+    """0x3C/0x3F have only ever been seen inside a calibration run, so
+    they re-arm the latch for a connection that missed the confirm
+    screen — and the 0x3B stretches after them read as calibration."""
+    client = _client()
+    for code in (0x3B, 0x3F, 0x3B, 0x3C, 0x3B):
+        client._on_notification(None, bytearray(_heartbeat(code)))
+    assert client.status.raw_state_label == "calibrating_scale"
+    client._on_notification(None, bytearray(_heartbeat(0x25)))
+    assert client.status.raw_state_label is None
+
+
+def test_a_running_brew_still_reports_brewing_after_a_reconnect():
+    """The cmd-tagged path is the other brew context: a brewer-begin
+    notification received after the reconnect makes 0x3B unambiguous."""
+    client = _client()
+    client.status.brewer.is_running = True
+    client._on_notification(None, bytearray(_heartbeat(0x3B)))
+    assert client.status.raw_state_label == "brewing"
+
+
+def test_the_brew_context_survives_unmapped_codes():
+    """A brew's own intermediate codes are not fully enumerated, so an
+    unmapped code mid-brew must not silently disarm the context."""
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x22)))  # starting
+    client._on_notification(None, bytearray(_heartbeat(0x77)))  # unmapped
+    client._on_notification(None, bytearray(_heartbeat(0x3B)))
+    assert client.status.raw_state_label == "brewing"
+
+
+def test_returning_home_ends_the_brew_context():
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x22)))  # starting
+    client._on_notification(None, bytearray(_heartbeat(0x24)))  # ready
+    client._on_notification(None, bytearray(_heartbeat(0x01)))  # home
+    client._on_notification(None, bytearray(_heartbeat(0x3B)))
+    assert client.status.raw_state_label is None
+
+
+def test_settings_pages_are_a_known_screen(caplog):
+    """0x17/0x18/0x19 are the machine's own settings pages (the ones the
+    8005/8010/4508 SET commands open) — mapped so they stop logging as
+    unknown codes."""
+    client = _client()
+    with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
+        client._on_notification(None, bytearray(_heartbeat(0x18)))
+    assert client.status.screen == "settings"
+    assert not [r for r in caplog.records if "not in the known-code map" in r.message]
