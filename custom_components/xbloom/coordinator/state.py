@@ -13,7 +13,7 @@ from typing import Any
 
 from custom_components.xbloom.ble.models import DeviceStatus
 
-from .constants import _BLE_SILENCE_TIMEOUT_S, DEFAULT_STATE
+from .constants import _BLE_SILENCE_TIMEOUT_S, DEFAULT_STATE, WATER_SOURCE_TANK
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -417,8 +417,27 @@ class StateMixin:
         # Drive the water-shortage / no-beans flags from the BLE event stream.
         prev_shortage = self._water_shortage
         prev_no_beans = self._no_beans
+        # Suppresses the outbound event only — the flag bookkeeping below
+        # (and the synthesized "cleared" event) still runs.
+        suppress_event = False
         if category == "error" and event_type == "water_shortage":
-            self._water_shortage = True
+            if self.water_source == WATER_SOURCE_TANK:
+                self._water_shortage = True
+            else:
+                # Plumbed straight to a water line: the tank is *meant* to
+                # be empty, so 40522's "lack of water" says nothing about
+                # whether the machine can brew. The official app takes the
+                # same branch — HomeActivity's ErrorLackOfWaterBleModel
+                # handler calls dismissWaterScarcityAnimation() whenever
+                # device.waterFeed != 0, before it ever looks at the
+                # payload value (jadx 2026-08-24). Observed natively the
+                # same day: the machine fires this ~90ms after every 4508,
+                # so a TAP user got a water_shortage state and a problem
+                # binary sensor for simply changing a setting. Clearing
+                # (rather than ignoring) also unsticks a shortage that was
+                # latched while the machine was still on tank water.
+                self._water_shortage = False
+                suppress_event = True
         elif category == "error" and event_type == "no_beans":
             self._no_beans = True
         elif category == "notification" and event_type == "water_refilled":
@@ -544,11 +563,12 @@ class StateMixin:
 
         def _do_dispatch() -> None:
             # Snapshot the list in case a listener un-registers during iteration
-            for cb in list(self._event_listeners):
-                try:
-                    cb(category, event_type, attributes)
-                except Exception as exc:
-                    _LOGGER.error("Event listener error: %s", exc)
+            if not suppress_event:
+                for cb in list(self._event_listeners):
+                    try:
+                        cb(category, event_type, attributes)
+                    except Exception as exc:
+                        _LOGGER.error("Event listener error: %s", exc)
             # Synthesized "_cleared" error events (see the flag block above)
             # ride the same dispatch, after the real event that caused them.
             for cleared in _cleared_events:

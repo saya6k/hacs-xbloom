@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 
+from custom_components.xbloom.coordinator.constants import WATER_SOURCE_TANK
 from custom_components.xbloom.coordinator.operations import OperationsMixin
 from custom_components.xbloom.coordinator.state import StateMixin
 
@@ -34,6 +35,9 @@ class _Coordinator(StateMixin, OperationsMixin):
         self._pod_prompt_active = False
         self._water_shortage = False
         self._no_beans = False
+        # Tank water: a shortage is only a shortage on the built-in tank
+        # (see StateMixin._dispatch_event / test_tap_water_shortage.py).
+        self.water_source = WATER_SOURCE_TANK
         self._event_listeners: list = []
 
     async def _async_ensure_connected(self) -> bool:
