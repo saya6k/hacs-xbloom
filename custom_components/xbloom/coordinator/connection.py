@@ -13,7 +13,7 @@ from typing import Any, TypeVar
 
 from homeassistant.helpers import device_registry as dr
 
-from custom_components.xbloom.ble.client import XBloomClient, strict_ascii
+from custom_components.xbloom.ble.client import AckTimeout, XBloomClient, strict_ascii
 from custom_components.xbloom.ble.connection import HABleakConnection
 from custom_components.xbloom.ble.models import DeviceStatus
 from custom_components.xbloom.const import (
@@ -49,6 +49,11 @@ from .constants import (
 _LOGGER = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+
+# Option keys backing a machine settings command, in send order — one
+# command each (see _apply_unit_preferences/_unit_push_command). Only the
+# keys the user actually changed are ever sent.
+_UNIT_PUSH_ORDER = (CONF_WEIGHT_UNIT, CONF_TEMP_UNIT, CONF_WATER_SOURCE)
 
 
 class ConnectionMixin:
@@ -256,15 +261,15 @@ class ConnectionMixin:
                     self._note_connect_success()
                     _LOGGER.info("XBloom connected ✓")
                     await self._log_gatt_inventory()
-                    # Only push if a Settings-step change couldn't reach the
-                    # machine while disconnected — see _unit_preferences_dirty's
-                    # docstring in __init__.py. Otherwise this stays passive,
-                    # like the official app: the machine's own value flows
-                    # back to HA via cmd 8015 (_async_sync_units_from_machine)
-                    # instead of being overwritten on every reconnect.
-                    if self._unit_preferences_dirty:
+                    # Only push settings a user actually changed that
+                    # couldn't reach the machine while disconnected — see
+                    # _pending_unit_pushes' docstring in __init__.py.
+                    # Otherwise this stays passive, like the official app:
+                    # the machine's own value flows back to HA via cmd 8015
+                    # (_async_sync_units_from_machine) instead of being
+                    # overwritten on every reconnect.
+                    if self._pending_unit_pushes:
                         await self._apply_unit_preferences(client)
-                        self._unit_preferences_dirty = False
                     await self.async_refresh()
                     self._schedule_machine_info_retry()
                     # Only fire the advanced-settings GET once the machine is
@@ -545,17 +550,34 @@ class ConnectionMixin:
     # ------------------------------------------------------------------
 
     async def _apply_unit_preferences(self, client: XBloomClient | None = None) -> None:
-        """Push the configured display units (8005 weight, 8010 temp) and
-        water-feed setting (4508) to the machine, once per connection.
+        """Push the pending unit/water-source SET commands to the machine.
 
-        The 8005/8010 ACKs carry no echoed value (confirmed live
-        2026-07-04), so this re-asserts the stored preferences on every
-        fresh connection; changes made on the machine's own touchscreen
-        *while connected* flow back via cmd 8015 (RD_UNIT_CHANGE — see
-        _async_sync_units_from_machine) and update the stored values, so
-        the re-assert never fights an in-session machine-side change.
+        Only the settings the user actually changed go out —
+        ``_pending_unit_pushes`` holds their option keys, and each key
+        maps to exactly one command (8005 weight unit, 8010 temp unit,
+        4508 water feed). Hardware-reported 2026-08-24: pushing all three
+        on every change dropped the machine into its own settings wizard
+        at the *weight-unit* page ("mL first"), forcing the user to walk
+        through every setting again — receiving one of these SETs is
+        indistinguishable to the firmware from a tap on that page's own
+        button (see ``_pending_unit_pushes`` in __init__.py), so a
+        water-source change must not send the two unit commands too.
+
+        Each send is ACK-gated (``send_and_wait``) instead of fired
+        back-to-back: the same capture showed all three leaving within
+        5 ms of each other and only the first one ever being echoed — the
+        documented "back-to-back sends can drop the second command" quirk
+        (docs/en/protocol.md), which is exactly why the water-source
+        change never reached the machine. The official app's own Settings
+        buttons go through the same ACK-gated ``sendMessage`` path.
+        A timed-out send is retried once, then given up on (with a
+        warning) rather than left pending: a key that can never be
+        acknowledged would otherwise re-open the machine's settings
+        screen on every single connect.
+
         Never raises; a failure here shouldn't block the rest of
-        async_connect().
+        async_connect(). Keys whose send couldn't even be attempted (the
+        link went away mid-sequence) stay pending for the next connect.
 
         ``client`` lets ``async_connect()`` pass its own local client
         reference instead of this method reading ``self.client`` —
@@ -564,22 +586,54 @@ class ConnectionMixin:
         out from under this call, crashing with ``'NoneType' object has
         no attribute '_send_command_raw'`` instead of a clean "not
         connected" error. Defaults to ``self.client`` for the other call
-        site (``_handle_unit_options_change``), which already checks
-        ``self.client.is_connected`` immediately before scheduling this.
+        site (``_async_push_unit_preferences``).
         """
         client = client or self.client
+        for key in _UNIT_PUSH_ORDER:
+            if key not in self._pending_unit_pushes:
+                continue
+            command, payload, shown = self._unit_push_command(key)
+            try:
+                await self._async_send_unit_command(client, command, payload)
+            except AckTimeout as exc:
+                _LOGGER.warning(
+                    "Machine never acknowledged %s (%s) — it may not have "
+                    "been applied: %s", key, shown, exc,
+                )
+            except Exception as exc:
+                _LOGGER.warning("Failed to apply %s (%s): %s", key, shown, exc)
+                return
+            else:
+                _LOGGER.info("Applied machine setting %s=%s", key, shown)
+            # Not in a `finally`: the hard-failure `return` above must
+            # leave the key pending for the next connect, while an
+            # attempted-but-unacknowledged send is given up on.
+            self._pending_unit_pushes.discard(key)
+
+    def _unit_push_command(self, key: str) -> tuple[int, bytes | list, str]:
+        """(command id, payload, human-readable value) for one option key."""
+        if key == CONF_WEIGHT_UNIT:
+            code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
+            return 8005, bytes([code]), self._weight_unit
+        if key == CONF_TEMP_UNIT:
+            code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
+            return 8010, bytes([code]), self._temp_unit
+        return _CMD_SWITCH_WATER_FEED, [self.water_source], str(self.water_source)
+
+    async def _async_send_unit_command(
+        self, client: XBloomClient, command: int, payload: bytes | list
+    ) -> None:
+        """ACK-gated send of one settings command, resent once on timeout."""
+        kwargs: dict[str, Any] = (
+            {"raw": payload} if isinstance(payload, bytes) else {"data": payload}
+        )
         try:
-            weight_code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
-            await client._send_command_raw(8005, bytes([weight_code]), type_code=1)
-            temp_code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
-            await client._send_command_raw(8010, bytes([temp_code]), type_code=1)
-            await client._send_command(_CMD_SWITCH_WATER_FEED, [self.water_source])
+            await client.send_and_wait(command, type_code=1, **kwargs)
+        except AckTimeout:
             _LOGGER.info(
-                "Applied display units: weight=%s temp=%s water_source=%d",
-                self._weight_unit, self._temp_unit, self.water_source,
+                "No ACK for settings command %s — resending once", command,
             )
-        except Exception as exc:
-            _LOGGER.warning("Failed to apply display unit preferences: %s", exc)
+            await client.send_and_wait(command, type_code=1, **kwargs)
 
     def _persist_unit_options(self) -> None:
         """Persist the current unit/water-source values to entry.options.
@@ -605,31 +659,46 @@ class ConnectionMixin:
         RD_UNIT_CHANGE — fired when they're changed on the machine's own
         touchscreen) back into the stored preferences, so HA's own display
         matches what the machine actually shows instead of a stale value.
-        This is a machine-wins sync (never sets _unit_preferences_dirty) —
+        This is a machine-wins sync (never adds to _pending_unit_pushes) —
         the machine is the source of truth here, there's nothing to push
-        back to it. The one exception is an outstanding push of our own
-        (_unit_preferences_dirty): the machine reports its *pre-change*
-        values in the 8015 that arrives during the connect handshake, so
-        adopting them there would silently revert the change the user
-        just made in the Settings step.
+        back to it. The one exception is a setting with an outstanding
+        push of our own (_pending_unit_pushes): the machine reports its
+        *pre-change* value in the 8015 that arrives during the connect
+        handshake, so adopting it there would silently revert the change
+        the user just made in the Settings step. Skipped per key, so an
+        unrelated machine-side change still syncs while one setting waits
+        to be delivered.
         """
-        if self._unit_preferences_dirty:
+        pending = self._pending_unit_pushes
+        if pending:
             _LOGGER.debug(
-                "Ignoring machine-side unit report — a Settings-step change "
-                "is still pending delivery to the machine"
+                "Ignoring the machine's own %s report — a Settings-step "
+                "change is still pending delivery to the machine",
+                ", ".join(sorted(pending)),
             )
-            return
         weight = _RAW_TO_WEIGHT_UNIT.get(attrs.get("weight_unit"))
         temp = _RAW_TO_TEMP_UNIT.get(attrs.get("temp_unit"))
         water = attrs.get("water_source")
         changed = False
-        if weight is not None and weight != self._weight_unit:
+        if (
+            weight is not None
+            and weight != self._weight_unit
+            and CONF_WEIGHT_UNIT not in pending
+        ):
             self._weight_unit = weight
             changed = True
-        if temp is not None and temp != self._temp_unit:
+        if (
+            temp is not None
+            and temp != self._temp_unit
+            and CONF_TEMP_UNIT not in pending
+        ):
             self._temp_unit = temp
             changed = True
-        if water in (WATER_SOURCE_TANK, WATER_SOURCE_DIRECT) and water != self.water_source:
+        if (
+            water in (WATER_SOURCE_TANK, WATER_SOURCE_DIRECT)
+            and water != self.water_source
+            and CONF_WATER_SOURCE not in pending
+        ):
             self.water_source = water
             changed = True
         if changed:
@@ -654,28 +723,43 @@ class ConnectionMixin:
         link is down — with idle standby (_session_timeout) that is the
         normal state between uses, so deferring the push to "whenever
         something else happens to connect" left a water-source change
-        unapplied indefinitely. _unit_preferences_dirty stays set until
-        the push actually lands, so async_connect() covers the case where
-        the reconnect fails (see that flag's docstring for why the push
-        isn't unconditional on every connect).
+        unapplied indefinitely. A key stays in _pending_unit_pushes until
+        its own send actually lands, so async_connect() covers the case
+        where the reconnect fails (see that set's docstring for why the
+        push isn't unconditional on every connect).
+
+        Only the keys whose value really changed are queued: sending the
+        unit commands as well would re-open the machine's unit wizard for
+        a plain water-source change (hardware-reported 2026-08-24, see
+        _apply_unit_preferences).
         """
         weight = options.get(CONF_WEIGHT_UNIT, self._weight_unit)
         temp = options.get(CONF_TEMP_UNIT, self._temp_unit)
         water = options.get(CONF_WATER_SOURCE, self.water_source)
-        if (weight, temp, water) == (self._weight_unit, self._temp_unit, self.water_source):
+        changed = {
+            key
+            for key, new_value, current in (
+                (CONF_WEIGHT_UNIT, weight, self._weight_unit),
+                (CONF_TEMP_UNIT, temp, self._temp_unit),
+                (CONF_WATER_SOURCE, water, self.water_source),
+            )
+            if new_value != current
+        }
+        if not changed:
             return
         self._weight_unit = weight
         self._temp_unit = temp
         self.water_source = water
-        self._unit_preferences_dirty = True
+        self._pending_unit_pushes |= changed
         self.hass.async_create_task(self._async_push_unit_preferences())
 
     async def _async_push_unit_preferences(self) -> None:
         """Connect if needed, then push the pending unit/water-source values.
 
-        Leaves _unit_preferences_dirty set if the machine can't be reached
-        (off, out of range, or the connection switch turned off), so
-        async_connect() picks the change up on the next successful connect.
+        Leaves _pending_unit_pushes populated if the machine can't be
+        reached (off, out of range, or the connection switch turned off),
+        so async_connect() picks the change up on the next successful
+        connect.
         """
         try:
             await self._async_ensure_connected()
@@ -685,10 +769,9 @@ class ConnectionMixin:
                 "on the next connection", exc,
             )
             return
-        if not self._unit_preferences_dirty:
+        if not self._pending_unit_pushes:
             return  # async_connect() pushed them on the way in
         await self._apply_unit_preferences()
-        self._unit_preferences_dirty = False
 
     # ------------------------------------------------------------------
     # Mode switching (Pro / Easy)

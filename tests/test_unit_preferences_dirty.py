@@ -1,4 +1,4 @@
-"""Tests for ConnectionMixin._handle_unit_options_change's dirty-flag gating.
+"""Tests for ConnectionMixin's pending-unit-push gating.
 
 Hardware-reported 2026-07-18: the machine's own unit-settings screen
 popped up first on every single reconnect. Root-caused via decompile
@@ -9,22 +9,28 @@ integration's async_connect() previously called _apply_unit_preferences()
 unconditionally on every connect, which is indistinguishable to the
 firmware from a user tapping those buttons.
 
-Fix: track _unit_preferences_dirty, set only when a config_flow Settings
+Fix: track _pending_unit_pushes, filled only when a config_flow Settings
 change was actually made, and only push at connect time (async_connect(),
-see connection.py) if it's set.
+see connection.py) if it's non-empty.
 
 Amended 2026-08-24: a Settings-step change now pushes immediately even
 when the link is down — _async_push_unit_preferences() reconnects on
 demand — because idle standby means "not connected right now" is the
 normal state, not the exception, so waiting for the next connect left the
-change unapplied indefinitely. The flag stays set until the push lands
-and, while set, suppresses the machine-wins 8015 sync that would
-otherwise revert the pending change.
+change unapplied indefinitely. A key stays pending until its own send
+lands and, while pending, suppresses the machine-wins 8015 sync that
+would otherwise revert that setting.
+
+Amended again the same day, hardware-reported: the flag became a set of
+option keys, because pushing all three commands for a single changed
+setting dropped the machine into its own settings wizard (starting at the
+weight-unit page) and made the user re-enter everything.
 """
 from __future__ import annotations
 
 import asyncio
 
+from custom_components.xbloom.ble.client import AckTimeout
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
 
 
@@ -50,7 +56,7 @@ class _Coordinator(ConnectionMixin):
         self._weight_unit = "g"
         self._temp_unit = "c"
         self.water_source = 0
-        self._unit_preferences_dirty = False
+        self._pending_unit_pushes: set[str] = set()
 
 
 def test_matching_options_is_a_noop():
@@ -58,7 +64,7 @@ def test_matching_options_is_a_noop():
     coordinator._handle_unit_options_change(
         {"weight_unit": "g", "temp_unit": "c", "water_source": 0}
     )
-    assert coordinator._unit_preferences_dirty is False
+    assert coordinator._pending_unit_pushes == set()
     assert coordinator.hass.created_tasks == []
 
 
@@ -69,7 +75,7 @@ def test_changed_while_disconnected_still_schedules_a_push():
         {"weight_unit": "oz", "temp_unit": "c", "water_source": 0}
     )
     assert coordinator._weight_unit == "oz"
-    assert coordinator._unit_preferences_dirty is True
+    assert coordinator._pending_unit_pushes == {"weight_unit"}
     assert len(hass.created_tasks) == 1
 
 
@@ -81,15 +87,17 @@ def test_changed_while_connected_schedules_a_push():
     )
     assert coordinator._weight_unit == "oz"
     assert coordinator.water_source == 1
-    # Still dirty: only the push itself clears it, so a failed send is
-    # retried by async_connect() instead of being lost.
-    assert coordinator._unit_preferences_dirty is True
+    # Still pending: only the send itself clears a key, so a failed one is
+    # retried by async_connect() instead of being lost. The unchanged
+    # temp unit is not queued — its command would re-open the machine's
+    # own settings screen for nothing.
+    assert coordinator._pending_unit_pushes == {"weight_unit", "water_source"}
     assert len(hass.created_tasks) == 1
 
 
-def test_push_applies_and_clears_dirty():
+def test_push_applies_the_pending_keys():
     coordinator = _Coordinator(client=_FakeClient(True), hass=_FakeHass())
-    coordinator._unit_preferences_dirty = True
+    coordinator._pending_unit_pushes = {"water_source"}
     applied: list[bool] = []
     coordinator._async_ensure_connected = _async_returning(True)
     coordinator._apply_unit_preferences = _async_recording(applied)
@@ -97,12 +105,11 @@ def test_push_applies_and_clears_dirty():
     asyncio.run(coordinator._async_push_unit_preferences())
 
     assert applied == [True]
-    assert coordinator._unit_preferences_dirty is False
 
 
-def test_push_keeps_dirty_when_the_machine_is_unreachable():
+def test_push_keeps_the_keys_pending_when_the_machine_is_unreachable():
     coordinator = _Coordinator(client=_FakeClient(False), hass=_FakeHass())
-    coordinator._unit_preferences_dirty = True
+    coordinator._pending_unit_pushes = {"water_source"}
     applied: list[bool] = []
     coordinator._async_ensure_connected = _async_raising(
         ConnectionError("not connected")
@@ -112,7 +119,7 @@ def test_push_keeps_dirty_when_the_machine_is_unreachable():
     asyncio.run(coordinator._async_push_unit_preferences())
 
     assert applied == []
-    assert coordinator._unit_preferences_dirty is True
+    assert coordinator._pending_unit_pushes == {"water_source"}
 
 
 def test_machine_side_sync_is_ignored_while_a_push_is_pending():
@@ -122,7 +129,7 @@ def test_machine_side_sync_is_ignored_while_a_push_is_pending():
     """
     coordinator = _Coordinator(client=_FakeClient(True), hass=_FakeHass())
     coordinator.water_source = 1  # user picked "direct", not pushed yet
-    coordinator._unit_preferences_dirty = True
+    coordinator._pending_unit_pushes = {"water_source"}
 
     asyncio.run(
         coordinator._async_sync_units_from_machine(
@@ -147,6 +154,76 @@ def test_machine_side_sync_applies_when_nothing_is_pending():
 
     assert coordinator.water_source == 1
     assert persisted == [True]
+
+
+class _RecordingClient:
+    """Records ACK-gated sends; optionally times out on given commands."""
+
+    is_connected = True
+
+    def __init__(self, timeout_commands: tuple[int, ...] = ()) -> None:
+        self.sent: list[tuple[int, object]] = []
+        self._timeout_commands = timeout_commands
+
+    async def send_and_wait(self, command, data=None, *, raw=None, **kwargs):
+        self.sent.append((command, raw if raw is not None else data))
+        if command in self._timeout_commands:
+            raise AckTimeout(f"No ACK for {command}")
+        return b""
+
+
+def test_only_the_changed_setting_is_sent():
+    """Sending all three commands for one changed setting is what put the
+    machine into its own settings wizard (hardware-reported 2026-08-24)."""
+    client = _RecordingClient()
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+    coordinator.water_source = 1
+    coordinator._pending_unit_pushes = {"water_source"}
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == [(4508, [1])]
+    assert coordinator._pending_unit_pushes == set()
+
+
+def test_each_setting_maps_to_its_own_command():
+    client = _RecordingClient()
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+    coordinator._weight_unit = "oz"
+    coordinator._temp_unit = "f"
+    coordinator._pending_unit_pushes = {"weight_unit", "temp_unit", "water_source"}
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == [(8005, b"\x01"), (8010, b"\x01"), (4508, [0])]
+
+
+def test_a_timed_out_send_is_retried_once_then_given_up_on():
+    """A key that can never be acknowledged must not stay pending — it
+    would re-open the machine's settings screen on every connect."""
+    client = _RecordingClient(timeout_commands=(4508,))
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+    coordinator._pending_unit_pushes = {"water_source"}
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == [(4508, [0]), (4508, [0])]
+    assert coordinator._pending_unit_pushes == set()
+
+
+def test_a_send_that_could_not_be_attempted_stays_pending():
+    class _DeadClient:
+        is_connected = False
+
+        async def send_and_wait(self, *args, **kwargs):
+            raise ConnectionError("Not connected to device")
+
+    coordinator = _Coordinator(client=_DeadClient(), hass=_FakeHass())
+    coordinator._pending_unit_pushes = {"water_source"}
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert coordinator._pending_unit_pushes == {"water_source"}
 
 
 def _async_returning(value):
