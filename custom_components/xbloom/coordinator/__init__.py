@@ -410,8 +410,8 @@ class XBloomCoordinator(
             via_device=(DOMAIN, self.entry_id),
         )
         if self.hass:
-            main_device = dr.async_get(self.hass).async_get_device(
-                identifiers={(DOMAIN, self.entry_id)}
+            main_device = dr.async_get(self.hass).async_get_device_by_identifier(
+                (DOMAIN, self.entry_id), self.entry_id
             )
             if main_device and main_device.area_id:
                 area = ar.async_get(self.hass).async_get_area(main_device.area_id)
