@@ -204,7 +204,9 @@ class ConnectionMixin:
 
         try:
             registry = dr.async_get(self.hass)
-            device = registry.async_get_device(identifiers={(DOMAIN, self.entry_id)})
+            device = registry.async_get_device_by_identifier(
+                (DOMAIN, self.entry_id), self.entry_id
+            )
             if device is not None:
                 updates: dict[str, Any] = {}
                 if serial and device.serial_number != serial:
