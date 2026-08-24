@@ -304,6 +304,16 @@ class AdvancedSettingsMixin:
             if display_brightness_level is not None:
                 await self.client.async_set_display_brightness(display_brightness_level)
                 await asyncio.sleep(0.3)
+                # The brightness SET leaves the machine on its own display
+                # page; the official app chains backToHome() (8022) off that
+                # command's success callback for exactly this reason
+                # (jadx 2026-08-24, MachineDisplayActivity.saveDisplay →
+                # syncWithServer → backToHomeAndExitForJ15). Same shape as
+                # the water-source page the user had to dismiss by hand —
+                # see connection.py's _async_return_machine_home. Not
+                # applied to pour radius / vibration amplitude: their own
+                # app screens send no such follow-up.
+                await self._async_return_machine_home(self.client)
         except Exception as exc:
             _LOGGER.error("Advanced settings error: %s", exc, exc_info=True)
             return {

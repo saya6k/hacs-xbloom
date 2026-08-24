@@ -235,3 +235,12 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
   도달하지 못했습니다 — 지금은 하나씩 ACK 게이트로 보내고
   (`_apply_unit_preferences`), 각 SET이 머신 화면의 해당 페이지를 열기
   때문에 실제로 바뀐 설정만 전송합니다.
+- **설정 SET은 머신을 해당 설정 페이지에 남겨둡니다**. 사용자가 직접 확인해
+  줄 때까지 그 화면에서 대기합니다(사용자 보고 2026-08-24: `4508` 이후
+  TAP/TANK 확인 화면에서 멈춤). 공식 앱은 SET의 성공 콜백에서
+  `backToHome()` = **`8022`** 를 이어 보내는 방식으로 처리합니다 —
+  `WaterSourceActivity.saveWaterTypeForJ15`와
+  `MachineDisplayActivity.saveDisplay`(밝기 `8103`) 둘 다 그렇고, 펌 반경 /
+  진동 진폭 화면에는 이런 후속 전송이 없습니다(jadx 2026-08-24). 이
+  통합구성요소는 설정 푸시 후 `8022`를 한 번 보냅니다
+  (`_async_return_machine_home`, best-effort).

@@ -182,7 +182,9 @@ def test_only_the_changed_setting_is_sent():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(4508, [1])]
+    # 8022 (back to home) follows, or the machine sits on its TAP/TANK
+    # page waiting for a manual confirm — see _async_return_machine_home.
+    assert client.sent == [(4508, [1]), (8022, None)]
     assert coordinator._pending_unit_pushes == set()
 
 
@@ -195,7 +197,9 @@ def test_each_setting_maps_to_its_own_command():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(8005, b"\x01"), (8010, b"\x01"), (4508, [0])]
+    assert client.sent == [
+        (8005, b"\x01"), (8010, b"\x01"), (4508, [0]), (8022, None),
+    ]
 
 
 def test_a_timed_out_send_is_retried_once_then_given_up_on():
@@ -207,8 +211,20 @@ def test_a_timed_out_send_is_retried_once_then_given_up_on():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(4508, [0]), (4508, [0])]
+    assert client.sent == [(4508, [0]), (4508, [0]), (8022, None)]
     assert coordinator._pending_unit_pushes == set()
+
+
+def test_nothing_pending_sends_nothing_at_all():
+    """No settings command means no page was opened, so no back-to-home
+    either — 8022 on its own would yank the machine off whatever screen
+    the user is on."""
+    client = _RecordingClient()
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == []
 
 
 def test_a_send_that_could_not_be_attempted_stays_pending():
