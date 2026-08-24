@@ -1,4 +1,5 @@
-"""Service strings must not contain ICU placeholders.
+"""Service strings must not contain ICU placeholders, and no translated
+string may contain angle brackets.
 
 Hardware-reported 2026-08-24: opening the services UI spammed
 
@@ -13,6 +14,11 @@ string through formatjs — so `{id}` was read as a placeholder, not as
 literal text. Config-flow strings can legitimately use placeholders (the
 flow supplies description_placeholders), but service names/descriptions
 have no such mechanism, so any brace there is a bug.
+
+The first fix for that wrote the URL as `.../recipe/<id>`, and hassfest
+rejected it: "the string should not contain HTML". Angle brackets are
+banned in *every* translated string, not just service ones — hence the
+second test. The placeholder is now a plain `ID`.
 """
 from __future__ import annotations
 
@@ -43,4 +49,15 @@ def test_service_strings_have_no_icu_placeholders():
         for path, text in _walk(services):
             if _PLACEHOLDER.search(text):
                 offenders.append(f"{file.name}: services.{path} -> {text}")
+    assert not offenders, "\n".join(offenders)
+
+
+def test_no_translated_string_contains_angle_brackets():
+    """hassfest rejects any translation string containing `<` or `>` as
+    HTML, which fails CI for the whole integration."""
+    offenders = []
+    for file in _FILES:
+        for path, text in _walk(json.loads(file.read_text())):
+            if "<" in text or ">" in text:
+                offenders.append(f"{file.name}: {path} -> {text}")
     assert not offenders, "\n".join(offenders)
