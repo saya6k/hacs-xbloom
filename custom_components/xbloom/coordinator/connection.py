@@ -325,7 +325,8 @@ class ConnectionMixin:
         await self.async_refresh()
 
     def _handle_unexpected_disconnect(self) -> None:
-        """Reconnect after the machine drops the BLE link on its own.
+        """Note that the machine dropped the BLE link on its own, and let
+        the reconnect supervisor pick it back up on its next poll tick.
 
         Live-observed 2026-07-04: the machine briefly drops the link when
         switching Easy<->Pro mode, and this integration had no watchdog for
@@ -333,15 +334,32 @@ class ConnectionMixin:
         user flipped it back on manually. Skipped when the drop was caused
         by our own ``async_disconnect()`` (``_manual_disconnect``), so
         turning the connection switch off doesn't immediately reconnect.
+
+        Deliberately does NOT reconnect inline (it did until 2026-08-24),
+        for the same reason ``_async_drop_stale_link`` stopped doing so on
+        2026-07-19: the official app's supervisor reconnects at most once
+        per 5s tick, and this was the last path still racing back in
+        milliseconds. That mattered in practice — hardware-measured
+        2026-08-24, the machine re-advertises 1.0-1.9s after a disconnect
+        and another central can take it 2.0-3.0s after, but a phone needs
+        the user to open the app and scan first. Reconnecting instantly
+        meant HA won that window every time, so "the machine dropped HA to
+        give the phone its slot" turned into HA snatching it straight back
+        and the phone never connecting. The supervisor runs on the poll
+        tick (the telemetry interval, 5s by default), which leaves a wide
+        enough handover window; a user action doesn't wait for it either
+        way, since those go through ``_async_ensure_connected()``.
         """
         if self._manual_disconnect:
             return
-        _LOGGER.warning("XBloom BLE link dropped unexpectedly — reconnecting")
+        _LOGGER.warning(
+            "XBloom BLE link dropped unexpectedly — the reconnect supervisor "
+            "will pick it up on the next poll tick"
+        )
         if self._machine_info_task and not self._machine_info_task.done():
             self._machine_info_task.cancel()
         self._machine_info_task = None
         self.client = None
-        self.hass.async_create_task(self.async_connect())
 
     def _schedule_machine_info_retry(self) -> None:
         """Kick off a background retry task to populate MachineInfo if missing.
