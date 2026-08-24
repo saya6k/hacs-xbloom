@@ -29,10 +29,9 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
-> **Requires Home Assistant 2026.8.0 or newer** (until the 2026.8 beta ships,
-> that means a dev nightly ≥ `2026.8.0.dev202607110310`). The Assist/LLM
-> tools ride on HA's new `llm` tools platform; on older versions the LLM API
-> fails at conversation time.
+> **Requires Home Assistant `2026.9.0.dev202608241354` or newer.** This build
+> adds child devices, which represent the Studio's grinder, scale, and brewer
+> as logical parts of the main machine. Older versions are not supported.
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
 2. Install **XBloom Coffee Machine**.

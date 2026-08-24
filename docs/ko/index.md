@@ -29,10 +29,9 @@
 
 ## 설치 (HACS)
 
-> **Home Assistant 2026.8.0 이상 필요** (2026.8 베타 공개 전까지는 dev
-> 나이틀리 ≥ `2026.8.0.dev202607110310`). Assist/LLM 도구가 HA의 새 `llm`
-> 도구 플랫폼 위에서 동작하며, 이전 버전에서는 LLM API가 대화 시점에
-> 실패합니다.
+> **Home Assistant `2026.9.0.dev202608241354` 이상 필요.** 이 빌드부터
+> Studio의 그라인더, 저울, 브루어를 메인 머신의 논리적 구성 요소로
+> 표현하는 child device를 지원합니다. 이전 버전은 지원하지 않습니다.
 
 1. HACS → Integrations → ⋮ → **Custom repositories**에서 이 repo URL을 카테고리 **Integration**으로 추가.
 2. **XBloom Coffee Machine** 설치.

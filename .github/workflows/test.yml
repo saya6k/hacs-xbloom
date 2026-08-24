@@ -3,7 +3,7 @@ name: Test
 # Reusable: ruff lint + pytest suite. Called by ci.yml on every push/PR.
 #
 # The suite runs against the same Home Assistant the integration targets:
-# requirements_test.txt names 2026.8.0b0 and the tests use plain pytest with a
+# requirements_test.txt names the pinned 2026.9 dev build; tests use pytest with a
 # sys.path conftest, so there is no pytest-homeassistant-custom-component pin
 # dragging CI back to an older core.
 # yamllint disable-line rule:truthy

@@ -31,10 +31,8 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from custom_components.xbloom._cloud_client import XBloomCloudClient
@@ -107,6 +105,7 @@ class XBloomCoordinator(
         )
         self.mac_address = mac_address
         self.entry_id = entry_id
+        self.parent_device_id: str | None = None
         self.client: XBloomClient | None = None
         self._connect_lock = asyncio.Lock()
         self._machine_info_task: asyncio.Task | None = None
@@ -376,14 +375,11 @@ class XBloomCoordinator(
             info["sw_version"] = version
         return info
 
-    def _sub_device_info(self, key: str) -> DeviceInfo:
-        """Child DeviceInfo for a physical sub-component (grinder/scale/brewer).
+    def _sub_device_info(self, key: str) -> ChildDeviceInfo:
+        """Child device info for a logical machine component.
 
-        Same config entry, separate device-registry entry — nested under
-        the main device via ``via_device`` so its page only shows that
-        component's entities instead of everything at once. unique_ids
-        are untouched, so this is a pure device-registry regrouping: no
-        entity_id changes, no automation/dashboard breakage.
+        Existing identifiers are retained so Home Assistant converts the
+        former via devices in place, preserving device ids and automations.
 
         ``translation_key`` (not a literal ``name``) + the top-level
         ``device.<key>.name`` block in strings.json/translations — a
@@ -392,41 +388,27 @@ class XBloomCoordinator(
         untranslated "Grinder"/"Scale"/"Brewer" on a Korean-language
         instance).
 
-        ``via_device`` only nests the device-registry entry under the
-        main device (the "connected via" grouping on its page) — HA does
-        NOT propagate area assignment through it (confirmed live
-        2026-07-16: setting the main device's area left the sub-devices
-        unassigned). ``suggested_area`` fills that gap for first-time
-        creation only: it pre-fills the sub-device's area with whatever
-        the main device is *currently* assigned to, without overriding a
-        later manual change on either device — same one-time-only
-        semantics HA already uses for the initial area suggestion on
-        newly discovered devices.
+        The main device is registered before platforms are forwarded, so
+        ``parent_device_id`` is always available when entity device info is
+        read. Child devices inherit the parent's area unless users assign an
+        explicit area to the child.
         """
-        info = DeviceInfo(
+        if self.parent_device_id is None:
+            raise RuntimeError("XBloom main device has not been registered")
+        return ChildDeviceInfo(
             identifiers={(DOMAIN, f"{self.entry_id}_{key}")},
             translation_key=key,
-            manufacturer="XBloom",
-            via_device=(DOMAIN, self.entry_id),
+            parent_device_id=self.parent_device_id,
         )
-        if self.hass:
-            main_device = dr.async_get(self.hass).async_get_device_by_identifier(
-                (DOMAIN, self.entry_id), self.entry_id
-            )
-            if main_device and main_device.area_id:
-                area = ar.async_get(self.hass).async_get_area(main_device.area_id)
-                if area:
-                    info["suggested_area"] = area.name
-        return info
 
     @property
-    def grinder_device_info(self) -> DeviceInfo:
+    def grinder_device_info(self) -> ChildDeviceInfo:
         return self._sub_device_info("grinder")
 
     @property
-    def scale_device_info(self) -> DeviceInfo:
+    def scale_device_info(self) -> ChildDeviceInfo:
         return self._sub_device_info("scale")
 
     @property
-    def brewer_device_info(self) -> DeviceInfo:
+    def brewer_device_info(self) -> ChildDeviceInfo:
         return self._sub_device_info("brewer")

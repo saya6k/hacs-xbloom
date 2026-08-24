@@ -1,7 +1,7 @@
 {
   "name": "XBloom Coffee Machine",
   "render_readme": true,
-  "homeassistant": "2026.8.0b0",
+  "homeassistant": "2026.9.0.dev202608241354",
   "zip_release": true,
   "filename": "xbloom.zip"
 }
