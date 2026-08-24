@@ -277,7 +277,9 @@ class ConnectionMixin:
                     # confirmed 2026-07-17). If MachineInfo hasn't arrived
                     # yet, _machine_info_retry_loop fires this once it does.
                     if self.hass and client.status.serial_number:
-                        self.hass.async_create_task(self._async_refresh_advanced_settings())
+                        self.hass.async_create_task(
+                            self._async_refresh_advanced_settings(client)
+                        )
                     self.client = client
                     return True
 

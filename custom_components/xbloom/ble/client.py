@@ -122,6 +122,24 @@ _RAW_STATE_LABEL_MAP = {
 _SCALE_CAL_ENTRY_CODES = frozenset({0x39, 0x3A})
 _SCALE_CAL_RUN_CODES = frozenset({0x39, 0x3A, 0x3B, 0x3F})
 
+# Free-running telemetry streams — their RECV CMD line logs at DEBUG, not
+# INFO. Measured on hardware 2026-08-24: of 6307 frames in a 4-minute
+# session, 20501 and 40523 accounted for 6288 of them (~26 lines/sec,
+# alternating at ~10 Hz each), which tripped HA's own "Module ... is
+# logging too frequently. 200 messages since last count" limiter and
+# buried every meaningful line in home-assistant.log at default INFO.
+# Everything else in that session fired 14 times or fewer — even 8023,
+# which turns out to be change-driven rather than a true heartbeat — so
+# the rest of the command table stays at INFO. 10507/40505 are the same
+# class of stream (the other weight id, and the gear position during a
+# calibration sweep at ~5 Hz) and are included pre-emptively.
+_HIGH_RATE_TELEMETRY_CMDS = frozenset({
+    10507,  # CURRENT_WEIGHT
+    20501,  # CURRENT_WEIGHT2
+    40505,  # GEAR_REPORT
+    40523,  # WATER_VOLUME
+})
+
 # Machine screen (page) codes from the same heartbeat/8023 channel as
 # _RAW_STATE_LABEL_MAP — hardware-captured 2026-07-20 (T2, see project memory
 # xbloom-t2-screen-code-capture). The two maps are deliberately disjoint: one
@@ -829,7 +847,10 @@ class XBloomClient:
 
     def _parse_response(self, frame: bytes) -> None:
         cmd = frame_command(frame)
-        _LOGGER.info("RECV CMD: %s (%s) | DATA: %s", cmd, command_name(cmd), frame.hex())
+        _LOGGER.log(
+            logging.DEBUG if cmd in _HIGH_RATE_TELEMETRY_CMDS else logging.INFO,
+            "RECV CMD: %s (%s) | DATA: %s", cmd, command_name(cmd), frame.hex(),
+        )
         self._resolve_pending_acks(cmd, frame)
         try:
             response = Response(cmd)

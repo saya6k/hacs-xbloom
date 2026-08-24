@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from custom_components.xbloom.ble.client import XBloomClient
+
 from .constants import _pour_radius_level_to_raw, _vibration_level_to_raw
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,7 +84,9 @@ class AdvancedSettingsMixin:
             self.client._fire_event("notification", "grinder_calibration_complete")
             await self.async_refresh()
 
-    async def _async_refresh_advanced_settings(self) -> None:
+    async def _async_refresh_advanced_settings(
+        self, client: XBloomClient | None = None
+    ) -> None:
         """Fire-and-forget GET for pour_radius/vibration_amplitude, once
         per connect. These are request/response (not passive telemetry),
         so nothing populates the two sensors until this runs — see
@@ -116,12 +120,25 @@ class AdvancedSettingsMixin:
         busy replying to the first request when the second arrives, and
         silently drops it rather than queuing it), while 0.6s/1.0s/1.5s
         gaps all succeeded consistently. 0.8s below is used for margin.
+
+        ``client`` lets ``async_connect()`` pass its own local client
+        reference, for the same reason ``_apply_unit_preferences`` takes
+        one: this runs as a background task, so a disconnect landing
+        first nulls ``self.client`` out from under it — hardware-reported
+        2026-08-24, a link that dropped seconds after connect turned this
+        into ``'NoneType' object has no attribute 'async_get_pour_radius'``
+        instead of a clean "not connected". Callers that have no local
+        reference pass nothing and get the None check below.
         """
+        client = client or self.client
+        if client is None:
+            _LOGGER.debug("Advanced settings refresh skipped — not connected")
+            return
         _LOGGER.info("Requesting pour_radius / vibration_amplitude (cmd 11506/11508)…")
         try:
-            await self.client.async_get_pour_radius()
+            await client.async_get_pour_radius()
             await asyncio.sleep(0.8)
-            await self.client.async_get_vibration_amplitude()
+            await client.async_get_vibration_amplitude()
             _LOGGER.info("Advanced settings GET sent (pour_radius/vibration_amplitude)")
         except Exception as exc:
             _LOGGER.warning("Advanced settings refresh failed: %s", exc)

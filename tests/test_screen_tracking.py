@@ -238,3 +238,21 @@ def test_a_real_brew_after_a_calibration_still_reports_brewing():
     assert client.status.raw_state_label == "starting"
     client._on_notification(None, bytearray(_heartbeat(0x3B)))
     assert client.status.raw_state_label == "brewing"
+
+
+def test_high_rate_telemetry_does_not_log_at_info(caplog):
+    """20501/40523 stream at ~10 Hz each; at INFO they tripped HA's
+    "logging too frequently" limiter and buried everything else in
+    home-assistant.log (hardware-reported 2026-08-24)."""
+    client = _client()
+    with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
+        client._on_notification(None, bytearray(_frame(20501, struct.pack("<I", 0))))
+        client._on_notification(None, bytearray(_frame(40523, struct.pack("<I", 0))))
+    assert not [r for r in caplog.records if r.levelno >= logging.INFO]
+
+
+def test_other_commands_still_log_at_info(caplog):
+    client = _client()
+    with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
+        client._on_notification(None, bytearray(_heartbeat(0x01)))
+    assert [r for r in caplog.records if "RECV CMD: 8023" in r.getMessage()]
