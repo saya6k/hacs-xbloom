@@ -39,8 +39,15 @@ class HABleakConnection:
         self._hass = hass
         self._client: BleakClient | None = None
         self._disconnected_callback = disconnected_callback
+        # Set by our own disconnect() so the drop callback can tell a
+        # deliberate teardown (idle standby, the connection switch, a
+        # stale-link drop) from the machine or the adapter dropping us.
+        # Cleared on connect rather than in disconnect()'s finally — the
+        # callback can land after disconnect() has already returned.
+        self._expect_disconnect = False
 
     async def connect(self, address: str, timeout: float = 20.0) -> bool:
+        self._expect_disconnect = False
         ble_device = bluetooth.async_ble_device_from_address(
             self._hass, address, connectable=True
         )
@@ -58,15 +65,24 @@ class HABleakConnection:
     def _on_bleak_disconnected(self, client: BleakClient) -> None:
         """bleak's own disconnect hook — fires for both requested and dropped links.
 
-        The coordinator tells the two apart (it skips reconnecting after its
-        own ``async_disconnect()``); this just relays the event.
+        The coordinator tells the two apart for *behavior* (it skips
+        reconnecting after its own ``async_disconnect()``); this tells them
+        apart for the *log*. Both used to come out as the same WARNING, so
+        a perfectly normal idle-standby teardown was indistinguishable from
+        a machine that fell off the air — and the line explaining which one
+        it was ("Idle for over Ns — disconnecting…") is INFO, i.e. invisible
+        at HA's default level. Only a drop we didn't ask for is a warning.
         """
-        _LOGGER.warning("XBloom BLE link disconnected")
+        if self._expect_disconnect:
+            _LOGGER.debug("XBloom BLE link closed (requested)")
+        else:
+            _LOGGER.warning("XBloom BLE link disconnected")
         if self._disconnected_callback:
             self._hass.loop.call_soon_threadsafe(self._disconnected_callback)
 
     async def disconnect(self) -> None:
         if self._client:
+            self._expect_disconnect = True
             await self._client.disconnect()
 
     @property
