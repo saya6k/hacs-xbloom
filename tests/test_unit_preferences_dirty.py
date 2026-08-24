@@ -70,6 +70,7 @@ class _Coordinator(ConnectionMixin):
         self._temp_unit = "c"
         self.water_source = 0
         self._pending_unit_pushes: set[str] = set()
+        self._unit_push_lock = asyncio.Lock()
 
 
 def test_matching_options_is_a_noop():
@@ -253,6 +254,78 @@ def test_a_send_that_could_not_be_attempted_stays_pending():
     asyncio.run(coordinator._apply_unit_preferences())
 
     assert coordinator._pending_unit_pushes == {"water_source"}
+
+
+def test_two_overlapping_pushes_are_serialized():
+    """A second Settings change arriving mid-push must not interleave its
+    SET with the first push's 8022, nor re-send a key the first push has
+    not discarded yet — both hit the documented back-to-back drop quirk.
+    """
+    class _SlowClient(_RecordingClient):
+        async def send_and_wait(self, command, data=None, *, raw=None, **kwargs):
+            self.sent.append((command, raw if raw is not None else data))
+            await asyncio.sleep(0)  # let the queued push run if it can
+            return b""
+
+    client = _SlowClient()
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+    coordinator.water_source = 1
+    coordinator._weight_unit = "oz"
+
+    async def _drive():
+        coordinator._pending_unit_pushes = {"water_source"}
+        first = asyncio.create_task(coordinator._apply_unit_preferences())
+        await asyncio.sleep(0)
+        coordinator._pending_unit_pushes.add("weight_unit")
+        second = asyncio.create_task(coordinator._apply_unit_preferences())
+        await asyncio.gather(first, second)
+
+    asyncio.run(_drive())
+
+    assert client.sent == [
+        (4508, [1]),
+        (8022, None),
+        (8005, bytes([1])),
+        (8022, None),
+    ]
+    assert coordinator._pending_unit_pushes == set()
+
+
+def test_a_change_to_the_same_key_mid_send_is_not_swallowed():
+    """The in-flight send carries the old value, so clearing the key after
+    it would leave the machine on that value while HA shows the newer one.
+    The key stays queued instead — and _handle_unit_options_change has
+    already scheduled the push that drains it, so it never survives into a
+    later connect where the machine's own 8015 report should win.
+    """
+    coordinator = _Coordinator(client=None, hass=_FakeHass())
+    coordinator._weight_unit = "oz"
+
+    class _ChangeMidSendClient(_RecordingClient):
+        """Applies the user's second pick while the first send is awaiting
+        its ACK — what _handle_unit_options_change does to the coordinator.
+        """
+
+        async def send_and_wait(self, command, data=None, *, raw=None, **kwargs):
+            self.sent.append((command, raw if raw is not None else data))
+            if command == 8005 and coordinator._weight_unit == "oz":
+                coordinator._weight_unit = "ml"
+                coordinator._pending_unit_pushes.add("weight_unit")
+            return b""
+
+    client = _ChangeMidSendClient()
+    coordinator.client = client
+
+    coordinator._pending_unit_pushes = {"weight_unit"}
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert coordinator._pending_unit_pushes == {"weight_unit"}
+
+    # The follow-up push (the one _handle_unit_options_change schedules)
+    # delivers the newer value and clears the key.
+    asyncio.run(coordinator._apply_unit_preferences())
+    assert client.sent[-2:] == [(8005, bytes([2])), (8022, None)]
+    assert coordinator._pending_unit_pushes == set()
 
 
 def _async_returning(value):
