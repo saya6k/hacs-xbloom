@@ -176,10 +176,10 @@ def test_known_status_code_does_not_log_at_info(caplog):
     ]
 
 
-# Hardware capture 2026-08-24 — a scale calibration carried through to
-# completion with 100 g / 500 g weights (both earlier sessions cancelled
-# at the confirm screen, which is why the run codes were unknown until
-# now). Exact heartbeat sequence, reconstructed from the raw frame log.
+# Hardware captures 2026-08-24 — two scale calibrations carried through
+# to completion with 100 g / 500 g weights (earlier sessions cancelled at
+# the confirm screen, which is why the run codes were unknown until
+# then). Exact heartbeat sequences, from the raw frame logs.
 _SCALE_CAL_RUN = [
     (0x04, "scale page"),
     (0x05, "scale page"),
@@ -188,6 +188,14 @@ _SCALE_CAL_RUN = [
     (0x3B, "measuring"),
     (0x3F, "+100 g"),
     (0x3B, "+500 g / final measuring"),
+]
+
+# The second run had an extra step the first did not, which the original
+# enumerate-the-run-codes latch dropped out of mid-run.
+_SCALE_CAL_RUN_WITH_EXTRA_STEP = [
+    *_SCALE_CAL_RUN,
+    (0x3C, "extra step, run B only"),
+    (0x3B, "measuring after the extra step"),
 ]
 
 
@@ -256,3 +264,33 @@ def test_other_commands_still_log_at_info(caplog):
     with caplog.at_level(logging.INFO, logger="custom_components.xbloom.ble.client"):
         client._on_notification(None, bytearray(_heartbeat(0x01)))
     assert [r for r in caplog.records if "RECV CMD: 8023" in r.getMessage()]
+
+
+def test_an_unseen_run_step_does_not_end_the_calibration():
+    """Run B (hardware 2026-08-24) emitted 0x3C, which run A never did.
+    The first latch enumerated the run's codes, so 0x3C dropped it and
+    the 0x3B that followed reported "brewing" again — mid-calibration.
+    Unmapped codes now count as further calibration steps."""
+    client = _client()
+    for code, step in _SCALE_CAL_RUN_WITH_EXTRA_STEP:
+        client._on_notification(None, bytearray(_heartbeat(code)))
+        if code in (0x04, 0x05):
+            continue
+        assert client.status.raw_state_label == "calibrating_scale", step
+
+
+def test_run_b_completion_still_ends_the_run():
+    client = _client()
+    for code, _ in _SCALE_CAL_RUN_WITH_EXTRA_STEP:
+        client._on_notification(None, bytearray(_heartbeat(code)))
+    client._on_notification(None, bytearray(_heartbeat(0x25)))
+    assert client.status.raw_state_label is None
+
+
+def test_a_known_state_code_mid_run_ends_the_run():
+    """Only 0x3B is ambiguous. Anything else with a known meaning — a
+    page, or another activity code — means the run is over."""
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x39)))
+    client._on_notification(None, bytearray(_heartbeat(0x22)))  # starting
+    assert client.status.raw_state_label == "starting"
