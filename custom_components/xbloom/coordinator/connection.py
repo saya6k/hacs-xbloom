@@ -587,8 +587,18 @@ class ConnectionMixin:
         matches what the machine actually shows instead of a stale value.
         This is a machine-wins sync (never sets _unit_preferences_dirty) —
         the machine is the source of truth here, there's nothing to push
-        back to it.
+        back to it. The one exception is an outstanding push of our own
+        (_unit_preferences_dirty): the machine reports its *pre-change*
+        values in the 8015 that arrives during the connect handshake, so
+        adopting them there would silently revert the change the user
+        just made in the Settings step.
         """
+        if self._unit_preferences_dirty:
+            _LOGGER.debug(
+                "Ignoring machine-side unit report — a Settings-step change "
+                "is still pending delivery to the machine"
+            )
+            return
         weight = _RAW_TO_WEIGHT_UNIT.get(attrs.get("weight_unit"))
         temp = _RAW_TO_TEMP_UNIT.get(attrs.get("temp_unit"))
         water = attrs.get("water_source")
@@ -618,12 +628,16 @@ class ConnectionMixin:
         When the options match the coordinator's current values this is an
         echo of our own _persist_unit_options() (an 8015 sync, or this same
         method having just applied a change) — nothing to apply. Otherwise
-        adopt the new values: if connected, push them to the machine right
-        away (this is the explicit-user-action case the official app's own
-        Settings-screen button taps mirror); if not connected, mark
-        _unit_preferences_dirty so async_connect() pushes once on the next
-        connect instead of silently dropping the change — see that flag's
-        docstring for why this isn't unconditional on every connect.
+        adopt the new values and push them to the machine right away (this
+        is the explicit-user-action case the official app's own
+        Settings-screen button taps mirror), reconnecting first if the
+        link is down — with idle standby (_session_timeout) that is the
+        normal state between uses, so deferring the push to "whenever
+        something else happens to connect" left a water-source change
+        unapplied indefinitely. _unit_preferences_dirty stays set until
+        the push actually lands, so async_connect() covers the case where
+        the reconnect fails (see that flag's docstring for why the push
+        isn't unconditional on every connect).
         """
         weight = options.get(CONF_WEIGHT_UNIT, self._weight_unit)
         temp = options.get(CONF_TEMP_UNIT, self._temp_unit)
@@ -633,11 +647,28 @@ class ConnectionMixin:
         self._weight_unit = weight
         self._temp_unit = temp
         self.water_source = water
-        if self.client and self.client.is_connected:
-            self.hass.async_create_task(self._apply_unit_preferences())
-            self._unit_preferences_dirty = False
-        else:
-            self._unit_preferences_dirty = True
+        self._unit_preferences_dirty = True
+        self.hass.async_create_task(self._async_push_unit_preferences())
+
+    async def _async_push_unit_preferences(self) -> None:
+        """Connect if needed, then push the pending unit/water-source values.
+
+        Leaves _unit_preferences_dirty set if the machine can't be reached
+        (off, out of range, or the connection switch turned off), so
+        async_connect() picks the change up on the next successful connect.
+        """
+        try:
+            await self._async_ensure_connected()
+        except Exception as exc:
+            _LOGGER.warning(
+                "Display unit preferences not applied yet (%s) — will push "
+                "on the next connection", exc,
+            )
+            return
+        if not self._unit_preferences_dirty:
+            return  # async_connect() pushed them on the way in
+        await self._apply_unit_preferences()
+        self._unit_preferences_dirty = False
 
     # ------------------------------------------------------------------
     # Mode switching (Pro / Easy)

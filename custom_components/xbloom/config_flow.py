@@ -391,28 +391,63 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
 
     # ── Settings (telemetry + session timeout + display units + water source) ──
 
+    def _effective_settings(self) -> dict[str, Any]:
+        """Current value of every Settings-step key (options -> data -> default).
+
+        Telemetry interval and session timeout are written to ``entry.data``
+        by the initial ConfigFlow and only ever reach ``entry.options`` if
+        this step saves them, so both sources have to be consulted — same
+        as __init__.py's own reads.
+        """
+        opts, data = self._entry.options, self._entry.data
+        return {
+            CONF_TELEMETRY_INTERVAL: opts.get(
+                CONF_TELEMETRY_INTERVAL,
+                data.get(CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL),
+            ),
+            CONF_SESSION_TIMEOUT: opts.get(
+                CONF_SESSION_TIMEOUT,
+                data.get(CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT),
+            ),
+            CONF_WEIGHT_UNIT: opts.get(CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT),
+            CONF_TEMP_UNIT: opts.get(CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT),
+            CONF_WATER_SOURCE: opts.get(CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE),
+        }
+
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        current = self._effective_settings()
+
         if user_input is not None:
             settings = dict(user_input)
             water_source_name = settings.pop(CONF_WATER_SOURCE, "tank")
             settings[CONF_WATER_SOURCE] = WATER_SOURCE_OPTIONS.get(
                 water_source_name, DEFAULT_WATER_SOURCE
             )
+            # Persist only what actually changed. The form always submits
+            # all five keys, and on a fresh entry telemetry_interval /
+            # session_timeout aren't in options yet — writing them back
+            # unchanged would make __init__.py's update listener see a
+            # changed key outside _NO_RELOAD_OPTION_KEYS and reload the
+            # entry (dropping BLE) on what is really a units-only edit,
+            # skipping _handle_unit_options_change entirely so the new
+            # value never reaches the machine.
+            settings = {
+                key: value
+                for key, value in settings.items()
+                if value != current.get(key)
+            }
             return self.async_create_entry(
                 title="",
                 data=_save_options(self._entry, settings=settings),
             )
 
-        current_water_source = self._entry.options.get(
-            CONF_WATER_SOURCE, DEFAULT_WATER_SOURCE
-        )
         water_source_name = next(
             (
                 name
                 for name, value in WATER_SOURCE_OPTIONS.items()
-                if value == current_water_source
+                if value == current[CONF_WATER_SOURCE]
             ),
             "tank",
         )
@@ -423,27 +458,15 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Optional(
                         CONF_TELEMETRY_INTERVAL,
-                        default=self._entry.options.get(
-                            CONF_TELEMETRY_INTERVAL,
-                            self._entry.data.get(
-                                CONF_TELEMETRY_INTERVAL, DEFAULT_TELEMETRY_INTERVAL
-                            ),
-                        ),
+                        default=current[CONF_TELEMETRY_INTERVAL],
                     ): vol.All(int, vol.Range(min=1, max=60)),
                     vol.Optional(
                         CONF_SESSION_TIMEOUT,
-                        default=self._entry.options.get(
-                            CONF_SESSION_TIMEOUT,
-                            self._entry.data.get(
-                                CONF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT
-                            ),
-                        ),
+                        default=current[CONF_SESSION_TIMEOUT],
                     ): vol.All(int, vol.Range(min=0, max=3600)),
                     vol.Optional(
                         CONF_WEIGHT_UNIT,
-                        default=self._entry.options.get(
-                            CONF_WEIGHT_UNIT, DEFAULT_WEIGHT_UNIT
-                        ),
+                        default=current[CONF_WEIGHT_UNIT],
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=["g", "oz", "ml"],
@@ -453,9 +476,7 @@ class XBloomOptionsFlow(config_entries.OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_TEMP_UNIT,
-                        default=self._entry.options.get(
-                            CONF_TEMP_UNIT, DEFAULT_TEMP_UNIT
-                        ),
+                        default=current[CONF_TEMP_UNIT],
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=["c", "f"],
