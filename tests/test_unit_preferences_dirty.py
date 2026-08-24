@@ -30,8 +30,21 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from custom_components.xbloom.ble.client import AckTimeout
+from custom_components.xbloom.coordinator import connection as connection_module
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
+
+# Captured before the autouse fixture below patches it out.
+_REAL_SETTLE_S = connection_module._SETTINGS_PAGE_SETTLE_S
+
+
+@pytest.fixture(autouse=True)
+def _no_settle_delay(monkeypatch):
+    """Skip the real back-to-home settle wait (see the test at the bottom
+    for why it exists) so the suite doesn't sleep through it."""
+    monkeypatch.setattr(connection_module, "_SETTINGS_PAGE_SETTLE_S", 0)
 
 
 class _FakeHass:
@@ -182,7 +195,9 @@ def test_only_the_changed_setting_is_sent():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(4508, [1])]
+    # 8022 (back to home) follows, or the machine sits on its TAP/TANK
+    # page waiting for a manual confirm — see _async_return_machine_home.
+    assert client.sent == [(4508, [1]), (8022, None)]
     assert coordinator._pending_unit_pushes == set()
 
 
@@ -195,7 +210,9 @@ def test_each_setting_maps_to_its_own_command():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(8005, b"\x01"), (8010, b"\x01"), (4508, [0])]
+    assert client.sent == [
+        (8005, b"\x01"), (8010, b"\x01"), (4508, [0]), (8022, None),
+    ]
 
 
 def test_a_timed_out_send_is_retried_once_then_given_up_on():
@@ -207,8 +224,20 @@ def test_a_timed_out_send_is_retried_once_then_given_up_on():
 
     asyncio.run(coordinator._apply_unit_preferences())
 
-    assert client.sent == [(4508, [0]), (4508, [0])]
+    assert client.sent == [(4508, [0]), (4508, [0]), (8022, None)]
     assert coordinator._pending_unit_pushes == set()
+
+
+def test_nothing_pending_sends_nothing_at_all():
+    """No settings command means no page was opened, so no back-to-home
+    either — 8022 on its own would yank the machine off whatever screen
+    the user is on."""
+    client = _RecordingClient()
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == []
 
 
 def test_a_send_that_could_not_be_attempted_stays_pending():
@@ -242,3 +271,13 @@ def _async_recording(sink):
     async def _call(*args, **kwargs):
         sink.append(True)
     return _call
+
+
+def test_back_to_home_waits_for_the_page_to_open():
+    """Hardware 2026-08-24: the setting's page opens ~0.46s *after* its
+    command is acknowledged, so an 8022 fired on the ACK lands before the
+    page exists and the machine stays on it. Verified live at 2.5s — also
+    the official app's own backToHomeIn default (2500 ms).
+    """
+    assert _REAL_SETTLE_S >= 2.0
+

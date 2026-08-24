@@ -242,6 +242,26 @@ command id.
   ever echoed, and the water-source change never reached the machine — they
   are ACK-gated one at a time now (`_apply_unit_preferences`), and only the
   setting the user actually changed is sent at all, since each SET opens its
-  own page on the machine's screen. The official app never hits this because its `sendMessage` queue
+  own page on the machine's screen.
+- **A settings SET leaves the machine on that setting's page** and it waits
+  there (hardware-reported 2026-08-24: after `4508` the machine sat on its
+  TAP/TANK check screen until the user confirmed by hand). The official app
+  answers this by chaining `backToHome()` = **`8022`** off the SET's own
+  success callback — `WaterSourceActivity.saveWaterTypeForJ15` and
+  `MachineDisplayActivity.saveDisplay` (brightness `8103`) both do, while the
+  pour-radius / vibration-amplitude screens send no such follow-up (jadx
+  2026-08-24). This integration sends one `8022` after a settings push
+  (`_async_return_machine_home`), best-effort.
+  **The 8022 must not follow the ACK immediately** — the page opens *after*
+  the SET is acknowledged. Measured natively 2026-08-24: `4508` ACKed 0.38 s
+  after the send, the TAP/TANK page (`0x19`) appeared 0.46 s after that; an
+  `8022` sent on the ACK was itself ACKed and did nothing (the machine stayed
+  on `0x19` for the remaining 16 s of the capture), while the same command
+  2.5 s later returned it to `0x01` home within 0.5 s. 2.5 s is also the
+  app's own `MachineJ15Fragment.backToHomeIn` default (2500 ms).
+  Side note from the same capture: `4508` is followed ~90 ms later by a
+  `40522` (`RD_ErrorLackOfWater`) value 0 when the tank is empty — expected
+  on a TAP machine, and the app suppresses that warning entirely while
+  `waterFeed != 0`. The official app never hits this because its `sendMessage` queue
   is ACK-gated (~370–380ms measured); leave ≥0.5s (or ACK-gate) between
   consecutive sends in one flow.

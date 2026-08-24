@@ -40,3 +40,40 @@ def test_level_1_2_3_map_to_raw_1_8_15():
         (Command.SET_DISPLAY_BRIGHTNESS, [8]),
         (Command.SET_DISPLAY_BRIGHTNESS, [15]),
     ]
+
+
+def test_brightness_service_returns_the_machine_home_afterwards():
+    """The 8103 SET leaves the machine on its own display page — the
+    official app chains backToHome() (8022) off that command's success
+    callback, and hardware-reported 2026-08-24 the same shape on the
+    water-source page left the machine waiting for a manual confirm.
+    """
+    from custom_components.xbloom.coordinator.advanced_settings import (
+        AdvancedSettingsMixin,
+    )
+
+    calls: list[str] = []
+
+    class _Coordinator(AdvancedSettingsMixin):
+        def __init__(self) -> None:
+            self.client = self
+
+        async def _async_ensure_connected(self):
+            return True
+
+        async def async_set_display_brightness(self, level):
+            calls.append(f"brightness={level}")
+
+        async def _async_return_machine_home(self, client):
+            calls.append("back_to_home")
+
+        async def async_refresh(self):
+            pass
+
+    coordinator = _Coordinator()
+    result = asyncio.run(
+        coordinator.async_set_advanced_settings(display_brightness_level=2)
+    )
+
+    assert result == {"success": True}
+    assert calls == ["brightness=2", "back_to_home"]

@@ -15,6 +15,7 @@ from homeassistant.helpers import device_registry as dr
 
 from custom_components.xbloom.ble.client import AckTimeout, XBloomClient, strict_ascii
 from custom_components.xbloom.ble.connection import HABleakConnection
+from custom_components.xbloom.ble.constants import Command
 from custom_components.xbloom.ble.models import DeviceStatus
 from custom_components.xbloom.const import (
     CONF_MODE,
@@ -54,6 +55,17 @@ _T = TypeVar("_T")
 # command each (see _apply_unit_preferences/_unit_push_command). Only the
 # keys the user actually changed are ever sent.
 _UNIT_PUSH_ORDER = (CONF_WEIGHT_UNIT, CONF_TEMP_UNIT, CONF_WATER_SOURCE)
+
+# How long to wait after the last settings ACK before sending 8022 (back
+# to home). The setting's page opens on the machine *after* its command is
+# acknowledged — measured on hardware 2026-08-24: 4508 ACKed 0.38s after
+# the send, the TAP/TANK page (status code 0x19) appeared 0.46s after
+# that. An 8022 fired immediately on the ACK therefore lands before the
+# page exists and does nothing (verified: the machine sat on 0x19), while
+# the same command 2.5s later returns it home within 0.5s. 2.5s is also
+# the official app's own constant — MachineJ15Fragment.backToHomeIn's
+# default delay is 2500 ms (jadx 2026-08-24).
+_SETTINGS_PAGE_SETTLE_S = 2.5
 
 
 class ConnectionMixin:
@@ -575,6 +587,10 @@ class ConnectionMixin:
         acknowledged would otherwise re-open the machine's settings
         screen on every single connect.
 
+        Once anything has gone out, 8022 (back to home) follows, or the
+        machine sits on that setting's page waiting for a manual confirm —
+        see ``_async_return_machine_home``.
+
         Never raises; a failure here shouldn't block the rest of
         async_connect(). Keys whose send couldn't even be attempted (the
         link went away mid-sequence) stay pending for the next connect.
@@ -589,6 +605,7 @@ class ConnectionMixin:
         site (``_async_push_unit_preferences``).
         """
         client = client or self.client
+        sent = False
         for key in _UNIT_PUSH_ORDER:
             if key not in self._pending_unit_pushes:
                 continue
@@ -609,6 +626,34 @@ class ConnectionMixin:
             # leave the key pending for the next connect, while an
             # attempted-but-unacknowledged send is given up on.
             self._pending_unit_pushes.discard(key)
+            sent = True
+        if sent:
+            await self._async_return_machine_home(client)
+
+    async def _async_return_machine_home(self, client: XBloomClient) -> None:
+        """Send 8022 (RD_BackToHome) after a settings command.
+
+        A SET lands the machine on that setting's own page and it stays
+        there — hardware-reported 2026-08-24: after the water-source push
+        the machine sat on its TAP/TANK check screen waiting for the user
+        to confirm it by hand. The official app has the same behavior and
+        answers it the same way: ``WaterSourceActivity.saveWaterTypeForJ15``
+        (and ``MachineDisplayActivity.saveDisplay`` for brightness) chains
+        ``backToHome()`` = cmd 8022 off the SET's own success callback
+        (jadx 2026-08-24). One send after the batch covers all three of
+        ours. Best-effort, exactly like the app's own
+        ``sendMessageNoShowFail``: a settings change that landed must not
+        be reported as failed because the display never went home.
+
+        The wait is not optional — see ``_SETTINGS_PAGE_SETTLE_S``: the
+        page opens after the SET is acknowledged, so an immediate 8022
+        arrives too early and the machine stays on it.
+        """
+        await asyncio.sleep(_SETTINGS_PAGE_SETTLE_S)
+        try:
+            await client.send_and_wait(int(Command.BACK_TO_HOME), type_code=1)
+        except Exception as exc:
+            _LOGGER.debug("Back-to-home after a settings push failed: %s", exc)
 
     def _unit_push_command(self, key: str) -> tuple[int, bytes | list, str]:
         """(command id, payload, human-readable value) for one option key."""
