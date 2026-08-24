@@ -591,6 +591,16 @@ class ConnectionMixin:
         machine sits on that setting's page waiting for a manual confirm —
         see ``_async_return_machine_home``.
 
+        The whole sequence is single-flight (``_unit_push_lock``): it spans
+        seconds, and both call sites can be reached concurrently, so a
+        second Settings-step change arriving mid-push would otherwise
+        interleave its SET with this one's 8022 or re-send a key not yet
+        discarded. The per-key ``in _pending_unit_pushes`` check is the
+        re-check a queued caller needs — it sends only what the holder
+        didn't. Nothing awaited under the lock takes ``_connect_lock``
+        (the connect happens in ``_async_push_unit_preferences`` before
+        this call), so the two can't deadlock.
+
         Never raises; a failure here shouldn't block the rest of
         async_connect(). Keys whose send couldn't even be attempted (the
         link went away mid-sequence) stay pending for the next connect.
@@ -605,30 +615,44 @@ class ConnectionMixin:
         site (``_async_push_unit_preferences``).
         """
         client = client or self.client
-        sent = False
-        for key in _UNIT_PUSH_ORDER:
-            if key not in self._pending_unit_pushes:
-                continue
-            command, payload, shown = self._unit_push_command(key)
-            try:
-                await self._async_send_unit_command(client, command, payload)
-            except AckTimeout as exc:
-                _LOGGER.warning(
-                    "Machine never acknowledged %s (%s) — it may not have "
-                    "been applied: %s", key, shown, exc,
-                )
-            except Exception as exc:
-                _LOGGER.warning("Failed to apply %s (%s): %s", key, shown, exc)
-                return
-            else:
-                _LOGGER.info("Applied machine setting %s=%s", key, shown)
-            # Not in a `finally`: the hard-failure `return` above must
-            # leave the key pending for the next connect, while an
-            # attempted-but-unacknowledged send is given up on.
-            self._pending_unit_pushes.discard(key)
-            sent = True
-        if sent:
-            await self._async_return_machine_home(client)
+        async with self._unit_push_lock:
+            sent = False
+            for key in _UNIT_PUSH_ORDER:
+                if key not in self._pending_unit_pushes:
+                    continue
+                command, payload, shown = self._unit_push_command(key)
+                try:
+                    await self._async_send_unit_command(client, command, payload)
+                except AckTimeout as exc:
+                    _LOGGER.warning(
+                        "Machine never acknowledged %s (%s) — it may not have "
+                        "been applied: %s", key, shown, exc,
+                    )
+                except Exception as exc:
+                    _LOGGER.warning("Failed to apply %s (%s): %s", key, shown, exc)
+                    return
+                else:
+                    _LOGGER.info("Applied machine setting %s=%s", key, shown)
+                # Not in a `finally`: the hard-failure `return` above must
+                # leave the key pending for the next connect, while an
+                # attempted-but-unacknowledged send is given up on.
+                #
+                # Only clear it if the value just sent is still the current
+                # one. A Settings change to this same key while the send was
+                # in flight re-queued the key with a newer value, and
+                # discarding it here would drop that change on the floor —
+                # the machine would keep the value we sent while HA showed
+                # the newer one. Re-queuing is safe for the connect-time
+                # machine-wins rule because _handle_unit_options_change
+                # always schedules its own push alongside the re-queue: the
+                # key is picked up by that push (next in line for this
+                # lock), so it never survives into a later connect where the
+                # machine's own 8015 report should win.
+                if self._unit_push_command(key)[1] == payload:
+                    self._pending_unit_pushes.discard(key)
+                sent = True
+            if sent:
+                await self._async_return_machine_home(client)
 
     async def _async_return_machine_home(self, client: XBloomClient) -> None:
         """Send 8022 (RD_BackToHome) after a settings command.

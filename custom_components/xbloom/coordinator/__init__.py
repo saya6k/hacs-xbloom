@@ -197,6 +197,15 @@ class XBloomCoordinator(
         # water-source change.
         self._pending_unit_pushes: set[str] = set()
 
+        # Single-flight gate for _apply_unit_preferences. Its two call
+        # sites (async_connect and _async_push_unit_preferences) are both
+        # reachable concurrently, and one push takes seconds — an ACK per
+        # key plus _SETTINGS_PAGE_SETTLE_S before its 8022. Unserialized,
+        # a second change landing in that window sends its SET back-to-back
+        # with the first push's 8022 (the documented dropped-second-command
+        # quirk) or re-sends a key the first push hasn't discarded yet.
+        self._unit_push_lock = asyncio.Lock()
+
         # Event entity callbacks registered by event.py entities.
         # List (not set) so ordering is preserved; guarded by _event_lock.
         self._event_listeners: list[Callable[[str, str, dict], None]] = []
