@@ -7,7 +7,12 @@ from homeassistant.components.sensor import (
     SensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfElectricPotential, UnitOfMass, UnitOfTemperature
+from homeassistant.const import (
+    UnitOfElectricPotential,
+    UnitOfMass,
+    UnitOfTemperature,
+    UnitOfVolumeFlowRate,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -108,7 +113,13 @@ class XBloomFlowRateSensor(_XBloomSensor):
 
     _attr_translation_key = "flow_rate"
     _attr_unique_id = "xbloom_flow_rate"
-    _attr_native_unit_of_measurement = "mL/s"
+    _attr_device_class = SensorDeviceClass.VOLUME_FLOW_RATE
+    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.MILLILITERS_PER_SECOND
+    # Pinned because the device class would otherwise infer it: HA's
+    # UNITS_PRECISION anchors volume_flow_rate at L/s with 0 decimals, and
+    # scaling that to mL/s lands on the DEFAULT_PRECISION_LIMIT cap of 2 —
+    # showing "3.00 mL/s" where every recipe flow_rate is one decimal.
+    _attr_suggested_display_precision = 1
 
     @property
     def device_info(self) -> ChildDeviceInfo:
