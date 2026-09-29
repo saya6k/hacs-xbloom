@@ -1,4 +1,5 @@
 """Tool: get_xbloom_status — read current machine state."""
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,10 @@ class XBloomStatusTool(XBloomBaseTool):
     """Return the current state of the XBloom machine."""
 
     name = "get_xbloom_status"
+    title = "Get XBloom status"
+    annotations = llm.ToolAnnotations(
+        read_only=True, destructive=False, idempotent=True, open_world=True
+    )
     description = (
         "Get the current status of the XBloom coffee machine: BLE connection, "
         "running state (idle/grinding/brewing/paused/error/sleeping), brewer "
@@ -29,7 +34,7 @@ class XBloomStatusTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         client = self.coordinator.client
         if client is None or not client.is_connected:
             try:
@@ -38,34 +43,39 @@ class XBloomStatusTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before status failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "connected": False,
-                    "mac_address": self.coordinator.mac_address,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "connected": False,
+                        "mac_address": self.coordinator.mac_address,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         data = self.coordinator.data or {}
 
-        return {
-            "connected": True,
-            "mac_address": self.coordinator.mac_address,
-            "state": data.get("state", "unknown"),
-            "brewer_temperature_c": data.get("temperature", 0.0),
-            "scale_weight_g": data.get("weight", 0.0),
-            "grinder_running": bool(data.get("grinder_running")),
-            "brewer_running": bool(data.get("brewer_running")),
-            "water_level_ok": bool(data.get("water_level_ok")),
-            "firmware_version": data.get("version") or "",
-            "serial_number": data.get("serial_number") or "",
-            "error": data.get("error"),
-            "instruction": (
-                "Summarize the machine status conversationally. Mention only "
-                "the fields that are relevant to what the user asked. Do not "
-                "list raw key/value pairs."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "connected": True,
+                "mac_address": self.coordinator.mac_address,
+                "state": data.get("state", "unknown"),
+                "brewer_temperature_c": data.get("temperature", 0.0),
+                "scale_weight_g": data.get("weight", 0.0),
+                "grinder_running": bool(data.get("grinder_running")),
+                "brewer_running": bool(data.get("brewer_running")),
+                "water_level_ok": bool(data.get("water_level_ok")),
+                "firmware_version": data.get("version") or "",
+                "serial_number": data.get("serial_number") or "",
+                "error": data.get("error"),
+                "instruction": (
+                    "Summarize the machine status conversationally. Mention only "
+                    "the fields that are relevant to what the user asked. Do not "
+                    "list raw key/value pairs."
+                ),
+            }
+        )

@@ -1,4 +1,5 @@
 """Tools: list_xbloom_recipes and execute_xbloom_recipe."""
+
 from __future__ import annotations
 
 import logging
@@ -85,14 +86,16 @@ def _detail_recipe(raw: dict) -> dict:
             pat_name = pat.strip().lower()
         else:
             pat_name = _PATTERN_INT_TO_NAME.get(int(pat), "spiral")
-        pours.append({
-            "pour_index": i,
-            "volume_ml": p.get("volume_ml"),
-            "temperature_c": p.get("temperature_c"),
-            "flow_rate": p.get("flow_rate", 3.0),
-            "pattern": pat_name,
-            "pause_seconds": p.get("pause_seconds", 0),
-        })
+        pours.append(
+            {
+                "pour_index": i,
+                "volume_ml": p.get("volume_ml"),
+                "temperature_c": p.get("temperature_c"),
+                "flow_rate": p.get("flow_rate", 3.0),
+                "pattern": pat_name,
+                "pause_seconds": p.get("pause_seconds", 0),
+            }
+        )
     return {
         "name": raw.get("name"),
         "cup_type": raw.get("cup_type", "omni_dripper"),
@@ -110,6 +113,10 @@ class XBloomGetRecipeTool(XBloomBaseTool):
     """Return the full configuration of one saved recipe."""
 
     name = "get_xbloom_recipe"
+    title = "Get XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=True, destructive=False, idempotent=True, open_world=False
+    )
     description = (
         "Get the full configuration of one saved XBloom recipe: "
         "grind size, RPM, bean weight, total water, and every pour's "
@@ -130,27 +137,31 @@ class XBloomGetRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
-        resolved, err = _resolve_or_error(
-            self.coordinator, tool_input.tool_args["recipe"]
-        )
+    ) -> llm.ToolResult:
+        resolved, err = _resolve_or_error(self.coordinator, tool_input.tool_args["recipe"])
         if err:
-            return err
-        return {
-            "success": True,
-            "recipe": _detail_recipe(resolved[1]),
-            "instruction": (
-                "Use these values to decide any grind_size / rpm / "
-                "pour_overrides you pass to execute_xbloom_recipe. Only "
-                "override what the user asked to change."
-            ),
-        }
+            return llm.ToolResult(data=err, error=True)
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "recipe": _detail_recipe(resolved[1]),
+                "instruction": (
+                    "Use these values to decide any grind_size / rpm / "
+                    "pour_overrides you pass to execute_xbloom_recipe. Only "
+                    "override what the user asked to change."
+                ),
+            }
+        )
 
 
 class XBloomListRecipesTool(XBloomBaseTool):
     """List recipes configured for this machine."""
 
     name = "list_xbloom_recipes"
+    title = "List XBloom recipes"
+    annotations = llm.ToolAnnotations(
+        read_only=True, destructive=False, idempotent=True, open_world=False
+    )
     description = (
         "List every local XBloom recipe (the source of truth — what the "
         "Recipe dropdown shows), with a short summary of each: local uid, "
@@ -174,7 +185,7 @@ class XBloomListRecipesTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         recipes = self.coordinator.recipes or {}
         query = (tool_input.tool_args.get("query") or "").strip().lower()
         rows = [
@@ -183,27 +194,34 @@ class XBloomListRecipesTool(XBloomBaseTool):
             if not query or query in name.lower()
         ]
         if not rows:
-            return {
-                "recipes": [],
+            return llm.ToolResult(
+                data={
+                    "recipes": [],
+                    "instruction": (
+                        "Tell the user no recipes matched. They can create one "
+                        "with create_xbloom_recipe or import one from a share "
+                        "link with import_xbloom_cloud_recipe."
+                    ),
+                }
+            )
+        return llm.ToolResult(
+            data={
+                "recipes": rows,
                 "instruction": (
-                    "Tell the user no recipes matched. They can create one "
-                    "with create_xbloom_recipe or import one from a share "
-                    "link with import_xbloom_cloud_recipe."
+                    "Read out the recipe names. Mention details only if the user asks for them."
                 ),
             }
-        return {
-            "recipes": rows,
-            "instruction": (
-                "Read out the recipe names. Mention details only if the user "
-                "asks for them."
-            ),
-        }
+        )
 
 
 class XBloomExecuteRecipeTool(XBloomBaseTool):
     """Execute a saved recipe by name, after the user confirms beans are loaded."""
 
     name = "execute_xbloom_recipe"
+    title = "Execute XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Execute a saved XBloom recipe. Any top-level scalar (grind_size, "
         "rpm, dose_g, ratio, cup_type, bypass) can be overridden for this "
@@ -306,9 +324,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
             ): vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
             vol.Optional(
                 "cup_type",
-                description=(
-                    "Optional cup/brewer type override for this brew only."
-                ),
+                description=("Optional cup/brewer type override for this brew only."),
             ): vol.In(["x_pod", "omni_dripper", "other", "tea"]),
             vol.Optional(
                 "bypass_volume",
@@ -374,17 +390,15 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         beans_confirmed = bool(tool_input.tool_args["beans_confirmed"])
         dripper_confirmed = bool(tool_input.tool_args["dripper_confirmed"])
         filter_confirmed = bool(tool_input.tool_args["filter_confirmed"])
         cup_confirmed = bool(tool_input.tool_args["cup_confirmed"])
 
-        resolved, err = _resolve_or_error(
-            self.coordinator, tool_input.tool_args["recipe"]
-        )
+        resolved, err = _resolve_or_error(self.coordinator, tool_input.tool_args["recipe"])
         if err:
-            return err
+            return llm.ToolResult(data=err, error=True)
         recipe_name, recipe = resolved
         cup_type = (recipe.get("cup_type") or "omni_dripper").lower()
         is_tea = cup_type == "tea"
@@ -413,8 +427,16 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         # payload always carries the recipe's STORED settings, so a
         # confirm would silently ignore them (T13).
         has_overrides = bool(
-            {"grind_size", "rpm", "bypass_volume", "bypass_temperature",
-             "dose_g", "ratio", "cup_type"} & tool_input.tool_args.keys()
+            {
+                "grind_size",
+                "rpm",
+                "bypass_volume",
+                "bypass_temperature",
+                "dose_g",
+                "ratio",
+                "cup_type",
+            }
+            & tool_input.tool_args.keys()
             or tool_input.tool_args.get("pour_overrides")
         )
 
@@ -426,15 +448,18 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before recipe failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         # Water level: machine-reported, no user confirmation needed — but
         # check it before cup/select/execute so a low-water machine is
@@ -446,15 +471,18 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         if self.coordinator.water_source == WATER_SOURCE_TANK and not (
             self.coordinator.data or {}
         ).get("water_level_ok", True):
-            return {
-                "success": False,
-                "error": "water_low",
-                "instruction": (
-                    "Do NOT start the recipe. Tell the user the XBloom's "
-                    "water tank is low and ask them to refill it before "
-                    "brewing. Do not retry until they confirm it's refilled."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "water_low",
+                    "instruction": (
+                        "Do NOT start the recipe. Tell the user the XBloom's "
+                        "water tank is low and ask them to refill it before "
+                        "brewing. Do not retry until they confirm it's refilled."
+                    ),
+                },
+                error=True,
+            )
 
         if missing:
             items = " and ".join(missing)
@@ -463,31 +491,30 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 "dripper": "dripper_confirmed",
                 "paper coffee filter": "filter_confirmed",
             }
-            retry_flags = " and ".join(
-                f"{confirmed_flags[item]}=true" for item in missing
-            )
+            retry_flags = " and ".join(f"{confirmed_flags[item]}=true" for item in missing)
             armed = await self._async_try_prearm(recipe_name, has_overrides)
-            return {
-                "success": False,
-                "confirmation_required": True,
-                "missing_confirmations": missing,
-                "recipe": _summarize_recipe(recipe),
-                "instruction": (
-                    "Do NOT start the recipe yet. "
-                    + (
-                        "The machine has loaded the recipe and is showing "
-                        "its start prompt. "
-                        if armed
-                        else ""
-                    )
-                    + f"Ask the user to confirm "
-                    f"that the {items} have been added/installed for the "
-                    f"'{recipe_name}' recipe. The machine cannot detect the "
-                    f"filter on its own, so the user must verify it manually. "
-                    f"Once they confirm, call execute_xbloom_recipe again "
-                    f"with {retry_flags}."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "confirmation_required": True,
+                    "missing_confirmations": missing,
+                    "recipe": _summarize_recipe(recipe),
+                    "instruction": (
+                        "Do NOT start the recipe yet. "
+                        + (
+                            "The machine has loaded the recipe and is showing its start prompt. "
+                            if armed
+                            else ""
+                        )
+                        + f"Ask the user to confirm "
+                        f"that the {items} have been added/installed for the "
+                        f"'{recipe_name}' recipe. The machine cannot detect the "
+                        f"filter on its own, so the user must verify it manually. "
+                        f"Once they confirm, call execute_xbloom_recipe again "
+                        f"with {retry_flags}."
+                    ),
+                }
+            )
 
         # Cup presence: weight > threshold proves a cup is there. A reading
         # near 0 g is ambiguous because the machine auto-tares any weight
@@ -497,27 +524,29 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         cup_on_scale = weight >= CUP_PRESENCE_WEIGHT_G
         if not cup_on_scale and not cup_confirmed:
             armed = await self._async_try_prearm(recipe_name, has_overrides)
-            return {
-                "success": False,
-                "error": "cup_unverified",
-                "scale_weight_g": weight,
-                "instruction": (
-                    "Do NOT start the recipe yet. "
-                    + (
-                        "The machine has loaded the recipe and is showing "
-                        "its start prompt. "
-                        if armed
-                        else ""
-                    )
-                    + "The scale reads "
-                    f"{weight:.1f} g, which means either no cup is on the "
-                    "machine OR a cup was placed before power-on (the "
-                    "machine tares any weight at boot to 0 g). Ask the "
-                    "user to confirm the cup or dripper is on the scale. "
-                    "Once they confirm, call execute_xbloom_recipe again "
-                    "with cup_confirmed=true."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "cup_unverified",
+                    "scale_weight_g": weight,
+                    "instruction": (
+                        "Do NOT start the recipe yet. "
+                        + (
+                            "The machine has loaded the recipe and is showing its start prompt. "
+                            if armed
+                            else ""
+                        )
+                        + "The scale reads "
+                        f"{weight:.1f} g, which means either no cup is on the "
+                        "machine OR a cup was placed before power-on (the "
+                        "machine tares any weight at boot to 0 g). Ask the "
+                        "user to confirm the cup or dripper is on the scale. "
+                        "Once they confirm, call execute_xbloom_recipe again "
+                        "with cup_confirmed=true."
+                    ),
+                },
+                error=True,
+            )
 
         # Select the recipe (also syncs the grind/RPM sliders to it for
         # coffee grinding recipes), then layer any explicit overrides on top.
@@ -535,11 +564,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 bypass_volume = float(args["bypass_volume"])
             if "bypass_temperature" in args:
                 bypass_temperature = float(args["bypass_temperature"])
-        overrides = {
-            key: args[key]
-            for key in ("dose_g", "ratio", "cup_type")
-            if key in args
-        }
+        overrides = {key: args[key] for key in ("dose_g", "ratio", "cup_type") if key in args}
 
         pour_overrides = []
         for ov in args.get("pour_overrides") or []:
@@ -570,18 +595,21 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 )
         except Exception as exc:
             _LOGGER.exception("execute_xbloom_recipe failed: %s", exc)
-            return {
-                "success": False,
-                "error": f"Execution failed: {exc!s}",
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": f"Execution failed: {exc!s}",
+                },
+                error=True,
+            )
 
         # Reflect the selection on the select entity.
         self.coordinator.async_update_listeners()
 
-        return {
-            "success": True,
-            "recipe": _summarize_recipe(recipe),
-            "instruction": (
-                "Briefly confirm to the user that the recipe has started."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "recipe": _summarize_recipe(recipe),
+                "instruction": ("Briefly confirm to the user that the recipe has started."),
+            }
+        )

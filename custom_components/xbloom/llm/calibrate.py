@@ -1,6 +1,7 @@
 """Tool: calibrate_xbloom_grinder — trigger the grinder gear-position
 calibration sweep (cmd 3502, via coordinator.async_calibrate_grinder(),
 the same call button.calibrate_grinder uses)."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,10 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
     """Trigger the XBloom's grinder gear-position calibration sweep."""
 
     name = "calibrate_xbloom_grinder"
+    title = "Calibrate XBloom grinder"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Run the XBloom's grinder gear-position calibration. Use this when "
         "the user asks to calibrate, recalibrate, or reset the grinder "
@@ -32,40 +37,46 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         client = self.coordinator.client
         if client is None or not client.is_connected:
             try:
                 ok = await self.coordinator.async_connect()
             except Exception as exc:
-                _LOGGER.exception(
-                    "auto-connect before grinder calibration failed: %s", exc
-                )
+                _LOGGER.exception("auto-connect before grinder calibration failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         try:
             await self.coordinator.async_calibrate_grinder()
         except Exception as exc:
             _LOGGER.exception("calibrate_xbloom_grinder failed: %s", exc)
-            return {
-                "success": False,
-                "error": f"Calibration failed: {exc!s}",
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": f"Calibration failed: {exc!s}",
+                },
+                error=True,
+            )
 
-        return {
-            "success": True,
-            "instruction": (
-                "Tell the user grinder calibration has started and takes "
-                "about 2 minutes to finish on its own."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "instruction": (
+                    "Tell the user grinder calibration has started and takes "
+                    "about 2 minutes to finish on its own."
+                ),
+            }
+        )

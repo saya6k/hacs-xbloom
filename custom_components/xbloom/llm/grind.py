@@ -1,4 +1,5 @@
 """Tool: grind_xbloom — manual grind with custom size and RPM."""
+
 from __future__ import annotations
 
 import logging
@@ -22,6 +23,10 @@ class XBloomGrindTool(XBloomBaseTool):
     """Start a manual grind with the requested grind size and RPM."""
 
     name = "grind_xbloom"
+    title = "Grind XBloom"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Grind beans on the XBloom with a custom grind size and RPM. This "
         "is a manual grind — it does NOT pour water. Two-phase flow: the "
@@ -68,7 +73,7 @@ class XBloomGrindTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         args = tool_input.tool_args
         grind_size = args.get("grind_size")
         rpm = args.get("rpm")
@@ -81,15 +86,18 @@ class XBloomGrindTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before grind failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         # Mirror the slider state so the corresponding number entities
         # reflect what was actually requested.
@@ -113,30 +121,37 @@ class XBloomGrindTool(XBloomBaseTool):
                 await self.coordinator.async_grind()
         except Exception as exc:
             _LOGGER.exception("grind_xbloom failed: %s", exc)
-            return {
-                "success": False,
-                "error": f"Grind failed: {exc!s}",
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": f"Grind failed: {exc!s}",
+                },
+                error=True,
+            )
 
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
 
         if not confirmed:
-            return {
+            return llm.ToolResult(
+                data={
+                    "success": True,
+                    "armed": True,
+                    "grind_size": self.coordinator.grind_size,
+                    "rpm": self.coordinator.rpm,
+                    "instruction": (
+                        "The machine is now showing its grind page with these "
+                        "settings. Ask the user to confirm starting the grind; "
+                        "if they agree, call grind_xbloom again with "
+                        "confirmed=true. If they decline, call cancel_xbloom."
+                    ),
+                }
+            )
+        return llm.ToolResult(
+            data={
                 "success": True,
-                "armed": True,
                 "grind_size": self.coordinator.grind_size,
                 "rpm": self.coordinator.rpm,
-                "instruction": (
-                    "The machine is now showing its grind page with these "
-                    "settings. Ask the user to confirm starting the grind; "
-                    "if they agree, call grind_xbloom again with "
-                    "confirmed=true. If they decline, call cancel_xbloom."
-                ),
+                "instruction": "Briefly confirm to the user that grinding has started.",
             }
-        return {
-            "success": True,
-            "grind_size": self.coordinator.grind_size,
-            "rpm": self.coordinator.rpm,
-            "instruction": "Briefly confirm to the user that grinding has started.",
-        }
+        )

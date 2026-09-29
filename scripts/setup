@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 # Wire this checkout into the devcontainer's baked-in Home Assistant install.
 #
-# The devcontainer base image (see .devcontainer/devcontainer.json) is the
-# official home-assistant image, pinned to the 2026.9 dev build and pulled from
-# ghcr.io. The image tag must match
-# hacs.json's `homeassistant` floor and requirements_test.txt's homeassistant
-# pin — one version string across all three.
-#
-# Unlike a generic Python devcontainer, the image already bundles HA core, the
-# frontend, and every native/runtime dependency default_config needs (ffmpeg,
-# go2rtc, PyTurboJPEG, aioesphomeapi, bleak, hassil, home-assistant-intents)
-# — so there is nothing to apt/apk here beyond the dev-only Python tools the
-# runtime image doesn't ship. homeassistant in requirements_test.txt is
-# satisfied by the image's preinstalled copy.
+# Use the official HA image from .devcontainer/devcontainer.json. Its
+# 2026.10.0.dev202609290227 minimum matches hacs.json and provides the ToolResult API.
+# HA and runtime dependencies are already installed; only dev tools are added.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
