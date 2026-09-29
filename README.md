@@ -1,6 +1,6 @@
 # XBloom Coffee Machine — Home Assistant Integration
 
-> Requires Home Assistant **2026.10.0b0 or later**. LLM tools return `llm.ToolResult`, preserving existing response fields in `data`.
+> Requires Home Assistant **2026.10.0.dev202609290227 or later**. LLM tools return `llm.ToolResult`, preserving existing response fields in `data`.
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with%20Claude%20Code-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/code)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
@@ -36,7 +36,7 @@ This integration's own protocol reference now lives in [`docs/en/protocol.md`](d
 
 ## Installation (HACS)
 
-> **Requires Home Assistant `2026.10.0b0` or newer.** LLM tools use the new ToolResult API.
+> **Requires Home Assistant `2026.10.0.dev202609290227` or newer.** LLM tools use the new ToolResult API.
 > Child devices represent the Studio's grinder, scale, and brewer
 > as logical parts of the main machine. Older versions are not supported.
 
@@ -229,7 +229,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 ## Development
 
-A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA image pinned to **2026.10.0b0** (in `.devcontainer/devcontainer.json`, matching `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
+A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA image pinned to **2026.10.0.dev202609290227** (in `.devcontainer/devcontainer.json`, matching `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 
 ```bash
 scripts/develop
