@@ -1,5 +1,7 @@
 # XBloom Coffee Machine — Home Assistant Integration
 
+> Requires Home Assistant **2026.10.0b0 or later**. LLM tools return `llm.ToolResult`, preserving existing response fields in `data`.
+
 > Source of truth — see [한국어](../ko/index.md) for the Korean translation (may lag).
 
 Local Bluetooth control of an [XBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
@@ -29,8 +31,8 @@ Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the p
 
 ## Installation (HACS)
 
-> **Requires Home Assistant `2026.9.0.dev202608241354` or newer.** This build
-> adds child devices, which represent the Studio's grinder, scale, and brewer
+> **Requires Home Assistant `2026.10.0b0` or newer.** LLM tools use the new ToolResult API.
+> Child devices represent the Studio's grinder, scale, and brewer
 > as logical parts of the main machine. Older versions are not supported.
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.

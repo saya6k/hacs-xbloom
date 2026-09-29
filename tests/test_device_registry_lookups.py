@@ -40,10 +40,10 @@ def test_machine_components_are_registered_as_child_devices():
     assert "coordinator.parent_device_id = main_device.id" in setup_source
 
 
-def test_home_assistant_2026_9_minimum_versions_stay_in_sync():
+def test_home_assistant_minimum_versions_stay_in_sync():
     """HACS, tests, and the devcontainer target the same HA dev build."""
     repository_root = COMPONENT_ROOT.parent.parent
-    expected = "2026.9.0.dev202608241354"
+    expected = "2026.10.0b0"
 
     hacs = json.loads((repository_root / "hacs.json").read_text())
     requirements = (repository_root / "requirements_test.txt").read_text()

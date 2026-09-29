@@ -9,6 +9,7 @@ returns a structured ``{"success": bool, "error": ..., "message": ...}`` dict
 call needs authentication — so the "not configured" / "login failed" cases
 fall out of the shared ``_cloud_failure`` helper below.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,12 +27,12 @@ _LOGGER = logging.getLogger(__name__)
 # Shared by create/edit — a single pour step as LLM-facing tool arguments.
 _POUR_ARG_SCHEMA = vol.Schema(
     {
-        vol.Required(
-            "volume_ml", description="Pour volume in ml."
-        ): vol.All(int, vol.Range(min=1, max=1000)),
-        vol.Required(
-            "temperature_c", description="Water temperature in °C."
-        ): vol.All(int, vol.Range(min=0, max=100)),
+        vol.Required("volume_ml", description="Pour volume in ml."): vol.All(
+            int, vol.Range(min=1, max=1000)
+        ),
+        vol.Required("temperature_c", description="Water temperature in °C."): vol.All(
+            int, vol.Range(min=0, max=100)
+        ),
         vol.Optional(
             "flow_rate",
             description="Pour flow rate, 3.0-3.5 ml/s. Defaults to 3.0.",
@@ -86,23 +87,29 @@ def _recipe_args_to_dict(args: dict) -> dict:
     return recipe
 
 
-def _cloud_failure(result: dict, action: str) -> dict:
+def _cloud_failure(result: dict, action: str) -> llm.ToolResult:
     """Shared failure shape for every cloud tool — covers cloud_not_configured,
     login_failed, and every action-specific error the coordinator returns."""
-    return {
-        "success": False,
-        "error": result.get("error", "unknown"),
-        "instruction": (
-            f"Tell the user the {action} failed: "
-            f"{result.get('message', 'unknown error')}"
-        ),
-    }
+    return llm.ToolResult(
+        data={
+            "success": False,
+            "error": result.get("error", "unknown"),
+            "instruction": (
+                f"Tell the user the {action} failed: {result.get('message', 'unknown error')}"
+            ),
+        },
+        error=True,
+    )
 
 
 class XBloomImportCloudRecipeTool(XBloomBaseTool):
     """Import a recipe from an XBloom cloud share URL/id as a local recipe."""
 
     name = "import_xbloom_cloud_recipe"
+    title = "Import XBloom cloud recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=False, idempotent=False, open_world=True
+    )
     description = (
         "Import a recipe from an XBloom cloud share URL or share id (e.g. "
         "from the official app's Share button), or from a "
@@ -130,27 +137,33 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         share_url_or_id = tool_input.tool_args["share_url_or_id"]
         result = await self.coordinator.async_import_cloud_recipe(share_url_or_id)
         if not result.get("success"):
             return _cloud_failure(result, "import")
-        return {
-            "success": True,
-            "uid": result["uid"],
-            "recipe_name": result["name"],
-            "instruction": (
-                f"Tell the user the recipe {result['name']!r} was "
-                "imported and is now available to run via "
-                "execute_xbloom_recipe."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "uid": result["uid"],
+                "recipe_name": result["name"],
+                "instruction": (
+                    f"Tell the user the recipe {result['name']!r} was "
+                    "imported and is now available to run via "
+                    "execute_xbloom_recipe."
+                ),
+            }
+        )
 
 
 class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     """Search XBloom's public collective.xbloom.com community recipe hub."""
 
     name = "search_xbloom_collective_recipes"
+    title = "Search XBloom collective recipes"
+    annotations = llm.ToolAnnotations(
+        read_only=True, destructive=False, idempotent=True, open_world=True
+    )
     description = (
         "Search XBloom's public community recipe hub (collective.xbloom.com) "
         "— recipes shared by xBloom and other users, entirely separate from "
@@ -166,46 +179,30 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     )
     parameters = vol.Schema(
         {
-            vol.Optional(
-                "keyword", description="Free-text search across recipe names."
-            ): str,
-            vol.Optional("category", description="coffee or tea."): vol.In(
-                ["coffee", "tea"]
-            ),
+            vol.Optional("keyword", description="Free-text search across recipe names."): str,
+            vol.Optional("category", description="coffee or tea."): vol.In(["coffee", "tea"]),
             vol.Optional(
                 "src",
-                description=(
-                    "official (xBloom-published) or user (community-submitted)."
-                ),
+                description=("official (xBloom-published) or user (community-submitted)."),
             ): vol.In(["official", "user"]),
-            vol.Optional(
-                "machine", description="Machine model(s), e.g. Studio, Original."
-            ): [str],
+            vol.Optional("machine", description="Machine model(s), e.g. Studio, Original."): [str],
             vol.Optional(
                 "cup_type",
                 description="Cup/brewer type(s), e.g. xPod, Omni, Other, Omni Brewer.",
             ): [str],
-            vol.Optional(
-                "origin", description="Coffee origin(s), e.g. Ethiopia, Colombia."
-            ): [str],
-            vol.Optional(
-                "varietal", description="Varietal(s), e.g. Bourbon, Geisha."
-            ): [str],
-            vol.Optional(
-                "process", description="Process(es), e.g. Washed, Natural, Honey."
-            ): [str],
-            vol.Optional(
-                "roast", description="Roast level(s), e.g. Light Roast, Dark Roast."
-            ): [str],
-            vol.Optional(
-                "flavor", description="Flavor note(s), e.g. Blueberry, Caramel."
-            ): [str],
+            vol.Optional("origin", description="Coffee origin(s), e.g. Ethiopia, Colombia."): [str],
+            vol.Optional("varietal", description="Varietal(s), e.g. Bourbon, Geisha."): [str],
+            vol.Optional("process", description="Process(es), e.g. Washed, Natural, Honey."): [str],
+            vol.Optional("roast", description="Roast level(s), e.g. Light Roast, Dark Roast."): [
+                str
+            ],
+            vol.Optional("flavor", description="Flavor note(s), e.g. Blueberry, Caramel."): [str],
             vol.Optional(
                 "sort", description="date, likes, or downloads. Defaults to likes."
             ): vol.In(["date", "likes", "downloads"]),
-            vol.Optional(
-                "sort_direction", description="asc or desc. Defaults to desc."
-            ): vol.In(["asc", "desc"]),
+            vol.Optional("sort_direction", description="asc or desc. Defaults to desc."): vol.In(
+                ["asc", "desc"]
+            ),
         }
     )
 
@@ -214,7 +211,7 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         args = tool_input.tool_args
         result = await self.coordinator.async_search_collective_recipes(
             keyword=args.get("keyword"),
@@ -244,18 +241,24 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
                 f" These filter terms didn't match a known option and were "
                 f"ignored — tell the user: {unmatched}."
             )
-        return {
-            "success": True,
-            "recipes": result["list"],
-            "total": result.get("total"),
-            "instruction": instruction,
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "recipes": result["list"],
+                "total": result.get("total"),
+                "instruction": instruction,
+            }
+        )
 
 
 class XBloomExportRecipeTool(XBloomBaseTool):
     """Export a local recipe to the XBloom cloud account (share link)."""
 
     name = "export_xbloom_recipe"
+    title = "Export XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Export a local XBloom recipe to the user's XBloom cloud account "
         "so it shows up in the official app and gets a share link. If the "
@@ -282,7 +285,7 @@ class XBloomExportRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         identifier = tool_input.tool_args["recipe"]
         result = await self.coordinator.async_export_recipe(identifier)
         if not result.get("success"):
@@ -306,4 +309,4 @@ class XBloomExportRecipeTool(XBloomBaseTool):
         if result.get("warning"):
             out["warning"] = result["warning"]
             out["instruction"] += " Also mention this warning: " + result["warning"]
-        return out
+        return llm.ToolResult(data=out)

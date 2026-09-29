@@ -7,6 +7,7 @@ These tools never touch the cloud — publishing a local recipe is
 local-store methods, sharing the pour/scalar argument schemas with the
 cloud tools so the two surfaces can't drift apart.
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,10 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 _RECIPE_SCALAR_ARGS = {
     vol.Optional(
         "cup_type",
-        description=(
-            "omni_dripper for coffee, tea for tea recipes. Defaults to "
-            "omni_dripper."
-        ),
+        description=("omni_dripper for coffee, tea for tea recipes. Defaults to omni_dripper."),
     ): vol.In(["omni_dripper", "tea"]),
     vol.Optional(
         "grind_size",
@@ -66,6 +64,10 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
     """Create a new local recipe from scratch."""
 
     name = "create_xbloom_recipe"
+    title = "Create XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=False, idempotent=False, open_world=False
+    )
     description = (
         "Create a new local XBloom recipe from scratch. It appears in the "
         "Recipe dropdown immediately and gets a local uid (returned). "
@@ -88,27 +90,33 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         recipe = _recipe_args_to_dict(tool_input.tool_args)
         result = self.coordinator.create_local_recipe(recipe)
         if not result.get("success"):
             return _cloud_failure(result, "create")
-        return {
-            "success": True,
-            "uid": result["uid"],
-            "recipe_name": result["name"],
-            "instruction": (
-                f"Tell the user the recipe {result['name']!r} was created "
-                "and is available in the Recipe dropdown and via "
-                "execute_xbloom_recipe."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "uid": result["uid"],
+                "recipe_name": result["name"],
+                "instruction": (
+                    f"Tell the user the recipe {result['name']!r} was created "
+                    "and is available in the Recipe dropdown and via "
+                    "execute_xbloom_recipe."
+                ),
+            }
+        )
 
 
 class XBloomEditRecipeTool(XBloomBaseTool):
     """Change one or more fields of a local recipe."""
 
     name = "edit_xbloom_recipe"
+    title = "Edit XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Change one or more fields of a local XBloom recipe. Only pass the "
         "fields the user wants changed — every omitted field keeps its "
@@ -134,33 +142,42 @@ class XBloomEditRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         identifier = tool_input.tool_args["recipe"]
         changes = _recipe_args_to_dict(tool_input.tool_args)
         if not changes:
-            return {
-                "success": False,
-                "error": "no_fields",
-                "instruction": (
-                    "Ask the user which field(s) of the recipe they want "
-                    "to change before calling edit_xbloom_recipe again."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "no_fields",
+                    "instruction": (
+                        "Ask the user which field(s) of the recipe they want "
+                        "to change before calling edit_xbloom_recipe again."
+                    ),
+                },
+                error=True,
+            )
         result = await self.coordinator.async_edit_local_recipe(identifier, changes)
         if not result.get("success"):
             return _cloud_failure(result, "edit")
-        return {
-            "success": True,
-            "uid": result["uid"],
-            "recipe_name": result["name"],
-            "instruction": "Confirm to the user that the recipe was updated.",
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "uid": result["uid"],
+                "recipe_name": result["name"],
+                "instruction": "Confirm to the user that the recipe was updated.",
+            }
+        )
 
 
 class XBloomDeleteRecipeTool(XBloomBaseTool):
     """Delete a local recipe (cloud copies are untouched)."""
 
     name = "delete_xbloom_recipe"
+    title = "Delete XBloom recipe"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=True, open_world=False
+    )
     description = (
         "Delete a local XBloom recipe — it disappears from the Recipe "
         "dropdown immediately. A copy on the user's XBloom cloud account "
@@ -188,29 +205,33 @@ class XBloomDeleteRecipeTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         identifier = tool_input.tool_args["recipe"]
         if not bool(tool_input.tool_args["confirmed"]):
-            return {
-                "success": False,
-                "confirmation_required": True,
-                "instruction": (
-                    f"Do NOT delete yet. Ask the user to confirm they want "
-                    f"to delete the recipe {identifier!r}. Once they "
-                    "confirm, call delete_xbloom_recipe again with "
-                    "confirmed=true."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "confirmation_required": True,
+                    "instruction": (
+                        f"Do NOT delete yet. Ask the user to confirm they want "
+                        f"to delete the recipe {identifier!r}. Once they "
+                        "confirm, call delete_xbloom_recipe again with "
+                        "confirmed=true."
+                    ),
+                }
+            )
         result = self.coordinator.delete_local_recipe(identifier)
         if not result.get("success"):
             return _cloud_failure(result, "delete")
-        return {
-            "success": True,
-            "uid": result["uid"],
-            "recipe_name": result["name"],
-            "instruction": (
-                "Confirm to the user that the local recipe was deleted. If "
-                "it also exists on their XBloom cloud account, mention that "
-                "copy is untouched."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "uid": result["uid"],
+                "recipe_name": result["name"],
+                "instruction": (
+                    "Confirm to the user that the local recipe was deleted. If "
+                    "it also exists on their XBloom cloud account, mention that "
+                    "copy is untouched."
+                ),
+            }
+        )

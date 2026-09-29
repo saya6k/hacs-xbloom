@@ -1,4 +1,5 @@
 """Tool: pour_xbloom — manual pour with custom temperature and volume."""
+
 from __future__ import annotations
 
 import logging
@@ -29,6 +30,10 @@ class XBloomPourTool(XBloomBaseTool):
     """Start a manual pour with the requested temperature and volume."""
 
     name = "pour_xbloom"
+    title = "Pour XBloom"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Pour water from the XBloom with a custom temperature and volume. "
         "This is a manual pour — it does NOT grind beans. Temperature is in "
@@ -62,10 +67,7 @@ class XBloomPourTool(XBloomBaseTool):
             ): bool,
             vol.Required(
                 "volume",
-                description=(
-                    f"Volume of water in milliliters "
-                    f"({VOLUME_MIN_ML}–{VOLUME_MAX_ML})."
-                ),
+                description=(f"Volume of water in milliliters ({VOLUME_MIN_ML}–{VOLUME_MAX_ML})."),
             ): vol.All(vol.Coerce(int), vol.Range(min=VOLUME_MIN_ML, max=VOLUME_MAX_ML)),
             vol.Optional(
                 "flow_rate",
@@ -90,7 +92,7 @@ class XBloomPourTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         args = tool_input.tool_args
         boiling = bool(args.get("boiling", False))
         if boiling:
@@ -98,15 +100,18 @@ class XBloomPourTool(XBloomBaseTool):
         elif "temperature" in args:
             temperature = float(args["temperature"])
         else:
-            return {
-                "success": False,
-                "error": "missing_temperature",
-                "instruction": (
-                    "Ask the user what temperature they want, between "
-                    f"{TEMPERATURE_MIN_C}°C and {TEMPERATURE_MAX_C}°C, or "
-                    "whether they want boiling-point water."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "missing_temperature",
+                    "instruction": (
+                        "Ask the user what temperature they want, between "
+                        f"{TEMPERATURE_MIN_C}°C and {TEMPERATURE_MAX_C}°C, or "
+                        "whether they want boiling-point water."
+                    ),
+                },
+                error=True,
+            )
         volume = int(args["volume"])
         flow_rate = args.get("flow_rate")
 
@@ -118,15 +123,18 @@ class XBloomPourTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before pour failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         # Mirror the slider state so the corresponding number entities reflect
         # what was actually requested.
@@ -149,38 +157,45 @@ class XBloomPourTool(XBloomBaseTool):
                 await self.coordinator.async_pour()
         except Exception as exc:
             _LOGGER.exception("pour_xbloom failed: %s", exc)
-            return {
-                "success": False,
-                "error": f"Pour failed: {exc!s}",
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": f"Pour failed: {exc!s}",
+                },
+                error=True,
+            )
 
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
 
         if not confirmed:
-            return {
+            return llm.ToolResult(
+                data={
+                    "success": True,
+                    "armed": True,
+                    "temperature_c": temperature,
+                    "boiling": boiling,
+                    "volume_ml": volume,
+                    "instruction": (
+                        "The machine is now showing its pour page with these "
+                        "settings. Ask the user to confirm starting the pour "
+                        "and to place a cup under the dispenser; if they "
+                        "agree, call pour_xbloom again with confirmed=true "
+                        "(same arguments). If they decline, call cancel_xbloom."
+                    ),
+                }
+            )
+        return llm.ToolResult(
+            data={
                 "success": True,
-                "armed": True,
                 "temperature_c": temperature,
                 "boiling": boiling,
                 "volume_ml": volume,
+                "flow_rate_ml_s": self.coordinator.flow_rate,
                 "instruction": (
-                    "The machine is now showing its pour page with these "
-                    "settings. Ask the user to confirm starting the pour "
-                    "and to place a cup under the dispenser; if they "
-                    "agree, call pour_xbloom again with confirmed=true "
-                    "(same arguments). If they decline, call cancel_xbloom."
+                    "Briefly confirm to the user that the pour has started. If "
+                    "boiling=true, describe it as 'boiling water'; otherwise "
+                    "mention the temperature in Celsius."
                 ),
             }
-        return {
-            "success": True,
-            "temperature_c": temperature,
-            "boiling": boiling,
-            "volume_ml": volume,
-            "flow_rate_ml_s": self.coordinator.flow_rate,
-            "instruction": (
-                "Briefly confirm to the user that the pour has started. If "
-                "boiling=true, describe it as 'boiling water'; otherwise "
-                "mention the temperature in Celsius."
-            ),
-        }
+        )

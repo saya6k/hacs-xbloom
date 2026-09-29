@@ -1,4 +1,5 @@
 """Tool: write_xbloom_easy_slot — push a recipe to onboard slot A/B/C."""
+
 from __future__ import annotations
 
 import logging
@@ -24,6 +25,10 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
     """
 
     name = "write_xbloom_easy_slot"
+    title = "Write XBloom easy slot"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=True, idempotent=False, open_world=True
+    )
     description = (
         "Save an XBloom recipe into one of the machine's three onboard "
         "Easy Mode slots (A, B, or C). After this the user can run the "
@@ -55,19 +60,21 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         slot_letter = str(tool_input.tool_args["slot"]).strip().upper()
         identifier = tool_input.tool_args["recipe"]
 
         if slot_letter not in VALID_SLOTS:
-            return {
-                "success": False,
-                "error": "invalid_slot",
-                "instruction": (
-                    "Tell the user the slot must be A, B, or C and ask "
-                    "which one they meant."
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "invalid_slot",
+                    "instruction": (
+                        "Tell the user the slot must be A, B, or C and ask which one they meant."
+                    ),
+                },
+                error=True,
+            )
 
         client = self.coordinator.client
         if client is None or not client.is_connected:
@@ -77,38 +84,44 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before slot write failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
-        result = await self.coordinator.async_write_easy_slot(
-            slot_letter, identifier=identifier
-        )
+        result = await self.coordinator.async_write_easy_slot(slot_letter, identifier=identifier)
         if not result.get("success"):
-            return {
-                "success": False,
-                "error": result.get("error", "write_failed"),
-                "available_recipes": list((self.coordinator.recipes or {}).keys()),
-                "instruction": (
-                    "Tell the user the slot write failed: "
-                    f"{result.get('message', 'unknown error')}"
-                ),
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": result.get("error", "write_failed"),
+                    "available_recipes": list((self.coordinator.recipes or {}).keys()),
+                    "instruction": (
+                        "Tell the user the slot write failed: "
+                        f"{result.get('message', 'unknown error')}"
+                    ),
+                },
+                error=True,
+            )
 
         recipe = (self.coordinator.recipes or {}).get(result["name"]) or {}
-        return {
-            "success": True,
-            "slot": slot_letter,
-            "recipe": _summarize_recipe(recipe),
-            "instruction": (
-                f"Confirm to the user that the recipe is now stored on "
-                f"slot {slot_letter}, and remind them they can run it from "
-                f"the machine's onboard Easy Mode buttons."
-            ),
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "slot": slot_letter,
+                "recipe": _summarize_recipe(recipe),
+                "instruction": (
+                    f"Confirm to the user that the recipe is now stored on "
+                    f"slot {slot_letter}, and remind them they can run it from "
+                    f"the machine's onboard Easy Mode buttons."
+                ),
+            }
+        )

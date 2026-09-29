@@ -1,4 +1,5 @@
 """Tool: tare_xbloom_scale — zero the scale (cmd 8500)."""
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,10 @@ class XBloomTareScaleTool(XBloomBaseTool):
     """Zero the XBloom scale."""
 
     name = "tare_xbloom_scale"
+    title = "Tare XBloom scale"
+    annotations = llm.ToolAnnotations(
+        read_only=False, destructive=False, idempotent=True, open_world=True
+    )
     description = (
         "Zero (tare) the XBloom built-in scale. Use this when the user asks "
         "to tare, zero, or reset the scale, or after they've placed a cup or "
@@ -29,7 +34,7 @@ class XBloomTareScaleTool(XBloomBaseTool):
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
-    ) -> dict:
+    ) -> llm.ToolResult:
         client = self.coordinator.client
         if client is None or not client.is_connected:
             try:
@@ -38,26 +43,34 @@ class XBloomTareScaleTool(XBloomBaseTool):
                 _LOGGER.exception("auto-connect before tare failed: %s", exc)
                 ok = False
             if not ok:
-                return {
-                    "success": False,
-                    "error": "connect_failed",
-                    "instruction": (
-                        "Tell the user the XBloom could not be reached over "
-                        "Bluetooth. Ask them to check the machine is powered "
-                        "on and in range."
-                    ),
-                }
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "connect_failed",
+                        "instruction": (
+                            "Tell the user the XBloom could not be reached over "
+                            "Bluetooth. Ask them to check the machine is powered "
+                            "on and in range."
+                        ),
+                    },
+                    error=True,
+                )
 
         try:
             await self.coordinator.async_tare_scale()
         except Exception as exc:
             _LOGGER.exception("tare_xbloom_scale failed: %s", exc)
-            return {
-                "success": False,
-                "error": f"Tare failed: {exc!s}",
-            }
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": f"Tare failed: {exc!s}",
+                },
+                error=True,
+            )
 
-        return {
-            "success": True,
-            "instruction": "Briefly confirm to the user that the scale has been zeroed.",
-        }
+        return llm.ToolResult(
+            data={
+                "success": True,
+                "instruction": "Briefly confirm to the user that the scale has been zeroed.",
+            }
+        )
