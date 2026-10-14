@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Require Home Assistant 2026.10.0.dev202609290227 or later.
+- Require Home Assistant 2026.10.0b0 or later.
 - Migrate LLM tools to ToolResult with explicit failure flags and tool metadata, preserving existing response payloads.
 - `pod_detected` now carries the pod / recipe card's bean info and recipes, looked up from XBloom's cloud by the tag id (no account needed).
 - Cloud recipe import no longer carries bypass volume/temperature from a recipe whose bypass is switched off.
