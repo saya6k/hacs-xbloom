@@ -144,6 +144,7 @@ def _collective_result_to_summary(item: dict, roast_names: dict[str, str]) -> di
         "roast": roast_names.get(str(roast_id)) if roast_id is not None else None,
         "flavor": item.get("flavor") or [],
         "share_url": item.get("shareRecipeLink"),
+        "image_url": item.get("imageUrl"),
     }
 
 # Verified verbatim against the raw denull0/xbloom-agent source (hutool-style

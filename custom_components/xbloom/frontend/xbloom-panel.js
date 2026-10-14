@@ -5,9 +5,13 @@
  * Build-free on purpose: one vanilla web component, no dependencies, so
  * HACS ships it as-is. Live state comes from the entities (the `hass`
  * object the frontend hands every panel); actions go through the same
- * entities and services everything else uses. The one backend call is
+ * entities and services everything else uses. The backend calls are
  * `xbloom/machines` (panel.py) for the entity map and the full recipe
- * store.
+ * store, and `xbloom/cloud_search` for the paged hub search.
+ *
+ * The look follows the official app (dark surfaces, gold accent,
+ * dot-matrix glyphs, serif numerals) using only original CSS/SVG and the
+ * integration's own brand images; no app assets are bundled.
  */
 
 const STRINGS = {
@@ -65,6 +69,7 @@ const STRINGS = {
     share_link: "Share link or recipe id", import_link: "Import link",
     cloud_hint: "Search XBloom's public recipe hub and import a copy into this machine's local recipes. No account needed.",
     cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
+    stage_beans: "Ready", stage_grind: "Grinding", stage_pour: "Pouring", stage_enjoy: "Enjoy",
   },
   ko: {
     tab_home: "브루", tab_recipes: "레시피", tab_manual: "수동", tab_settings: "설정",
@@ -120,6 +125,7 @@ const STRINGS = {
     share_link: "공유 링크 또는 레시피 ID", import_link: "링크로 가져오기",
     cloud_hint: "XBloom 공개 레시피 허브에서 검색해 이 머신의 로컬 레시피로 복사해 옵니다. 계정이 필요 없습니다.",
     cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
+    stage_beans: "준비", stage_grind: "분쇄", stage_pour: "푸어", stage_enjoy: "완성",
   },
 };
 
@@ -173,6 +179,45 @@ const PATTERN_ICON = {
   spiral: '<svg viewBox="0 0 24 24"><path d="M12 12m0 0a1.5 1.5 0 0 1 3 0a3 3 0 0 1-6 0a4.5 4.5 0 0 1 9 0a6 6 0 0 1-12 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
 };
 
+// Dot-matrix glyphs in the spirit of the app's icon set ("#" = dot).
+const dotIcon = (rows, cls = "dots") => {
+  const w = Math.max(...rows.map((r) => r.length));
+  const circles = rows
+    .flatMap((r, y) => [...r].map((c, x) => (c === "#" ? `<circle cx="${x + 0.5}" cy="${y + 0.5}" r="0.36"/>` : "")))
+    .join("");
+  return `<svg class="${cls}" viewBox="0 0 ${w} ${rows.length}" fill="currentColor">${circles}</svg>`;
+};
+
+const ICONS = {
+  home: dotIcon(["...#...", "..###..", ".#####.", "#######", "#######", ".#####.", "..###.."]),
+  recipes: dotIcon(["##.####", ".......", "##.####", ".......", "##.####", ".......", "##.####"]),
+  manual: dotIcon(["#######", ".#####.", "..###..", "...#...", "...#...", "..###..", ".#####."]),
+  settings: dotIcon(["..#....", "#######", "..#....", ".......", "....#..", "#######", "....#.."]),
+  beans: dotIcon(["..###..", ".##.##.", "##.####", "##.####", "###.###", ".##.##.", "..###.."]),
+  grind: dotIcon(["#######", ".#####.", "..###..", "...#...", "..#.#..", ".#.#.#.", "#.#.#.#"]),
+  pour: dotIcon(["#.#.#.#", ".......", ".#.#.#.", ".......", "..#.#..", ".......", "...#..."]),
+  enjoy: dotIcon([".......", "#####..", "######.", "#####.#", "######.", "#####..", ".###..."]),
+  scale: dotIcon([".......", ".......", "..###..", ".......", "#######", "#######", "......."]),
+  tea: dotIcon(["....###", "..#####", ".######", ".#####.", "#####..", "#.#....", "#......"]),
+};
+
+// The brew stages the app's autopilot screen walks through.
+const STAGES = ["beans", "grind", "pour", "enjoy"];
+const STAGE_OF_STATE = {
+  armed_recipe: 0, recipe_loaded: 0, awaiting_confirm: 0, starting: 0,
+  grinding: 1, brewing: 2, paused: 2, ready: 3,
+};
+
+const SAFE_IMAGE = /^https:\/\/[^\s"'()<>\\]+$/;
+
+// A stable hue per recipe name, kept inside a warm (coffee) or green
+// (tea) band, so generated card art is varied but consistent.
+const nameHue = (name, tea) => {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.codePointAt(0)) % 997;
+  return tea ? 95 + (h % 50) : 18 + (h % 26);
+};
+
 const blankPour = () => ({
   volume_ml: 50, temperature_c: 93, flow_rate: 3.0, pause_seconds: 0,
   pattern: "spiral", vibration: "none",
@@ -221,6 +266,8 @@ class XBloomPanel extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    // Follow the user's light/dark choice; the palette is the app's either way.
+    this.toggleAttribute("dark", !!hass.themes?.darkMode);
     if (first) this._loadMachines();
     this._onHassChanged();
   }
@@ -730,23 +777,28 @@ class XBloomPanel extends HTMLElement {
         ? `<select class="machine-picker" data-machine>${this._machines
             .map((x) => `<option value="${esc(x.entry_id)}" ${x.entry_id === this._entryId ? "selected" : ""}>${esc(x.title)}</option>`)
             .join("")}</select>`
-        : `<div class="title">${esc(m?.title || "XBloom")}</div>`;
+        : `<div class="title">${esc(m?.title || "")}</div>`;
     const conn = m
       ? `<button class="chip ${this._connected ? "on" : ""}" data-action="toggle-connection">
            <span class="dot"></span>${esc(this._connected ? this._fmt("sensor.state") : this._t("offline"))}
          </button>`
       : "";
+    // The bar sits under the header on wide screens and docks to the
+    // bottom on phones, like the app's tab bar (CSS decides).
     return `
-      <div class="toolbar">
+      <header class="toolbar">
         <ha-menu-button></ha-menu-button>
+        <img class="logo light" src="/xbloom_brand/logo.png" alt="xbloom">
+        <img class="logo dark" src="/xbloom_brand/dark_logo.png" alt="xbloom">
         ${picker}
         <div class="spacer"></div>
         ${conn}
-      </div>
-      ${m ? `<nav class="tabs">${tabs
-        .map((t) => `<button class="tab ${this._tab === t ? "active" : ""}" data-action="tab" data-arg="${t}">${this._t(`tab_${t}`)}</button>`)
+      </header>
+      ${m ? `<nav class="nav">${tabs
+        .map((t) => `<button class="nav-item ${this._tab === t ? "active" : ""}" data-action="tab" data-arg="${t}">
+            ${ICONS[t]}<span>${this._t(`tab_${t}`)}</span></button>`)
         .join("")}</nav>` : ""}
-      <div class="content">${this._renderBody()}</div>`;
+      <main class="content tab-${this._tab}">${this._renderBody()}</main>`;
   }
 
   _renderBody() {
@@ -782,47 +834,68 @@ class XBloomPanel extends HTMLElement {
 
     const options = (this._st("select.recipe")?.attributes.options || [])
       .filter((o) => m.recipes.some((r) => r.name === o));
+    const stage = STAGE_OF_STATE[state];
     return `
       ${alerts.map((a) => `<div class="alert">${esc(a)}</div>`).join("")}
-      <section class="hero">
-        <div class="ring" data-target="${target}">
-          <svg viewBox="0 0 120 120">
-            <circle class="track" cx="60" cy="60" r="52"/>
-            <circle class="bar" cx="60" cy="60" r="52" data-live-ring
-              stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
-          </svg>
-          <div class="ring-center">
-            <div class="big" data-live="sensor.weight">–</div>
-            <div class="sub">${esc(this._fmt("sensor.state"))}</div>
-            ${target ? `<div class="sub muted">${this._t("target")} ${num(target)} ml</div>` : ""}
+      <div class="brew-grid">
+        <section class="hero">
+          <div class="ring" data-target="${stage === undefined ? 0 : target}">
+            <svg viewBox="0 0 120 120">
+              <circle class="track" cx="60" cy="60" r="54"/>
+              <circle class="bar" cx="60" cy="60" r="54" data-live-ring
+                stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+            </svg>
+            <div class="ring-center">
+              <div class="big" data-live="sensor.weight">–</div>
+              <div class="sub">${esc(this._fmt("sensor.state"))}</div>
+              ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
+            </div>
           </div>
-        </div>
-        <div class="stats">
-          <div><span class="label">${this._t("brewer_temp")}</span><span data-live="sensor.brewer_temperature">–</span></div>
-          <div><span class="label">${this._t("flow")}</span><span data-live="sensor.flow_rate">–</span></div>
-        </div>
-      </section>
+          <ol class="stages">${STAGES
+            .map((s, i) => `<li class="${stage === i ? "active" : stage > i ? "done" : ""}">${ICONS[s]}<span>${this._t(`stage_${s}`)}</span></li>`)
+            .join("")}</ol>
+          <div class="stats">
+            <div><span class="label">${this._t("brewer_temp")}</span><span class="stat" data-live="sensor.brewer_temperature">–</span></div>
+            <div><span class="label">${this._t("flow")}</span><span class="stat" data-live="sensor.flow_rate">–</span></div>
+          </div>
+          ${armed ? `<div class="hint on-dark">${this._t("armed_hint")}</div>` : ""}
+          <div class="actions">
+            ${pausable
+              ? `<button class="btn go" data-action="press" data-arg="button.pause">${this._t(state === "paused" ? "resume" : "pause")}</button>`
+              : `<button class="btn go" data-action="press" data-arg="button.execute_recipe" ${!recipe || busy || (armed && state !== "armed_recipe") ? "disabled" : ""}>
+                   <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>${this._t(state === "armed_recipe" ? "start_brew" : "load_recipe")}</button>`}
+            <button class="btn ghost" data-action="press" data-arg="button.cancel" ${IDLE_STATES.has(state) ? "disabled" : ""}>${this._t("cancel")}</button>
+          </div>
+        </section>
 
-      <section class="card">
-        <div class="card-head">
-          <span class="label">${this._t("selected_recipe")}</span>
-          <select data-select="select.recipe" ${busy || armed ? "disabled" : ""}>
-            ${recipe ? "" : `<option selected disabled>${this._t("choose_recipe")}</option>`}
-            ${options.map((o) => `<option ${recipe?.name === o ? "selected" : ""}>${esc(o)}</option>`).join("")}
-          </select>
-        </div>
-        ${recipe ? this._renderRecipeMetrics(recipe) : `<div class="muted">${this._t("no_recipe")}</div>`}
-        ${recipe ? this._renderPourTimeline(recipe, true) : ""}
-      </section>
-
-      ${armed ? `<div class="hint">${this._t("armed_hint")}</div>` : ""}
-      <div class="actions">
-        ${pausable
-          ? `<button class="btn primary" data-action="press" data-arg="button.pause">${this._t(state === "paused" ? "resume" : "pause")}</button>`
-          : `<button class="btn primary" data-action="press" data-arg="button.execute_recipe" ${!recipe || busy || (armed && state !== "armed_recipe") ? "disabled" : ""}>
-               ${this._t(state === "armed_recipe" ? "start_brew" : "load_recipe")}</button>`}
-        <button class="btn" data-action="press" data-arg="button.cancel" ${IDLE_STATES.has(state) ? "disabled" : ""}>${this._t("cancel")}</button>
+        <section class="card recipe-panel">
+          ${recipe ? this._recipeArt(recipe, "art-banner") : ""}
+          <div class="card-head">
+            <span class="label">${this._t("selected_recipe")}</span>
+            <select data-select="select.recipe" ${busy || armed ? "disabled" : ""}>
+              ${recipe ? "" : `<option selected disabled>${this._t("choose_recipe")}</option>`}
+              ${options.map((o) => `<option ${recipe?.name === o ? "selected" : ""}>${esc(o)}</option>`).join("")}
+            </select>
+          </div>
+          ${recipe ? this._renderRecipeMetrics(recipe) : `<div class="muted">${this._t("no_recipe")}</div>`}
+          ${recipe ? this._renderPourTimeline(recipe, true) : ""}
+        </section>
       </div>`;
+  }
+
+  // Card art: the hub's cover image when there is one, otherwise a
+  // generated dot-matrix tile tinted per recipe.
+  _recipeArt(r, cls = "art", image = null) {
+    const tea = isTea(r) || /tea/i.test(String(r.cup_type || ""));
+    if (image && SAFE_IMAGE.test(image)) {
+      return `<div class="${cls} photo" style="background-image:url('${image}')"></div>`;
+    }
+    const h = nameHue(r.name, tea);
+    const figure = tea ? `${num(totalWater(r))}<small>ml</small>` : `${num(r.dose_g, 1)}<small>g</small>`;
+    return `<div class="${cls}" style="--h:${h}">
+      ${tea ? ICONS.tea : ICONS.home}
+      <div class="art-figure">${figure}</div>
+    </div>`;
   }
 
   _renderRecipeMetrics(r) {
@@ -935,22 +1008,25 @@ class XBloomPanel extends HTMLElement {
     const tea = /tea/i.test(String(item.cup_type || ""));
     const tags = [...(item.origin || []), item.roast, ...(item.flavor || [])].filter(Boolean).slice(0, 4);
     return `<div class="recipe-card">
-      <div class="rc-top">
-        ${item.cup_type ? `<span class="badge ${tea ? "tea" : ""}">${esc(item.cup_type)}</span>` : ""}
-        ${item.official ? `<span class="badge">${this._t("official")}</span>` : ""}
+      ${this._recipeArt({ name: item.name, cup_type: item.cup_type, dose_g: item.dose_g, pours: [{ volume_ml: item.total_water_ml || 0 }] }, "art", item.image_url)}
+      <div class="rc-body">
+        <div class="rc-top">
+          ${item.cup_type ? `<span class="badge ${tea ? "tea" : ""}">${esc(item.cup_type)}</span>` : ""}
+          ${item.official ? `<span class="badge gold">${this._t("official")}</span>` : ""}
+          ${item.likes_count != null ? `<span class="likes">♥ ${num(item.likes_count)}</span>` : ""}
+        </div>
+        <div class="rc-name">${esc(item.name)}</div>
+        ${!item.official && item.user_name ? `<div class="muted small">${esc(this._t("by", { name: item.user_name }))}</div>` : ""}
+        <div class="rc-specs">
+          ${Number(item.dose_g) ? `<span>${num(item.dose_g, 1)}g</span>` : ""}
+          ${Number(item.ratio) ? `<span>1:${num(item.ratio, 1)}</span>` : ""}
+          ${Number(item.total_water_ml) ? `<span>${num(item.total_water_ml)}ml</span>` : ""}
+          ${item.pour_count ? `<span>${this._t("pours")} ${num(item.pour_count)}</span>` : ""}
+        </div>
+        ${tags.length ? `<div class="rc-tags">${tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+        <button class="btn small ${done ? "" : "go"}" data-action="cloud-import" data-arg="${i}" ${done || busy || this._cloud.importing ? "disabled" : ""}>
+          ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
       </div>
-      <div class="rc-name">${esc(item.name)}</div>
-      ${!item.official && item.user_name ? `<div class="muted small">${esc(this._t("by", { name: item.user_name }))}</div>` : ""}
-      <div class="rc-specs">
-        ${Number(item.dose_g) ? `<span>${num(item.dose_g, 1)}g</span>` : ""}
-        ${Number(item.ratio) ? `<span>1:${num(item.ratio, 1)}</span>` : ""}
-        ${Number(item.total_water_ml) ? `<span>${num(item.total_water_ml)}ml</span>` : ""}
-        ${item.pour_count ? `<span>${this._t("pours")} ${num(item.pour_count)}</span>` : ""}
-        ${item.likes_count != null ? `<span>♥ ${num(item.likes_count)}</span>` : ""}
-      </div>
-      ${tags.length ? `<div class="rc-tags">${tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
-      <button class="btn small ${done ? "" : "primary"}" data-action="cloud-import" data-arg="${i}" ${done || busy || this._cloud.importing ? "disabled" : ""}>
-        ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
     </div>`;
   }
 
@@ -971,13 +1047,16 @@ class XBloomPanel extends HTMLElement {
       .map((r) => {
         const tea = isTea(r);
         return `<button class="recipe-card ${r.name === selected ? "selected" : ""}" data-action="open-recipe" data-arg="${esc(r.uid)}">
-          <div class="rc-top"><span class="badge ${tea ? "tea" : ""}">${this._t(`cup_${r.cup_type}`)}</span></div>
-          <div class="rc-name">${esc(r.name)}</div>
-          <div class="rc-specs">
-            ${tea ? "" : `<span>${num(r.dose_g, 1)}g</span><span>1:${num(r.ratio, 1)}</span>`}
-            <span>${num(totalWater(r))}ml</span>
-            <span>${tempLabel(r.pours?.[0]?.temperature_c)}</span>
-            ${tea ? "" : `<span>#${num(r.grind_size)}</span>`}
+          ${this._recipeArt(r)}
+          <div class="rc-body">
+            <div class="rc-top"><span class="badge ${tea ? "tea" : ""}">${this._t(`cup_${r.cup_type}`)}</span></div>
+            <div class="rc-name">${esc(r.name)}</div>
+            <div class="rc-specs">
+              ${tea ? "" : `<span>1:${num(r.ratio, 1)}</span>`}
+              <span>${num(totalWater(r))}ml</span>
+              <span>${tempLabel(r.pours?.[0]?.temperature_c)}</span>
+              ${tea ? "" : `<span>#${num(r.grind_size)}</span>`}
+            </div>
           </div>
         </button>`;
       })
@@ -991,20 +1070,27 @@ class XBloomPanel extends HTMLElement {
     const confirmDelete = this._confirm === `delete:${r.uid}`;
     return `
       <button class="link" data-action="close-recipe">‹ ${this._t("back")}</button>
+      <div class="detail-grid">
       <section class="card detail">
-        <div class="detail-head">
-          <span class="badge ${isTea(r) ? "tea" : ""}">${this._t(`cup_${r.cup_type}`)}</span>
-          <h1>${esc(r.name)}</h1>
-          ${r.source ? `<div class="muted small">${this._t("source")}: ${esc(r.source)}</div>` : ""}
+        <div class="detail-hero">
+          ${this._recipeArt(r, "art-hero")}
+          <div class="detail-head">
+            <span class="badge ${isTea(r) ? "tea" : ""}">${this._t(`cup_${r.cup_type}`)}</span>
+            <h1>${esc(r.name)}</h1>
+            ${r.source ? `<div class="dim small">${this._t("source")}: ${esc(r.source)}</div>` : ""}
+          </div>
         </div>
         ${this._renderRecipeMetrics(r)}
         ${isTea(r) ? "" : `<div class="kv"><span>${this._t("rpm")}</span><span>${num(r.rpm)}</span></div>`}
+      </section>
+      <section class="card">
         <h2>${this._t("pours")}</h2>
         ${this._renderPourTimeline(r)}
       </section>
+      </div>
       ${blocked ? `<div class="hint">${this._t("busy_hint")}</div>` : ""}
       <div class="actions">
-        <button class="btn primary" data-action="brew" data-arg="${esc(r.uid)}" ${blocked ? "disabled" : ""}>${this._t("brew_this")}</button>
+        <button class="btn go" data-action="brew" data-arg="${esc(r.uid)}" ${blocked ? "disabled" : ""}><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>${this._t("brew_this")}</button>
         <button class="btn" data-action="edit-recipe" data-arg="${esc(r.uid)}">${this._t("edit")}</button>
         <button class="btn" data-action="duplicate-recipe" data-arg="${esc(r.uid)}">${this._t("duplicate")}</button>
         <button class="btn danger" data-action="delete-recipe" data-arg="${esc(r.uid)}">${this._t(confirmDelete ? "confirm_delete" : "delete")}</button>
@@ -1127,8 +1213,9 @@ class XBloomPanel extends HTMLElement {
     const patternState = this._st("select.pour_pattern");
     return `
       <div class="hint">${this._t("arm_hint")}</div>
+      <div class="cols">
       <section class="card">
-        <h2>${this._t("grinder")}</h2>
+        <h2 class="with-icon">${ICONS.grind}${this._t("grinder")}</h2>
         ${this._numberControl("number.grind_size", "grind_size")}
         ${this._numberControl("number.rpm", "rpm")}
         <div class="stats inline">
@@ -1136,14 +1223,14 @@ class XBloomPanel extends HTMLElement {
           <div><span class="label">${this._t("rpm")}</span><span data-live="sensor.live_grind_speed">–</span></div>
         </div>
         <div class="actions">
-          <button class="btn primary" data-action="press" data-arg="button.grind" ${busy ? "disabled" : ""}>
+          <button class="btn go" data-action="press" data-arg="button.grind" ${busy ? "disabled" : ""}>
             ${this._t(state === "standalone_grind" ? "start_grind" : "grind_btn")}</button>
           <button class="btn" data-action="press" data-arg="button.cancel" ${IDLE_STATES.has(state) ? "disabled" : ""}>${this._t("cancel")}</button>
         </div>
       </section>
 
       <section class="card">
-        <h2>${this._t("brewer")}</h2>
+        <h2 class="with-icon">${ICONS.pour}${this._t("brewer")}</h2>
         ${this._numberControl("number.volume", "volume")}
         ${this._numberControl("number.temperature", "temperature")}
         ${patternState ? `
@@ -1151,20 +1238,21 @@ class XBloomPanel extends HTMLElement {
           .map((o) => `<button class="${patternState.state === o ? "active" : ""}" data-action="set-pattern" data-arg="${esc(o)}">${PATTERN_ICON[o] || ""}${this._t(o)}</button>`)
           .join("")}</div>` : ""}
         <div class="actions">
-          <button class="btn primary" data-action="press" data-arg="button.pour" ${busy ? "disabled" : ""}>
+          <button class="btn go" data-action="press" data-arg="button.pour" ${busy ? "disabled" : ""}>
             ${this._t(state === "standalone_pour" ? "start_pour" : "pour")}</button>
           <button class="btn" data-action="press" data-arg="button.pause" ${PAUSABLE_STATES.has(state) ? "" : "disabled"}>${this._t(state === "paused" ? "resume" : "pause")}</button>
         </div>
       </section>
 
       <section class="card">
-        <h2>${this._t("scale")}</h2>
+        <h2 class="with-icon">${ICONS.scale}${this._t("scale")}</h2>
         <div class="big center" data-live="sensor.weight">–</div>
         <div class="actions">
           <button class="btn" data-action="press" data-arg="button.tare_scale">${this._t("tare")}</button>
           <button class="btn" data-action="press" data-arg="button.scale_mode">${this._t(state === "standalone_scale" ? "exit_scale" : "scale_mode")}</button>
         </div>
-      </section>`;
+      </section>
+      </div>`;
   }
 
   // ---- Settings
@@ -1186,6 +1274,7 @@ class XBloomPanel extends HTMLElement {
     };
     const fw = this._st("update.firmware");
     return `
+      <div class="cols">
       <section class="card">
         <div class="row">
           <span>${this._t("connection")}</span>
@@ -1242,7 +1331,8 @@ class XBloomPanel extends HTMLElement {
         <div class="kv"><span>${this._t("mac")}</span><span>${esc(m.mac)}</span></div>
         <div class="kv"><span>${this._t("serial")}</span><span>${esc(this._fmt("sensor.serial_number"))}</span></div>
         <div class="kv"><span>${this._t("firmware")}</span><span>${esc(fw?.attributes.installed_version || "–")}</span></div>
-      </section>`;
+      </section>
+      </div>`;
   }
 
   // ---------------------------------------------------------------- live
@@ -1257,150 +1347,286 @@ class XBloomPanel extends HTMLElement {
       const target = Number(ring.closest(".ring").dataset.target) || 0;
       const w = Number(this._val("sensor.weight"));
       const frac = target > 0 && Number.isFinite(w) ? Math.max(0, Math.min(1, w / target)) : 0;
-      ring.setAttribute("stroke-dashoffset", String(326.7 * (1 - frac)));
+      ring.setAttribute("stroke-dashoffset", String(339.3 * (1 - frac)));
     }
   }
 }
 
+// Palette taken from the official app's own colour resources (near-black
+// surfaces, gold accent, pastel-blue start button); the light variant
+// keeps the same accents on warm greys.
 const STYLE = `
   :host {
-    --xb-accent: var(--primary-color, #b5764a);
-    --xb-bg: var(--primary-background-color, #f6f4f1);
-    --xb-card: var(--card-background-color, #fff);
-    --xb-text: var(--primary-text-color, #1c1b1a);
-    --xb-muted: var(--secondary-text-color, #7a756f);
-    --xb-line: var(--divider-color, rgba(0,0,0,.08));
-    --xb-tea: #6b8f5e;
-    --xb-danger: var(--error-color, #c0392b);
-    --xb-radius: 18px;
+    --xb-bg: #f3f2f0;
+    --xb-card: #ffffff;
+    --xb-card-2: #f0eeea;
+    --xb-text: #18191b;
+    --xb-muted: #7a838e;
+    --xb-line: #e3e3e3;
+    --xb-gold: #a8894a;
+    --xb-go: #b3c7e0;
+    --xb-go-text: #18191b;
+    --xb-tea: #5b8c56;
+    --xb-danger: #c4573f;
+    --xb-ok: #2e9e62;
+    --xb-shadow: 0 1px 2px rgba(24,25,27,.05), 0 8px 24px rgba(24,25,27,.06);
+    --xb-hero: radial-gradient(120% 90% at 50% 0%, #2b2d31 0%, #18191b 60%, #101010 100%);
+    --xb-radius: 22px;
+    --xb-serif: "Iowan Old Style", "New York", ui-serif, "Palatino Linotype", Palatino, Georgia, serif;
+    --xb-nav-h: 0px;
     display: block; min-height: 100vh; background: var(--xb-bg); color: var(--xb-text);
-    font-family: var(--paper-font-body1_-_font-family, system-ui, sans-serif);
+    font-family: var(--paper-font-body1_-_font-family, -apple-system, system-ui, "Segoe UI", Roboto, sans-serif);
+    -webkit-font-smoothing: antialiased;
+  }
+  :host([dark]) {
+    --xb-bg: #101112;
+    --xb-card: #1b1c1f;
+    --xb-card-2: #232426;
+    --xb-text: #ededee;
+    --xb-muted: #8b939d;
+    --xb-line: #2e3135;
+    --xb-gold: #c5af77;
+    --xb-tea: #8fbf8a;
+    --xb-danger: #e2745b;
+    --xb-ok: #89e2ad;
+    --xb-shadow: none;
   }
   * { box-sizing: border-box; }
-  button { font: inherit; color: inherit; cursor: pointer; }
-  button:disabled { opacity: .4; cursor: default; }
-  select, input { font: inherit; color: var(--xb-text); background: var(--xb-bg);
-    border: 1px solid var(--xb-line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
-  input[type=range] { width: 100%; padding: 0; border: 0; background: none; accent-color: var(--xb-accent); }
-  .toolbar { display: flex; align-items: center; gap: 8px; height: var(--header-height, 56px);
-    padding: 0 12px; background: var(--app-header-background-color, var(--xb-card));
-    color: var(--app-header-text-color, var(--xb-text)); border-bottom: 1px solid var(--xb-line);
-    position: sticky; top: 0; z-index: 2; }
-  .title { font-size: 20px; font-weight: 500; }
-  .machine-picker { font-size: 16px; }
+  button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  button:disabled { opacity: .38; cursor: default; }
+  select, input { font: inherit; color: var(--xb-text); background: var(--xb-card-2);
+    border: 1px solid transparent; border-radius: 12px; padding: 9px 12px; min-width: 0; }
+  select:focus, input:focus { outline: none; border-color: var(--xb-gold); }
+  select:disabled { opacity: .6; }
+  input[type=range] { width: 100%; padding: 0; border: 0; background: none; accent-color: var(--xb-gold); height: 28px; }
+  svg { width: 16px; height: 16px; flex: none; }
+  .dots { opacity: .95; }
+
+  /* ---- header + navigation */
+  .toolbar { display: flex; align-items: center; gap: 10px; height: var(--header-height, 56px);
+    padding: 0 16px 0 8px; background: color-mix(in srgb, var(--xb-bg) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid var(--xb-line); position: sticky; top: 0; z-index: 3; }
+  .logo { height: 20px; width: auto; display: block; }
+  .logo.dark { display: none; height: 32px; margin: 0 -6px; }
+  :host([dark]) .logo.light { display: none; }
+  :host([dark]) .logo.dark { display: block; }
+  .title { font-size: 14px; color: var(--xb-muted); padding-left: 10px; border-left: 1px solid var(--xb-line);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .machine-picker { font-size: 14px; }
   .spacer { flex: 1; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--xb-line);
-    border-radius: 999px; padding: 4px 12px; background: transparent; font-size: 13px; }
-  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--xb-muted); }
-  .chip.on .dot { background: var(--success-color, #43a047); }
-  .tabs { display: flex; gap: 4px; padding: 8px 12px 0; max-width: 960px; margin: 0 auto; overflow-x: auto; }
-  .tab { border: 0; background: none; padding: 10px 14px; font-size: 15px; color: var(--xb-muted);
-    border-bottom: 2px solid transparent; white-space: nowrap; }
-  .tab.active { color: var(--xb-text); border-bottom-color: var(--xb-text); font-weight: 600; }
-  .content { max-width: 960px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-  .card { background: var(--xb-card); border-radius: var(--xb-radius); padding: 16px;
-    box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.06)); display: flex; flex-direction: column; gap: 12px; }
-  h1 { font-size: 24px; font-weight: 600; margin: 4px 0 0; }
-  h2 { font-size: 15px; font-weight: 600; margin: 4px 0; letter-spacing: .02em; }
-  .label { font-size: 12px; color: var(--xb-muted); text-transform: uppercase; letter-spacing: .06em; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--xb-line);
+    border-radius: 999px; padding: 5px 12px; background: var(--xb-card); font-size: 13px; white-space: nowrap; }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--xb-muted); }
+  .chip.on .dot { background: var(--xb-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--xb-ok) 25%, transparent); }
+  .nav { display: flex; gap: 4px; justify-content: center; padding: 12px 16px 0; position: sticky; top: var(--header-height, 56px); z-index: 2; }
+  .nav-item { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent;
+    padding: 9px 16px; border-radius: 999px; color: var(--xb-muted); font-size: 14px; font-weight: 500; }
+  .nav-item svg { width: 14px; height: 14px; }
+  .nav-item.active { background: var(--xb-text); color: var(--xb-bg); }
+  .content { max-width: 1180px; margin: 0 auto; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px;
+    padding-bottom: calc(40px + var(--xb-nav-h)); }
+
+  /* ---- type + small parts */
+  h1 { font-family: var(--xb-serif); font-size: 30px; font-weight: 500; line-height: 1.15; margin: 4px 0 0; letter-spacing: -.01em; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: .08em; text-transform: uppercase; color: var(--xb-muted); }
+  h2.with-icon { display: flex; align-items: center; gap: 10px; }
+  h2.with-icon svg { width: 20px; height: 20px; color: var(--xb-gold); }
+  .label { font-size: 11px; color: var(--xb-muted); text-transform: uppercase; letter-spacing: .1em; }
   .muted { color: var(--xb-muted); }
   .small { font-size: 13px; }
-  .empty { text-align: center; color: var(--xb-muted); padding: 48px 0; }
-  .alert { background: color-mix(in srgb, var(--xb-danger) 12%, transparent); color: var(--xb-danger);
-    border-radius: 12px; padding: 10px 14px; font-weight: 500; }
-  .hint { background: color-mix(in srgb, var(--xb-accent) 12%, transparent); border-radius: 12px; padding: 10px 14px; font-size: 14px; }
+  .empty { text-align: center; color: var(--xb-muted); padding: 56px 0; }
+  .alert { background: color-mix(in srgb, var(--xb-danger) 14%, transparent); color: var(--xb-danger);
+    border-radius: 14px; padding: 12px 16px; font-weight: 500; }
+  .hint { background: color-mix(in srgb, var(--xb-gold) 14%, transparent); border-radius: 14px; padding: 12px 16px; font-size: 14px; line-height: 1.45; }
+  .hint.on-dark { background: rgba(197,175,119,.14); color: #e3d9bf; text-align: center; }
   .warn { color: var(--xb-danger); font-size: 13px; margin-top: 4px; }
-  .hero { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0; }
-  .ring { position: relative; width: min(260px, 70vw); aspect-ratio: 1; }
+  .card { background: var(--xb-card); border-radius: var(--xb-radius); padding: 20px;
+    box-shadow: var(--xb-shadow); display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+
+  /* ---- brew (home) */
+  .brew-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .hero { background: var(--xb-hero); color: #f2f2f2; border-radius: 28px; padding: 28px 22px 22px;
+    display: flex; flex-direction: column; align-items: center; gap: 20px; position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+    background-image: radial-gradient(rgba(255,255,255,.18) 1px, transparent 1.4px); background-size: 14px 14px;
+    mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); }
+  .ring { position: relative; width: min(280px, 72vw); aspect-ratio: 1; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-  .ring circle { fill: none; stroke-width: 6; }
-  .ring .track { stroke: var(--xb-line); }
-  .ring .bar { stroke: var(--xb-accent); stroke-linecap: round; transition: stroke-dashoffset .4s ease; }
-  .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; }
-  .big { font-size: 44px; font-weight: 300; letter-spacing: -.02em; }
+  .ring circle { fill: none; stroke-width: 3; }
+  .ring .track { stroke: rgba(255,255,255,.1); }
+  .ring .bar { stroke: #c5af77; stroke-linecap: round; transition: stroke-dashoffset .5s ease;
+    filter: drop-shadow(0 0 6px rgba(197,175,119,.45)); }
+  .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; }
+  .big { font-family: var(--xb-serif); font-size: 54px; font-weight: 400; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .card .big { font-size: 46px; }
   .big.center { text-align: center; }
   .sub { font-size: 15px; }
-  .stats { display: flex; gap: 32px; justify-content: center; }
-  .stats > div { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 18px; }
+  .dim { color: rgba(255,255,255,.55); }
+  .card .dim, .detail .dim { color: var(--xb-muted); }
+  .stages { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; width: 100%; max-width: 380px; justify-content: space-between; }
+  .stages li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px;
+    letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.35); }
+  .stages li svg { width: 30px; height: 30px; }
+  .stages li.done { color: rgba(197,175,119,.6); }
+  .stages li.active { color: #c5af77; }
+  .stages li.active svg { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .stats { display: flex; gap: 40px; justify-content: center; }
+  .stats > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .hero .label { color: rgba(255,255,255,.45); }
+  .stat { font-size: 20px; font-variant-numeric: tabular-nums; }
   .stats.inline { justify-content: flex-start; }
+  .hero .actions { width: 100%; max-width: 420px; }
   .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .card-head select { flex: 1; max-width: 60%; }
-  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; }
-  .metric { text-align: center; padding: 8px 4px; border-radius: 12px; background: var(--xb-bg); }
-  .metric .value { font-size: 22px; font-weight: 400; }
-  .metric small { font-size: 12px; margin-left: 2px; color: var(--xb-muted); }
+  .card-head select { flex: 1; max-width: 65%; }
+  .recipe-panel { padding-top: 0; overflow: hidden; }
+  .recipe-panel .art-banner { margin: 0 -20px; }
+  .recipe-panel > .card-head:first-child { margin-top: 20px; }
+
+  /* ---- metrics + pour timeline */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 8px; }
+  .metric { text-align: center; padding: 12px 4px 10px; border-radius: 16px; background: var(--xb-card-2); }
+  .metric .value { font-family: var(--xb-serif); font-size: 24px; font-variant-numeric: tabular-nums; }
+  .metric small { font-family: -apple-system, system-ui, sans-serif; font-size: 11px; margin-left: 2px; color: var(--xb-muted); }
+  .metric .label { margin-top: 2px; }
   .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .timeline li { display: flex; gap: 12px; position: relative; padding-bottom: 14px; }
-  .timeline li:not(:last-child)::before { content: ""; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--xb-line); }
-  .timeline.compact li { padding-bottom: 8px; }
+  .timeline li { display: flex; gap: 14px; position: relative; padding-bottom: 16px; }
+  .timeline li:not(:last-child)::before { content: ""; position: absolute; left: 13px; top: 30px; bottom: 2px;
+    border-left: 2px dotted var(--xb-line); }
+  .timeline.compact li { padding-bottom: 10px; }
   .step { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--xb-text); color: var(--xb-card); font-size: 13px; font-weight: 600; }
-  .bypass .step { background: var(--xb-muted); }
-  .pour-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .pour-vol { font-weight: 500; }
+    background: var(--xb-card-2); color: var(--xb-gold); font-size: 13px; font-weight: 700; border: 1px solid var(--xb-line); }
+  .bypass .step { color: var(--xb-muted); }
+  .pour-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .pour-vol { font-weight: 600; font-variant-numeric: tabular-nums; }
   .pour-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--xb-muted); font-size: 13px; }
   .pat { display: inline-flex; align-items: center; gap: 4px; }
-  svg { width: 16px; height: 16px; flex: none; }
-  .ring svg { width: 100%; height: 100%; }
+
+  /* ---- buttons */
   .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .actions.sticky { position: sticky; bottom: 0; padding: 12px 0; background: var(--xb-bg); }
+  .actions.sticky { position: sticky; bottom: var(--xb-nav-h); padding: 12px 0; background: var(--xb-bg); z-index: 1; }
   .btn { flex: 1; min-width: 120px; border: 1px solid var(--xb-line); background: var(--xb-card);
-    border-radius: 999px; padding: 12px 18px; font-weight: 500; }
-  .btn.primary { background: var(--xb-text); color: var(--xb-card); border-color: var(--xb-text); }
-  .btn.danger { color: var(--xb-danger); border-color: var(--xb-danger); }
-  .btn.small { flex: none; min-width: 0; padding: 7px 14px; font-size: 14px; }
+    border-radius: 999px; padding: 13px 20px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform .08s ease, filter .15s ease; }
+  .btn:not(:disabled):active { transform: scale(.98); }
+  .btn.primary { background: var(--xb-text); color: var(--xb-bg); border-color: var(--xb-text); }
+  .btn.go { background: var(--xb-go); color: var(--xb-go-text); border-color: transparent; letter-spacing: .04em; }
+  .btn.go:not(:disabled):hover { filter: brightness(1.05); }
+  .btn.ghost { background: transparent; color: inherit; border-color: rgba(255,255,255,.18); }
+  .btn.danger { color: var(--xb-danger); border-color: color-mix(in srgb, var(--xb-danger) 60%, transparent); background: transparent; }
+  .btn.small { flex: none; min-width: 0; padding: 8px 15px; font-size: 13px; }
   .btn.dashed { border-style: dashed; background: transparent; }
   .link { align-self: flex-start; border: 0; background: none; color: var(--xb-muted); padding: 0; font-size: 15px; }
-  .icon { border: 1px solid var(--xb-line); background: none; border-radius: 50%; width: 32px; height: 32px; }
+  .icon { border: 1px solid var(--xb-line); background: none; border-radius: 50%; width: 34px; height: 34px; }
   .icon.danger { color: var(--xb-danger); }
+
+  /* ---- recipes */
   .recipes-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .search { flex: 1; min-width: 160px; border-radius: 999px; padding: 9px 16px; background: var(--xb-card); }
-  .segmented { display: inline-flex; background: var(--xb-bg); border: 1px solid var(--xb-line); border-radius: 999px; padding: 3px; }
-  .recipes-bar .segmented { background: var(--xb-card); }
-  .segmented button { border: 0; background: none; border-radius: 999px; padding: 6px 14px; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
-  .segmented button.active { background: var(--xb-text); color: var(--xb-card); }
+  .search { flex: 1; min-width: 180px; border-radius: 999px; padding: 11px 18px; background: var(--xb-card); border-color: var(--xb-line); }
+  .segmented { display: inline-flex; background: var(--xb-card); border: 1px solid var(--xb-line); border-radius: 999px; padding: 3px; }
+  .segmented button { border: 0; background: none; border-radius: 999px; padding: 7px 15px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--xb-muted); }
+  .segmented button.active { background: var(--xb-text); color: var(--xb-bg); }
   .segmented.wide { display: flex; }
   .segmented.wide button { flex: 1; justify-content: center; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-  .recipe-card { text-align: left; border: 1px solid transparent; background: var(--xb-card); border-radius: var(--xb-radius);
-    padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.06)); }
-  .recipe-card.selected { border-color: var(--xb-accent); }
-  .rc-name { font-size: 16px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
-  .rc-specs { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--xb-muted); font-size: 13px; }
-  .rc-top { display: flex; gap: 6px; flex-wrap: wrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .recipe-card { text-align: left; border: 0; background: var(--xb-card); border-radius: var(--xb-radius);
+    padding: 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--xb-shadow);
+    outline: 2px solid transparent; outline-offset: -2px; transition: transform .15s ease, outline-color .15s ease; }
+  button.recipe-card:hover { transform: translateY(-2px); }
+  .recipe-card.selected { outline-color: var(--xb-gold); }
+  .rc-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .rc-name { font-family: var(--xb-serif); font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
+  .rc-specs { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--xb-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rc-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .likes { margin-left: auto; font-size: 12px; color: var(--xb-muted); }
   .rc-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-  .rc-tags span { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--xb-bg); color: var(--xb-muted); }
+  .rc-tags span { font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--xb-card-2); color: var(--xb-muted); }
   .recipe-card .btn { align-self: flex-start; margin-top: auto; }
-  .badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px;
-    border-radius: 999px; background: color-mix(in srgb, var(--xb-accent) 15%, transparent); color: var(--xb-accent); }
-  .badge.tea { background: color-mix(in srgb, var(--xb-tea) 15%, transparent); color: var(--xb-tea); }
-  .detail-head { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; padding: 4px 9px;
+    border-radius: 999px; background: var(--xb-card-2); color: var(--xb-muted); }
+  .badge.gold { background: color-mix(in srgb, var(--xb-gold) 18%, transparent); color: var(--xb-gold); }
+  .badge.tea { background: color-mix(in srgb, var(--xb-tea) 18%, transparent); color: var(--xb-tea); }
+
+  /* card art: generated tile or hub photo */
+  .art, .art-banner, .art-hero { position: relative; overflow: hidden; color: rgba(255,255,255,.9);
+    background:
+      radial-gradient(90% 120% at 85% 10%, hsl(var(--h, 30) 45% 38% / .9), transparent 60%),
+      linear-gradient(160deg, hsl(var(--h, 30) 30% 20%), hsl(var(--h, 30) 20% 8%)); }
+  .art { aspect-ratio: 16 / 10; }
+  .art-banner { height: 120px; }
+  .art-hero { height: 180px; border-radius: 18px; }
+  .art .dots, .art-banner .dots, .art-hero .dots { position: absolute; right: 6%; top: 50%; transform: translateY(-50%);
+    height: 74%; width: auto; opacity: .22; }
+  .art-figure { position: absolute; left: 16px; bottom: 12px; font-family: var(--xb-serif); font-size: 30px; letter-spacing: -.01em; }
+  .art-figure small { font-family: -apple-system, system-ui, sans-serif; font-size: 12px; margin-left: 3px; opacity: .7; }
+  .photo { background-size: cover; background-position: center; background-color: #18191b; }
+  .photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.35)); }
+
+  .detail-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .detail-hero { display: flex; flex-direction: column; gap: 14px; }
+  .detail-head { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .kv, .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; }
   .kv span:first-child { color: var(--xb-muted); }
-  .slot-row { display: flex; gap: 8px; }
-  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--xb-muted); min-width: 0; }
-  .field b { color: var(--xb-text); font-weight: 600; margin-left: 6px; }
+  .kv span:last-child { font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+  .slot-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---- forms */
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--xb-muted); min-width: 0; letter-spacing: .02em; }
+  .field b { color: var(--xb-text); font-weight: 600; margin-left: 6px; font-variant-numeric: tabular-nums; }
   .field input, .field select { color: var(--xb-text); font-size: 15px; }
-  .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
   .input-unit { display: flex; align-items: center; gap: 6px; }
   .input-unit input { flex: 1; width: 100%; }
   .input-unit em { font-style: normal; color: var(--xb-muted); font-size: 12px; }
   .summary { font-size: 14px; }
   .pour-head { display: flex; align-items: center; gap: 6px; }
-  .slot { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; }
-  .slot-letter { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
-    background: var(--xb-text); color: var(--xb-card); font-weight: 700; }
-  .slot-body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .slot-name { font-weight: 500; }
+
+  /* ---- settings */
+  .slot { display: flex; gap: 14px; align-items: flex-start; padding: 6px 0; }
+  .slot-letter { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+    background: #18191b; color: #c5af77; font-family: var(--xb-serif); font-size: 20px; }
+  .slot-body { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .slot-name { font-weight: 600; }
   .slot-write { display: flex; gap: 8px; }
   .slot-write select, .slot-write input { flex: 1; }
   .adv-row { display: flex; gap: 12px; align-items: flex-end; }
   .adv-row .field { flex: 1; }
-  select:disabled { opacity: .6; }
-  @media (max-width: 600px) {
-    .content { padding: 12px; }
+
+  /* ---- wide screens: two-column brew and recipe detail */
+  @media (min-width: 900px) {
+    .brew-grid { grid-template-columns: minmax(360px, 5fr) minmax(0, 6fr); }
+    .hero { position: sticky; top: calc(var(--header-height, 56px) + 64px); }
+    .detail-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+
+  /* ---- phones: app-style bottom tab bar */
+  @media (max-width: 720px) {
+    :host { --xb-nav-h: calc(64px + env(safe-area-inset-bottom, 0px)); }
+    .nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; padding: 6px 8px env(safe-area-inset-bottom, 0px);
+      height: var(--xb-nav-h); gap: 0; background: color-mix(in srgb, var(--xb-card) 92%, transparent);
+      backdrop-filter: saturate(1.4) blur(16px); -webkit-backdrop-filter: saturate(1.4) blur(16px);
+      border-top: 1px solid var(--xb-line); z-index: 4; }
+    .nav-item { flex: 1; flex-direction: column; gap: 4px; padding: 6px 0; font-size: 11px; border-radius: 12px; }
+    .nav-item svg { width: 20px; height: 20px; }
+    .nav-item.active { background: none; color: var(--xb-text); }
+    .nav-item.active svg { color: var(--xb-gold); }
+    .content { padding: 14px 14px; padding-bottom: calc(24px + var(--xb-nav-h)); gap: 14px; }
+    .card { padding: 16px; }
+    .recipe-panel .art-banner { margin: 0 -16px; }
+    .recipe-panel > .card-head:first-child { margin-top: 16px; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .rc-body { padding: 10px 12px 12px; }
+    .rc-name { font-size: 16px; }
+    .art-figure { font-size: 22px; left: 12px; bottom: 8px; }
+    .cols { grid-template-columns: minmax(0, 1fr); }
     .btn { min-width: 0; flex-basis: 40%; }
+    .actions > .btn.go:first-child { flex-basis: 100%; }
     .card-head select { max-width: 100%; }
+    .title { display: none; }
+    .big { font-size: 48px; }
+    h1 { font-size: 26px; }
   }
 `;
 

@@ -32,6 +32,7 @@ _WEBCOMPONENT = "xbloom-panel"
 _STATIC_URL = "/xbloom_static"
 _FRONTEND_DIR = Path(__file__).parent / "frontend"
 _PANEL_FILE = "xbloom-panel.js"
+_BRAND_DIR = Path(__file__).parent / "brand"
 
 
 def _file_hash(path: Path) -> str:
@@ -41,7 +42,11 @@ def _file_hash(path: Path) -> str:
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Serve the panel bundle, add the sidebar entry and its websocket API."""
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(_STATIC_URL, str(_FRONTEND_DIR), cache_headers=False)]
+        [
+            StaticPathConfig(_STATIC_URL, str(_FRONTEND_DIR), cache_headers=False),
+            # The panel header uses the integration's own wordmark.
+            StaticPathConfig("/xbloom_brand", str(_BRAND_DIR), cache_headers=True),
+        ]
     )
     # Content hash as a cache-buster — the manifest version is 0.0.0 in
     # the repo, so it can't tell two builds of the panel apart.

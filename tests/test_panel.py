@@ -120,3 +120,12 @@ def test_cloud_search_errors():
 
     conn = _run_cloud_search(None, {"entry_id": "missing"})
     assert conn.send_error.call_args.args[1] == "not_found"
+
+
+def test_collective_summary_carries_cover_image():
+    from custom_components.xbloom._cloud_client import _collective_result_to_summary
+
+    row = {"communityRecipeId": 1, "recipeName": "Legacy",
+           "imageUrl": "https://tbdprodpic.s3.us-east-1.amazonaws.com/x.png"}
+    assert _collective_result_to_summary(row, {})["image_url"] == row["imageUrl"]
+    assert _collective_result_to_summary({}, {})["image_url"] is None
