@@ -775,6 +775,13 @@ class XBloomClient:
             # sticking the derived state at "brewing").
             self._status.grinder.is_running = False
             self._status.brewer.is_running = False
+            # Same for the cmd-tagged state: a run cancelled while paused
+            # sends no stop signal, so PAUSED stuck and sensor.state read
+            # "paused" on the home screen (hardware-reported 2026-10-14).
+            if self._status.state in (
+                DeviceState.GRINDING, DeviceState.BREWING, DeviceState.PAUSED,
+            ):
+                self._status.state = DeviceState.IDLE
 
     def _update_brew_context(self, code: int) -> None:
         """Track whether a brew is actually under way — see
