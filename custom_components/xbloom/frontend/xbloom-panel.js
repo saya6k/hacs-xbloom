@@ -168,10 +168,13 @@ const totalWater = (r) => {
   return dose > 0 && r.ratio ? dose * Number(r.ratio) : pourSum(r);
 };
 
-// The app's temperature slider: 39-96 °C, with RT (20) / BP (98) at its ends.
+// The app's temperature slider: 39-96, where the ends ARE RT (room
+// temperature, 20 °C on the wire) and BP (boiling point, 98 °C) — the same
+// mapping as the coordinator's _wire_temperature for the manual slider.
 const tempLabel = (t) => (Number(t) <= 20 ? "RT" : Number(t) >= 98 ? "BP" : `${num(t)}°`);
-const tempToSlider = (t) => (t <= 20 ? 38 : t >= 98 ? 97 : Math.min(96, Math.max(39, t)));
-const sliderToTemp = (s) => (s <= 38 ? 20 : s >= 97 ? 98 : s);
+const sliderLabel = (s) => (Number(s) <= 39 ? "RT" : Number(s) >= 96 ? "BP" : `${num(s)}°`);
+const tempToSlider = (t) => (t <= 20 ? 39 : t >= 98 ? 96 : Math.min(95, Math.max(40, t)));
+const sliderToTemp = (s) => (s <= 39 ? 20 : s >= 96 ? 98 : s);
 
 const PATTERN_ICON = {
   center: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>',
@@ -757,7 +760,7 @@ class XBloomPanel extends HTMLElement {
     }
     if (d.rangeLabel) {
       const out = this.shadowRoot.querySelector(`[data-range-out="${d.rangeLabel}"]`);
-      if (out) out.textContent = el.value;
+      if (out) out.textContent = d.rangeFmt === "temp" ? sliderLabel(el.value) : el.value;
     }
     if (!this._editor) return;
     const r = this._editor.recipe;
@@ -1205,7 +1208,7 @@ class XBloomPanel extends HTMLElement {
             <span class="input-unit"><input type="number" data-pour="${i}:pause_seconds" value="${esc(p.pause_seconds ?? 0)}" min="0" max="600" step="1"><em>s</em></span></label>
         </div>
         <label class="field wide"><span>${this._t("temperature")} <b data-temp-out="${i}">${tempLabel(t)}</b></span>
-          <input type="range" data-pour="${i}:temperature_c" data-kind="temp" min="38" max="97" step="1" value="${tempToSlider(t)}">
+          <input type="range" data-pour="${i}:temperature_c" data-kind="temp" min="39" max="96" step="1" value="${tempToSlider(t)}">
         </label>
         <div class="field-grid">
           <label class="field"><span>${this._t("pattern")}</span>
@@ -1240,10 +1243,13 @@ class XBloomPanel extends HTMLElement {
     if (!s) return "";
     const a = s.attributes;
     const v = Number(s.state);
-    const unit = a.unit_of_measurement || "";
+    // The pour temperature slider's ends are RT/BP, not 39/96 °C.
+    const isTemp = key === "number.temperature";
+    const unit = isTemp ? "" : a.unit_of_measurement || "";
+    const shown = !Number.isFinite(v) ? "–" : isTemp ? sliderLabel(v) : num(v);
     return `
-      <label class="field wide"><span>${this._t(label)} <b><span data-range-out="${key}">${Number.isFinite(v) ? num(v) : "–"}</span> ${esc(unit)}</b></span>
-        <input type="range" data-number="${key}" data-range-label="${key}" min="${a.min}" max="${a.max}" step="${a.step}"
+      <label class="field wide"><span>${this._t(label)} <b><span data-range-out="${key}">${shown}</span> ${esc(unit)}</b></span>
+        <input type="range" data-number="${key}" data-range-label="${key}" ${isTemp ? 'data-range-fmt="temp"' : ""} min="${a.min}" max="${a.max}" step="${a.step}"
           value="${Number.isFinite(v) ? v : a.min}" ${s.state === "unavailable" ? "disabled" : ""}>
       </label>`;
   }
