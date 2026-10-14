@@ -1274,4 +1274,7 @@ class RecipesMixin:
 
     @property
     def recipe_names(self) -> list[str]:
-        return list(self.recipes.keys()) if self.recipes else ["No recipes configured"]
+        # The empty-store placeholder is a translation key, not display
+        # text: HA translates a select option only when the option value
+        # itself matches entity.select.recipe.state.<key>.
+        return list(self.recipes.keys()) if self.recipes else ["no_recipes_configured"]
