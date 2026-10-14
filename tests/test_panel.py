@@ -72,3 +72,51 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["easy_slots"]["B"] is None
     assert payload["title"] == "Studio"
     assert payload["mac"] == "AA:BB"
+
+
+def _run_cloud_search(coordinator, msg):
+    """Drive ws_cloud_search's coroutine directly (async_response hands it to
+    hass.async_create_background_task, captured here)."""
+    import asyncio
+
+    from custom_components.xbloom.const import DATA_COORDINATOR, DOMAIN
+
+    hass = MagicMock()
+    hass.data = {DOMAIN: {"entry1": {DATA_COORDINATOR: coordinator}}} if coordinator else {}
+    connection = MagicMock()
+    panel.ws_cloud_search(hass, connection, {"id": 7, "sort": "likes", "page": 1, **msg})
+    coro = hass.async_create_background_task.call_args.args[0]
+    asyncio.run(coro)
+    return connection
+
+
+def test_cloud_search_passes_filters_and_page():
+    seen = {}
+
+    async def search(**kwargs):
+        seen.update(kwargs)
+        return {"success": True, "list": [{"name": "A"}], "page_index": 2,
+                "total_page": 5, "total": 42}
+
+    coordinator = SimpleNamespace(async_search_collective_recipes=search)
+    conn = _run_cloud_search(
+        coordinator, {"entry_id": "entry1", "keyword": "kenya", "src": "official", "page": 2}
+    )
+    assert seen == {"keyword": "kenya", "category": None, "src": "official",
+                    "sort": "likes", "sort_direction": "desc", "page": 2}
+    conn.send_result.assert_called_once_with(
+        7, {"recipes": [{"name": "A"}], "page": 2, "total_page": 5, "total": 42}
+    )
+
+
+def test_cloud_search_errors():
+    async def failing(**kwargs):
+        return {"success": False, "message": "down"}
+
+    conn = _run_cloud_search(
+        SimpleNamespace(async_search_collective_recipes=failing), {"entry_id": "entry1"}
+    )
+    conn.send_error.assert_called_once_with(7, "search_failed", "down")
+
+    conn = _run_cloud_search(None, {"entry_id": "missing"})
+    assert conn.send_error.call_args.args[1] == "not_found"
