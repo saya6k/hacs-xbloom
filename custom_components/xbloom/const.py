@@ -23,10 +23,6 @@ CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
 # contents, so this record is the only source for the slot sensor entities.
 CONF_EASY_SLOTS = "easy_slots"
 
-# entry.options: the machine's colour as chosen in the panel (absent = auto,
-# from the serial number) — purely cosmetic, picks the product photo.
-CONF_MACHINE_COLOR = "machine_color"
-
 # XBloom cloud account — both optional. Absent entirely (not just empty
 # strings) when the user skips the account step; cloud-backed services/LLM
 # tools must check for their absence and fail gracefully, never assume they

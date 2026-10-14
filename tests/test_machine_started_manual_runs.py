@@ -12,9 +12,17 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.xbloom.ble.models import DeviceState
+from custom_components.xbloom.coordinator import operations
 from custom_components.xbloom.coordinator.operations import OperationsMixin
 from custom_components.xbloom.coordinator.state import StateMixin
+
+
+@pytest.fixture(autouse=True)
+def _no_settle_wait(monkeypatch):
+    monkeypatch.setattr(operations, "_STOP_TO_QUIT_SETTLE_S", 0)
 
 
 class _Controller:
@@ -137,7 +145,8 @@ def test_cancel_of_a_knob_started_pour_sends_brewer_stop():
     c.tick(POUR_PAGE)
     c.tick(POURING)
     asyncio.run(c.async_cancel())
-    assert c.client.sent == [4507]
+    # Stop, then leave the pour page so the machine goes home.
+    assert c.client.sent == [4507, 8013]
     assert c._manual_paused is False
 
 
@@ -225,7 +234,7 @@ def test_hardware_sequence_with_the_machines_reporting_lag():
     assert c.tick(POURING) == "brewing"           # resumed
     assert c._manual_paused is False
     asyncio.run(c.async_cancel())                 # 4507
-    assert c.client.sent == [8019, 8021, 4507]
+    assert c.client.sent == [8019, 8021, 4507, 8013]
 
 
 def test_a_pause_the_machine_never_honoured_still_shows_brewing():

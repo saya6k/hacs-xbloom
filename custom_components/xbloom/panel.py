@@ -3,11 +3,10 @@
 The panel is a single, build-free web component (``frontend/xbloom-panel.js``)
 served from this package. It reads live state straight from the entities
 and acts through the existing entities/services, so the only backend it
-needs is a few websocket commands: ``xbloom/machines``, which hands it each
-machine's entity map plus the full recipe store (``list_recipes`` only
-returns summaries — the editor needs the pours), ``xbloom/cloud_search``, a
-paged collective-hub search, and ``xbloom/set_machine_color``, which saves
-the colour behind the product photo.
+needs is two read-only websocket commands: ``xbloom/machines``, which hands
+it each machine's entity map plus the full recipe store (``list_recipes``
+only returns summaries — the editor needs the pours), and
+``xbloom/cloud_search``, a paged collective-hub search.
 
 Registered once from ``async_setup`` — the panel is global, not per entry;
 it lists every configured machine and lets the user switch between them.
@@ -25,7 +24,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_MAC_ADDRESS, CONF_MACHINE_COLOR, DATA_COORDINATOR, DOMAIN
+from .const import CONF_MAC_ADDRESS, DATA_COORDINATOR, DOMAIN
+from .machine_color import color_from_serial
 
 PANEL_URL_PATH = "xbloom"
 PANEL_ICON = "mdi:coffee-maker"
@@ -35,30 +35,6 @@ _STATIC_URL = "/xbloom_static"
 _FRONTEND_DIR = Path(__file__).parent / "frontend"
 _PANEL_FILE = "xbloom-panel.js"
 _BRAND_DIR = Path(__file__).parent / "brand"
-
-# Studio colours sold (xbloom.com store, 2026-10); the panel shows the
-# matching product photo.
-MACHINE_COLORS = (
-    "midnight_black",
-    "moonlight_white",
-    "sage_green_green",
-    "sage_green_gold",
-    "twilight",
-    "offline_blue",
-)
-# The official app's own rule (jadx 2026-10-14, Device.getHomeImageRes):
-# serialNumber[4:6] "02" shows the white machine, anything else the black
-# one. It knows no other colour codes, so neither do we — the rest is the
-# user's pick.
-_SERIAL_COLOR_CODES = {"01": "midnight_black", "02": "moonlight_white"}
-
-
-def color_from_serial(serial: str | None) -> str | None:
-    """The machine colour the serial number encodes, if the app knows it."""
-    if not serial or len(serial) < 6:
-        return None
-    return _SERIAL_COLOR_CODES.get(serial[4:6])
-
 
 def _machine_serial(hass: HomeAssistant, coordinator: Any) -> str | None:
     """Live serial when connected, else the one kept on the device entry
@@ -98,7 +74,6 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     )
     websocket_api.async_register_command(hass, ws_machines)
     websocket_api.async_register_command(hass, ws_cloud_search)
-    websocket_api.async_register_command(hass, ws_set_machine_color)
 
 
 def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> dict:
@@ -126,8 +101,7 @@ def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> di
             letter: coordinator.easy_slot_contents(letter) for letter in ("A", "B", "C")
         },
         "cloud_login": coordinator.cloud_login_configured,
-        # None = auto (detected_color, falling back to black in the panel).
-        "machine_color": entry.options.get(CONF_MACHINE_COLOR) if entry else None,
+        # None when the code is unknown — the panel falls back to black.
         "detected_color": color_from_serial(_machine_serial(hass, coordinator)),
     }
 
@@ -144,30 +118,6 @@ def ws_machines(
         if isinstance(data, dict) and DATA_COORDINATOR in data
     ]
     connection.send_result(msg["id"], {"machines": machines})
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "xbloom/set_machine_color",
-        vol.Required("entry_id"): str,
-        # None goes back to auto-detection.
-        vol.Required("color"): vol.Any(None, vol.In(MACHINE_COLORS)),
-    }
-)
-@callback
-def ws_set_machine_color(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
-) -> None:
-    """Save the machine's colour (a no-reload option — see __init__)."""
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is None or entry.domain != DOMAIN:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
-        return
-    options = {k: v for k, v in entry.options.items() if k != CONF_MACHINE_COLOR}
-    if msg["color"]:
-        options[CONF_MACHINE_COLOR] = msg["color"]
-    hass.config_entries.async_update_entry(entry, options=options)
-    connection.send_result(msg["id"], {"machine_color": msg["color"]})
 
 
 @websocket_api.websocket_command(
