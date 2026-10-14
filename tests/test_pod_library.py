@@ -63,6 +63,33 @@ def test_list_is_newest_scan_first_and_survives_a_reload():
     assert {p["xid"] for p in reloaded.pods()} == {"A", "B"}
 
 
+def test_failed_lookup_still_records_the_scan():
+    lib = _library()
+    asyncio.run(lib.async_record("XB0001", {}))
+    pod = lib.get("XB0001")
+    assert pod["xid"] == "XB0001" and pod["scans"] == 1
+    assert "recipes" not in pod
+
+
+def test_failed_lookup_keeps_earlier_bean_info():
+    lib = _library()
+    asyncio.run(lib.async_record("KR0005", DETAIL))
+    asyncio.run(lib.async_record("KR0005", {}))  # cloud down on the 2nd scan
+    pod = lib.get("KR0005")
+    assert pod["name"] == "Mucho Berry" and pod["recipes"] == DETAIL["recipes"]
+    assert pod["scans"] == 2
+
+
+def test_retried_lookup_fills_in_without_counting_a_scan():
+    lib = _library()
+    asyncio.run(lib.async_record("XB0001", {}))
+    assert asyncio.run(lib.async_update_detail("XB0001", {})) is False
+    assert asyncio.run(lib.async_update_detail("XB0001", DETAIL)) is True
+    pod = lib.get("XB0001")
+    assert pod["name"] == "Mucho Berry" and pod["scans"] == 1 and pod["xid"] == "XB0001"
+    assert asyncio.run(lib.async_update_detail("NOPE", DETAIL)) is False
+
+
 def test_delete():
     lib = _library()
     asyncio.run(lib.async_record("A", DETAIL))
@@ -128,3 +155,32 @@ def test_ws_save_recipe_unknown_pod_or_index():
         panel.ws_pod_save_recipe(_hass_with(coordinator), conn,
                                  {"id": 4, "entry_id": "e1", "xid": xid, "index": index})
         assert conn.send_error.call_args.args[1] == "not_found"
+
+
+def _run_refresh(coordinator, xid):
+    """Drive ws_pod_refresh's coroutine (async_response hands it to
+    hass.async_create_background_task, captured here)."""
+    hass = _hass_with(coordinator)
+    conn = MagicMock()
+    panel.ws_pod_refresh(hass, conn, {"id": 5, "entry_id": "e1", "xid": xid})
+    asyncio.run(hass.async_create_background_task.call_args.args[0])
+    return conn
+
+
+def test_ws_refresh_retries_the_lookup():
+    lib = _library()
+    asyncio.run(lib.async_record("XB0001", {}))
+
+    async def lookup(xid):
+        return DETAIL
+
+    coordinator = SimpleNamespace(pod_library=lib, _async_lookup_pod=lookup)
+    conn = _run_refresh(coordinator, "XB0001")
+    conn.send_result.assert_called_once_with(5, {"updated": True})
+    assert lib.get("XB0001")["name"] == "Mucho Berry"
+
+
+def test_ws_refresh_unknown_pod():
+    coordinator = SimpleNamespace(pod_library=_library(), _async_lookup_pod=None)
+    conn = _run_refresh(coordinator, "NOPE")
+    assert conn.send_error.call_args.args[1] == "not_found"

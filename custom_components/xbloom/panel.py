@@ -79,6 +79,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_pods)
     websocket_api.async_register_command(hass, ws_pod_save_recipe)
     websocket_api.async_register_command(hass, ws_pod_delete)
+    websocket_api.async_register_command(hass, ws_pod_refresh)
 
 
 def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> dict:
@@ -168,6 +169,27 @@ def ws_pod_save_recipe(
     existing = find_recipe(coordinator.recipes or {}, recipe.get("share_url") or "")
     name = added[0] if added else (existing[0] if existing else recipe.get("name"))
     connection.send_result(msg["id"], {"name": name, "added": bool(added)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/pods/refresh",
+        vol.Required("entry_id"): str,
+        vol.Required("xid"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_pod_refresh(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Retry the cloud lookup for a pod scanned while it failed."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None or coordinator.pod_library.get(msg["xid"]) is None:
+        connection.send_error(msg["id"], "not_found", "No such pod.")
+        return
+    detail = await coordinator._async_lookup_pod(msg["xid"])
+    updated = await coordinator.pod_library.async_update_detail(msg["xid"], detail)
+    connection.send_result(msg["id"], {"updated": updated})
 
 
 @websocket_api.websocket_command(

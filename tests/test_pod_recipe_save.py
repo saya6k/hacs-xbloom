@@ -134,6 +134,16 @@ def test_pod_detected_records_the_pod_and_saves_no_recipe():
     assert len(log) == 1  # the event still fired, once
 
 
+def test_scan_is_recorded_even_when_the_cloud_lookup_fails():
+    """User-reported 2026-10-15: a recipe card scan never showed up — the
+    cloud API was answering 502, and only a successful lookup was
+    recorded. The scan now lands in the library anyway (xid only)."""
+    library = _Library()
+    _, log = _dispatch_with_library(None, library)  # _FakeCloud(result=None): lookup failed
+    assert library.recorded == [("KR0005", {})]
+    assert len(log) == 1
+
+
 def test_a_failing_record_never_swallows_the_event():
     _, log = _dispatch_with_library({"recipes": [_pod_recipe()]}, _Library(fail=True))
     assert len(log) == 1
