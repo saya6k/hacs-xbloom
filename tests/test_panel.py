@@ -38,7 +38,7 @@ def test_panel_registration_constants():
 
 
 def test_machine_payload_maps_entities_and_full_recipes():
-    entry = SimpleNamespace(title="Studio", data={"mac_address": "AA:BB"})
+    entry = SimpleNamespace(title="Studio", data={"mac_address": "AA:BB"}, options={})
     hass = MagicMock()
     hass.config_entries.async_get_entry.return_value = entry
     coordinator = SimpleNamespace(
@@ -50,6 +50,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
         mac_address="AA:BB",
         cloud_login_configured=False,
         easy_slot_contents=lambda s: {"uid": "u1", "name": "Daily"} if s == "A" else None,
+        data={"serial_number": "J15A02B4CV030"},
     )
     entries = [
         SimpleNamespace(domain="sensor", translation_key="state",
@@ -72,6 +73,52 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["easy_slots"]["B"] is None
     assert payload["title"] == "Studio"
     assert payload["mac"] == "AA:BB"
+    # Serial "J15A02…" → the app's white-machine code; nothing picked yet.
+    assert payload["detected_color"] == "moonlight_white"
+    assert payload["machine_color"] is None
+
+
+def test_color_from_serial_follows_the_official_app():
+    """Device.getHomeImageRes: serialNumber[4:6] "02" = white, else black.
+    The app knows no other codes, so neither do we."""
+    assert panel.color_from_serial("J15A01B4CV030") == "midnight_black"
+    assert panel.color_from_serial("J15A02B4CV030") == "moonlight_white"
+    assert panel.color_from_serial("J15A07B4CV030") is None
+    assert panel.color_from_serial("J15") is None
+    assert panel.color_from_serial(None) is None
+
+
+def test_panel_photo_keys_match_machine_colors():
+    block = JS.split("const MACHINE_IMAGES = {", 1)[1].split("};", 1)[0]
+    keys = re.findall(r"^\s*([a-z_]+):", block, re.M)
+    assert tuple(keys) == panel.MACHINE_COLORS
+
+
+def _set_color(options, color):
+    entry = SimpleNamespace(domain="xbloom", options=options)
+    hass = MagicMock()
+    hass.config_entries.async_get_entry.return_value = entry
+    connection = MagicMock()
+    panel.ws_set_machine_color(
+        hass, connection, {"id": 3, "type": "xbloom/set_machine_color",
+                           "entry_id": "e1", "color": color}
+    )
+    return hass.config_entries.async_update_entry.call_args, connection
+
+
+def test_set_machine_color_saves_and_clears_the_option():
+    call, conn = _set_color({"mode": "pro"}, "twilight")
+    assert call.kwargs["options"] == {"mode": "pro", "machine_color": "twilight"}
+    conn.send_result.assert_called_once()
+    # None goes back to auto: the key is removed, other options kept.
+    call, _ = _set_color({"mode": "pro", "machine_color": "twilight"}, None)
+    assert call.kwargs["options"] == {"mode": "pro"}
+
+
+def test_machine_color_change_does_not_reload_the_entry():
+    from custom_components.xbloom import _NO_RELOAD_OPTION_KEYS
+
+    assert "machine_color" in _NO_RELOAD_OPTION_KEYS
 
 
 def _run_cloud_search(coordinator, msg):
