@@ -22,7 +22,7 @@ PLATFORMS = ("binary_sensor", "button", "event", "number", "select", "sensor", "
 
 def test_panel_entity_keys_exist():
     strings = json.loads((PKG / "strings.json").read_text())["entity"]
-    pattern = re.compile(r'"((?:%s)\.[a-z0-9_]+)"' % "|".join(PLATFORMS))
+    pattern = re.compile(rf'"((?:{"|".join(PLATFORMS)})\.[a-z0-9_]+)"')
     keys = set(pattern.findall(JS))
     assert keys, "no entity keys found in the panel bundle"
     missing = sorted(k for k in keys if k.split(".")[1] not in strings.get(k.split(".")[0], {}))
