@@ -21,6 +21,12 @@ _MACHINE_INFO_RETRY_DELAYS_S = (3.0, 5.0, 10.0, 20.0, 30.0)
 # phone app.
 _BLE_SILENCE_TIMEOUT_S = 15.0
 
+# How long pod_detected waits for the cloud pod lookup before firing with
+# just the xid. The machine already has the pod's recipe loaded by then
+# (0x1F ~0.5s after 40501), so the lookup only adds detail — never block
+# the event on a slow or offline API for longer than this.
+_POD_LOOKUP_TIMEOUT_S = 5.0
+
 # Reconnect-supervisor backoff. Without it the supervisor retries on every
 # poll tick forever, which floods the log with an ERROR every ~5s for as long
 # as the machine is off or out of range (observed 2026-07-19 on a real HA run).

@@ -177,6 +177,25 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 | Cold Brew              | 58–80  |
 | Cold Drip              | 59–80  |
 
+## Pods and recipe cards
+
+When the machine reads an NFC pod or recipe card, `event.notification`
+fires `pod_detected`. The machine itself only reports the tag's 6-character
+id (`xid`, e.g. `KR0005`) and loads the recipe on its own — so the
+integration looks the id up in XBloom's cloud (no account needed) and adds
+what it finds:
+
+| Attribute | Meaning |
+|---|---|
+| `xid` | tag id — always present |
+| `name`, `roaster`, `origin`, `process`, `varietal`, `flavor`, `image` | bean info; fields the cloud leaves empty or `N/A` are omitted |
+| `recipes` | every recipe linked to the tag, in the same shape as a local recipe plus `share_url` (a pod has one; the 3-pour card has three) |
+| `default_recipe` | name of the recipe the official app preselects |
+
+The event waits up to 5 seconds for the lookup; if the cloud is slow or
+unreachable it fires with just `xid`. A recipe card's bean fields are
+placeholders (its `name` is "Recipe Card" and `origin` holds a slogan).
+
 ## Troubleshooting
 
 Machine alarms surface as translated event types on the `event.error`
