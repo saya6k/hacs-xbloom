@@ -390,3 +390,15 @@ def test_activity_code_keeps_paused_state():
     client = _paused_client()
     client._on_notification(None, bytearray(_heartbeat(0x50)))
     assert client.status.state == DeviceState.PAUSED
+
+
+def test_last_page_survives_activity_codes():
+    """A machine-started pour: pour page, then brewing — last_page keeps
+    "pour" so the coordinator can tell it was a manual pour."""
+    client = _client()
+    client._on_notification(None, bytearray(_heartbeat(0x03)))
+    client._on_notification(None, bytearray(_heartbeat(0x23)))
+    assert client.status.screen is None
+    assert client.status.last_page == "pour"
+    client._on_notification(None, bytearray(_heartbeat(0x01)))
+    assert client.status.last_page == "home"
