@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import voluptuous as vol
 import yaml
@@ -12,10 +13,12 @@ from homeassistant.core import (
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
+    callback,
 )
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     ATTR_BYPASS_TEMPERATURE,
@@ -81,6 +84,7 @@ from .const import (
 )
 from .coordinator import XBloomCoordinator
 from .default_recipes import DEFAULT_RECIPES
+from .entity import scoped_unique_id
 from .llm_api import register_llm_api
 from .panel import async_register_panel
 
@@ -779,7 +783,33 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             hass.config_entries.async_update_entry(entry, version=3)
 
+    if entry.version == 3 and entry.minor_version < 2:
+        # Entity unique ids used to be fixed strings ("xbloom_grind"), so
+        # a second machine's entities collided with the first's and were
+        # never created. Scope this entry's registry entries to the entry;
+        # only the unique id changes — entity ids, names, areas and
+        # history are untouched.
+        await er.async_migrate_entries(
+            hass, entry.entry_id, _scope_unique_id_migration(entry.entry_id)
+        )
+        hass.config_entries.async_update_entry(entry, minor_version=2)
+
     return True
+
+
+def _scope_unique_id_migration(
+    entry_id: str,
+) -> Callable[[er.RegistryEntry], dict | None]:
+    """Registry migration callback: prefix unscoped unique ids with the entry id."""
+    prefix = scoped_unique_id(entry_id, "")
+
+    @callback
+    def _migrate(entity_entry: er.RegistryEntry) -> dict | None:
+        if entity_entry.unique_id.startswith(prefix):
+            return None
+        return {"new_unique_id": scoped_unique_id(entry_id, entity_entry.unique_id)}
+
+    return _migrate
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

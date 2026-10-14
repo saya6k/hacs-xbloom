@@ -15,6 +15,7 @@ from .coordinator import (
     POUR_PATTERN_OPTIONS,
     XBloomCoordinator,
 )
+from .entity import scope_unique_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,11 +24,11 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
-    async_add_entities([
+    async_add_entities(scope_unique_ids(entry.entry_id, [
         XBloomRecipeSelect(coordinator, entry),
         XBloomPourPatternSelect(coordinator, entry),
         XBloomModeSelect(coordinator, entry),
-    ])
+    ]))
 
 
 class XBloomRecipeSelect(CoordinatorEntity[XBloomCoordinator], SelectEntity):

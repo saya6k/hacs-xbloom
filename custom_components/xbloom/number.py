@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import XBloomCoordinator
+from .entity import scope_unique_ids
 
 
 async def async_setup_entry(
@@ -18,12 +19,12 @@ async def async_setup_entry(
 ) -> None:
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     async_add_entities(
-        [
+        scope_unique_ids(entry.entry_id, [
             XBloomGrindSizeNumber(coordinator, entry),
             XBloomRPMNumber(coordinator, entry),
             XBloomTemperatureNumber(coordinator, entry),
             XBloomVolumeNumber(coordinator, entry),
-        ]
+        ])
     )
 
 

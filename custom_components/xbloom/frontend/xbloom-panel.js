@@ -208,7 +208,24 @@ const STAGE_OF_STATE = {
   grinding: 1, brewing: 2, paused: 2, ready: 3,
 };
 
-const SAFE_IMAGE = /^https:\/\/[^\s"'()<>\\]+$/;
+// Per-browser convenience only (which machine was last open); storage can
+// be unavailable (private mode, blocked site data), so failures are ignored.
+const loadPref = (key) => {
+  try {
+    return localStorage.getItem(`xbloom-panel:${key}`);
+  } catch (_err) {
+    return null;
+  }
+};
+const savePref = (key, value) => {
+  try {
+    localStorage.setItem(`xbloom-panel:${key}`, value);
+  } catch (_err) {
+    // ignore
+  }
+};
+
+const SAFE_IMAGE =/^https:\/\/[^\s"'()<>\\]+$/;
 
 // XBloom's own product shot, loaded from their store CDN at view time —
 // referenced, not bundled (the photo is XBloom's copyright). Hidden if it
@@ -369,7 +386,11 @@ class XBloomPanel extends HTMLElement {
       const res = await this._hass.callWS({ type: "xbloom/machines" });
       this._machines = res.machines || [];
       if (!this._machines.some((m) => m.entry_id === this._entryId)) {
-        this._entryId = this._machines[0]?.entry_id || null;
+        // Reopen on the machine this viewer last picked, if it still exists.
+        const saved = loadPref("machine");
+        this._entryId = this._machines.some((m) => m.entry_id === saved)
+          ? saved
+          : this._machines[0]?.entry_id || null;
       }
     } catch (err) {
       this._machines = [];
@@ -699,6 +720,7 @@ class XBloomPanel extends HTMLElement {
     const d = el.dataset;
     if (d.machine !== undefined) {
       this._entryId = el.value;
+      savePref("machine", el.value);
       this._recipeView = null;
       this._editor = null;
       return this._render();
