@@ -3,9 +3,10 @@
 The panel is a single, build-free web component (``frontend/xbloom-panel.js``)
 served from this package. It reads live state straight from the entities
 and acts through the existing entities/services, so the only backend it
-needs is one read-only websocket command: ``xbloom/machines``, which hands
+needs is two read-only websocket commands: ``xbloom/machines``, which hands
 it each machine's entity map plus the full recipe store (``list_recipes``
-only returns summaries — the editor needs the pours).
+only returns summaries — the editor needs the pours), and
+``xbloom/cloud_search``, a paged collective-hub search.
 
 Registered once from ``async_setup`` — the panel is global, not per entry;
 it lists every configured machine and lets the user switch between them.
@@ -55,6 +56,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         require_admin=False,
     )
     websocket_api.async_register_command(hass, ws_machines)
+    websocket_api.async_register_command(hass, ws_cloud_search)
 
 
 def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> dict:
@@ -97,3 +99,50 @@ def ws_machines(
         if isinstance(data, dict) and DATA_COORDINATOR in data
     ]
     connection.send_result(msg["id"], {"machines": machines})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/cloud_search",
+        vol.Required("entry_id"): str,
+        vol.Optional("keyword"): str,
+        vol.Optional("category"): vol.In(["coffee", "tea"]),
+        vol.Optional("src"): vol.In(["official", "user"]),
+        vol.Optional("sort", default="likes"): vol.In(["date", "likes", "downloads"]),
+        vol.Optional("page", default=1): vol.All(int, vol.Range(min=1)),
+    }
+)
+@websocket_api.async_response
+async def ws_cloud_search(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Search the public collective hub, one page at a time.
+
+    The ``cloud_search_collective_recipes`` service only returns the first
+    page; the panel's "load more" needs ``page``. Importing a result goes
+    through the regular ``cloud_import_recipe`` service.
+    """
+    data = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if not isinstance(data, dict) or DATA_COORDINATOR not in data:
+        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        return
+    result = await data[DATA_COORDINATOR].async_search_collective_recipes(
+        keyword=msg.get("keyword") or None,
+        category=msg.get("category"),
+        src=msg.get("src"),
+        sort=msg["sort"],
+        sort_direction="desc",
+        page=msg["page"],
+    )
+    if not result.get("success"):
+        connection.send_error(msg["id"], "search_failed", result.get("message", "Search failed."))
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "recipes": result["list"],
+            "page": result.get("page_index") or msg["page"],
+            "total_page": result.get("total_page") or 1,
+            "total": result.get("total"),
+        },
+    )

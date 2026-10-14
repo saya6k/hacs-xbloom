@@ -56,6 +56,15 @@ const STRINGS = {
     confirm_calibrate: "Tap again to calibrate", device: "Device",
     serial: "Serial number", firmware: "Firmware", mac: "Address",
     unavailable: "Unavailable",
+    my_recipes: "My recipes", cloud: "Cloud",
+    cloud_search: "Search the XBloom community", search_btn: "Search",
+    official: "Official", community: "Community",
+    sort_likes: "Most liked", sort_downloads: "Most downloaded", sort_date: "Newest",
+    import: "Import", imported: "Imported", importing: "Importing…",
+    import_done: "Imported “{name}”", load_more: "Load more",
+    share_link: "Share link or recipe id", import_link: "Import link",
+    cloud_hint: "Search XBloom's public recipe hub and import a copy into this machine's local recipes. No account needed.",
+    cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
   },
   ko: {
     tab_home: "브루", tab_recipes: "레시피", tab_manual: "수동", tab_settings: "설정",
@@ -102,6 +111,15 @@ const STRINGS = {
     confirm_calibrate: "한 번 더 누르면 보정", device: "기기",
     serial: "시리얼 번호", firmware: "펌웨어", mac: "주소",
     unavailable: "사용 불가",
+    my_recipes: "내 레시피", cloud: "클라우드",
+    cloud_search: "XBloom 커뮤니티 검색", search_btn: "검색",
+    official: "공식", community: "커뮤니티",
+    sort_likes: "좋아요순", sort_downloads: "다운로드순", sort_date: "최신순",
+    import: "가져오기", imported: "가져옴", importing: "가져오는 중…",
+    import_done: "“{name}” 레시피를 가져왔습니다", load_more: "더 보기",
+    share_link: "공유 링크 또는 레시피 ID", import_link: "링크로 가져오기",
+    cloud_hint: "XBloom 공개 레시피 허브에서 검색해 이 머신의 로컬 레시피로 복사해 옵니다. 계정이 필요 없습니다.",
+    cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
   },
 };
 
@@ -191,6 +209,13 @@ class XBloomPanel extends HTMLElement {
     this._recipeSig = "";
     this._pendingRender = false;
     this._wired = false;
+    this._recipesView = "mine"; // "mine" | "cloud"
+    this._cloud = {
+      q: "", category: "", src: "", sort: "likes",
+      results: null, page: 0, totalPage: 0, total: null,
+      loading: false, importing: null, imported: new Set(),
+    };
+    this._shareLink = "";
   }
 
   set hass(hass) {
@@ -216,6 +241,11 @@ class XBloomPanel extends HTMLElement {
     root.addEventListener("click", (ev) => this._onClick(ev));
     root.addEventListener("change", (ev) => this._onChange(ev));
     root.addEventListener("input", (ev) => this._onInput(ev));
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      if (ev.target.dataset.cloudQ !== undefined) this._cloudSearch();
+      else if (ev.target.dataset.shareLink !== undefined) this._importCloud(this._shareLink.trim());
+    });
     root.addEventListener("pointerdown", () => { this._pointerDown = true; });
     window.addEventListener("pointerup", () => {
       this._pointerDown = false;
@@ -444,6 +474,58 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
+  // page 1 replaces the results, later pages append ("load more").
+  async _cloudSearch(page = 1) {
+    const c = this._cloud;
+    if (c.loading) return;
+    c.loading = true;
+    // The focused search box would otherwise hold the re-render back.
+    this.shadowRoot.activeElement?.blur();
+    this._render();
+    try {
+      const res = await this._hass.callWS({
+        type: "xbloom/cloud_search",
+        entry_id: this._entryId,
+        sort: c.sort,
+        page,
+        ...(c.q.trim() ? { keyword: c.q.trim() } : {}),
+        ...(c.category ? { category: c.category } : {}),
+        ...(c.src ? { src: c.src } : {}),
+      });
+      c.results = page > 1 ? [...(c.results || []), ...res.recipes] : res.recipes;
+      c.page = res.page;
+      c.totalPage = res.total_page;
+      c.total = res.total;
+    } catch (err) {
+      this._toast(err.message || String(err));
+      if (c.results === null) c.results = [];
+    }
+    c.loading = false;
+    this._render();
+  }
+
+  async _importCloud(identifier, item) {
+    if (!identifier) return;
+    const key = item ? this._cloudKey(item) : identifier;
+    this._cloud.importing = key;
+    this._render();
+    const data = identifier.includes("://") ? { share_url: identifier } : { recipe_id: identifier };
+    const res = await this._xb("cloud_import_recipe", data);
+    this._cloud.importing = null;
+    if (res) {
+      this._cloud.imported.add(key);
+      if (!item) this._shareLink = "";
+      this._toast(this._t("import_done", { name: res.name }));
+      await this._loadMachines();
+    } else {
+      this._render();
+    }
+  }
+
+  _cloudKey(item) {
+    return String(item.community_recipe_id ?? item.share_url);
+  }
+
   _onClick(ev) {
     const el = ev.target.closest("[data-action]");
     if (!el || el.disabled) return;
@@ -468,6 +550,28 @@ class XBloomPanel extends HTMLElement {
         return this._call("switch", this._connected ? "turn_off" : "turn_on", {
           entity_id: this._eid("switch.connection"),
         });
+      case "recipes-view":
+        this._recipesView = arg;
+        this._recipeView = null;
+        this._editor = null;
+        this._render();
+        if (arg === "cloud" && this._cloud.results === null) this._cloudSearch();
+        return undefined;
+      case "cloud-filter": {
+        const [key, value] = arg.split(":");
+        this._cloud[key] = value;
+        return this._cloudSearch();
+      }
+      case "cloud-search":
+        return this._cloudSearch();
+      case "cloud-more":
+        return this._cloudSearch(this._cloud.page + 1);
+      case "cloud-import": {
+        const item = this._cloud.results?.[Number(arg)];
+        return item && this._importCloud(item.share_url || String(item.community_recipe_id), item);
+      }
+      case "import-link":
+        return this._importCloud(this._shareLink.trim());
       case "filter":
         this._filter.kind = arg;
         return this._render();
@@ -546,6 +650,10 @@ class XBloomPanel extends HTMLElement {
     if (d.select) {
       return this._call("select", "select_option", { entity_id: this._eid(d.select), option: el.value });
     }
+    if (d.cloudSort !== undefined) {
+      this._cloud.sort = el.value;
+      return this._cloudSearch();
+    }
     if (d.field || d.pour) this._onInput(ev, true);
     return undefined;
   }
@@ -553,6 +661,14 @@ class XBloomPanel extends HTMLElement {
   _onInput(ev, committed = false) {
     const el = ev.target;
     const d = el.dataset;
+    if (d.cloudQ !== undefined) {
+      this._cloud.q = el.value;
+      return;
+    }
+    if (d.shareLink !== undefined) {
+      this._shareLink = el.value;
+      return;
+    }
     if (d.search !== undefined) {
       this._filter.q = el.value;
       this._renderRecipeGrid();
@@ -754,8 +870,13 @@ class XBloomPanel extends HTMLElement {
   // ---- Recipes
 
   _renderRecipes() {
+    const switcher = `<div class="segmented wide">${[["mine", "my_recipes"], ["cloud", "cloud"]]
+      .map(([v, label]) => `<button class="${this._recipesView === v ? "active" : ""}" data-action="recipes-view" data-arg="${v}">${this._t(label)}</button>`)
+      .join("")}</div>`;
+    if (this._recipesView === "cloud") return switcher + this._renderCloud();
     const kinds = ["all", "coffee", "tea"];
     return `
+      ${switcher}
       <div class="recipes-bar">
         <input class="search" type="search" data-search placeholder="${this._t("search")}" value="${esc(this._filter.q)}">
         <div class="segmented">${kinds
@@ -764,6 +885,73 @@ class XBloomPanel extends HTMLElement {
         <button class="btn primary small" data-action="new-recipe">+ ${this._t("new_recipe")}</button>
       </div>
       <div class="grid" id="recipe-grid">${this._recipeCards()}</div>`;
+  }
+
+  _renderCloud() {
+    const c = this._cloud;
+    const chips = (key, values) => `<div class="segmented">${values
+      .map(([v, label]) => `<button class="${c[key] === v ? "active" : ""}" data-action="cloud-filter" data-arg="${key}:${v}" ${c.loading ? "disabled" : ""}>${this._t(label)}</button>`)
+      .join("")}</div>`;
+    const localShares = new Set(this._machine.recipes.map((r) => r.share_url).filter(Boolean));
+    let list = "";
+    if (c.results === null) {
+      list = c.loading ? `<div class="empty">${this._t("loading")}</div>` : "";
+    } else if (!c.results.length) {
+      list = `<div class="empty">${this._t("cloud_empty")}</div>`;
+    } else {
+      list = `<div class="grid">${c.results.map((item, i) => this._cloudCard(item, i, localShares)).join("")}</div>`;
+    }
+    return `
+      <div class="hint">${this._t("cloud_hint")}</div>
+      <section class="card">
+        <div class="label">${this._t("share_link")}</div>
+        <div class="slot-write">
+          <input type="text" data-share-link value="${esc(this._shareLink)}" placeholder="https://share-h5.xbloom.com/?id=…">
+          <button class="btn small" data-action="import-link" ${c.importing ? "disabled" : ""}>${this._t("import_link")}</button>
+        </div>
+      </section>
+      <div class="recipes-bar">
+        <input class="search" type="search" data-cloud-q placeholder="${this._t("cloud_search")}" value="${esc(c.q)}">
+        <button class="btn primary small" data-action="cloud-search" ${c.loading ? "disabled" : ""}>${this._t("search_btn")}</button>
+      </div>
+      <div class="recipes-bar">
+        ${chips("category", [["", "all"], ["coffee", "coffee"], ["tea", "tea"]])}
+        ${chips("src", [["", "all"], ["official", "official"], ["user", "community"]])}
+        <select data-cloud-sort ${c.loading ? "disabled" : ""}>${["likes", "downloads", "date"]
+          .map((s) => `<option value="${s}" ${c.sort === s ? "selected" : ""}>${this._t(`sort_${s}`)}</option>`)
+          .join("")}</select>
+      </div>
+      ${c.total != null && c.results?.length ? `<div class="muted small">${this._t("results", { n: c.total })}</div>` : ""}
+      ${list}
+      ${c.results?.length && c.page < c.totalPage
+        ? `<button class="btn dashed" data-action="cloud-more" ${c.loading ? "disabled" : ""}>${this._t(c.loading ? "loading" : "load_more")}</button>`
+        : ""}`;
+  }
+
+  _cloudCard(item, i, localShares) {
+    const key = this._cloudKey(item);
+    const done = this._cloud.imported.has(key) || (item.share_url && localShares.has(item.share_url));
+    const busy = this._cloud.importing === key;
+    const tea = /tea/i.test(String(item.cup_type || ""));
+    const tags = [...(item.origin || []), item.roast, ...(item.flavor || [])].filter(Boolean).slice(0, 4);
+    return `<div class="recipe-card">
+      <div class="rc-top">
+        ${item.cup_type ? `<span class="badge ${tea ? "tea" : ""}">${esc(item.cup_type)}</span>` : ""}
+        ${item.official ? `<span class="badge">${this._t("official")}</span>` : ""}
+      </div>
+      <div class="rc-name">${esc(item.name)}</div>
+      ${!item.official && item.user_name ? `<div class="muted small">${esc(this._t("by", { name: item.user_name }))}</div>` : ""}
+      <div class="rc-specs">
+        ${Number(item.dose_g) ? `<span>${num(item.dose_g, 1)}g</span>` : ""}
+        ${Number(item.ratio) ? `<span>1:${num(item.ratio, 1)}</span>` : ""}
+        ${Number(item.total_water_ml) ? `<span>${num(item.total_water_ml)}ml</span>` : ""}
+        ${item.pour_count ? `<span>${this._t("pours")} ${num(item.pour_count)}</span>` : ""}
+        ${item.likes_count != null ? `<span>♥ ${num(item.likes_count)}</span>` : ""}
+      </div>
+      ${tags.length ? `<div class="rc-tags">${tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+      <button class="btn small ${done ? "" : "primary"}" data-action="cloud-import" data-arg="${i}" ${done || busy || this._cloud.importing ? "disabled" : ""}>
+        ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
+    </div>`;
   }
 
   _renderRecipeGrid() {
@@ -1179,6 +1367,10 @@ const STYLE = `
   .recipe-card.selected { border-color: var(--xb-accent); }
   .rc-name { font-size: 16px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
   .rc-specs { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--xb-muted); font-size: 13px; }
+  .rc-top { display: flex; gap: 6px; flex-wrap: wrap; }
+  .rc-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .rc-tags span { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--xb-bg); color: var(--xb-muted); }
+  .recipe-card .btn { align-self: flex-start; margin-top: auto; }
   .badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px;
     border-radius: 999px; background: color-mix(in srgb, var(--xb-accent) 15%, transparent); color: var(--xb-accent); }
   .badge.tea { background: color-mix(in srgb, var(--xb-tea) 15%, transparent); color: var(--xb-tea); }
@@ -1201,7 +1393,7 @@ const STYLE = `
   .slot-body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .slot-name { font-weight: 500; }
   .slot-write { display: flex; gap: 8px; }
-  .slot-write select { flex: 1; }
+  .slot-write select, .slot-write input { flex: 1; }
   .adv-row { display: flex; gap: 12px; align-items: flex-end; }
   .adv-row .field { flex: 1; }
   select:disabled { opacity: .6; }
