@@ -248,7 +248,10 @@
     },
     "select": {
       "recipe": {
-        "name": "레시피"
+        "name": "레시피",
+        "state": {
+          "no_recipes_configured": "설정된 레시피 없음"
+        }
       },
       "pour_pattern": {
         "name": "수동 추출 패턴",

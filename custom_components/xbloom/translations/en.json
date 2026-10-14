@@ -248,7 +248,10 @@
     },
     "select": {
       "recipe": {
-        "name": "Recipe"
+        "name": "Recipe",
+        "state": {
+          "no_recipes_configured": "No recipes configured"
+        }
       },
       "pour_pattern": {
         "name": "Manual Pour Pattern",
