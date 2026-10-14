@@ -679,7 +679,16 @@ class StateMixin:
                 # Enrich with the cloud's bean/recipe detail first, then
                 # dispatch — see _async_lookup_pod.
                 async def _enrich_and_dispatch() -> None:
-                    attributes.update(await self._async_lookup_pod(attributes["xid"]))
+                    detail = await self._async_lookup_pod(attributes["xid"])
+                    attributes.update(detail)
+                    if detail.get("recipes"):
+                        # The hub search can't find pod recipes, so keep
+                        # them locally the moment a pod is scanned. Never
+                        # let the save hold up or swallow the event.
+                        try:
+                            self.save_pod_recipes(detail["recipes"])
+                        except Exception as exc:
+                            _LOGGER.warning("Saving the scanned pod's recipes failed: %s", exc)
                     _do_dispatch()
 
                 self.hass.loop.call_soon_threadsafe(
