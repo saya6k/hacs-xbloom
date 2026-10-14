@@ -179,8 +179,19 @@ const totalWater = (r) => {
 // The app's temperature slider: 39-96, where the ends ARE RT (room
 // temperature, 20 °C on the wire) and BP (boiling point, 98 °C) — the same
 // mapping as the coordinator's _wire_temperature for the manual slider.
-const tempLabel = (t) => (Number(t) <= 20 ? "RT" : Number(t) >= 98 ? "BP" : `${num(t)}°`);
-const sliderLabel = (s) => (Number(s) <= 39 ? "RT" : Number(s) >= 96 ? "BP" : `${num(s)}°`);
+// Recipes store °C; shown in HA's own temperature unit (set in `set hass`).
+let displayTempUnit = "°C";
+const showTemp = (c) =>
+  displayTempUnit === "°F" ? `${num((Number(c) * 9) / 5 + 32)}°F` : `${num(c)}°`;
+const tempLabel = (t) => (Number(t) <= 20 ? "RT" : Number(t) >= 98 ? "BP" : showTemp(t));
+// The manual temperature slider: its own ends are RT/BP (in any unit).
+const endLabel = (v, min, max, unit) =>
+  Number(v) <= Number(min) ? "RT" : Number(v) >= Number(max) ? "BP" : `${num(v)}${unit || "°"}`;
+// An entity's temperature in °C, whatever unit HA shows it in (an
+// imperial HA converts the °C entities to °F).
+const toCelsius = (v, unit) => (unit === "°F" ? ((Number(v) - 32) * 5) / 9 : Number(v));
+// Scale weight in grams, for comparing against a recipe's water (ml ≈ g).
+const GRAMS_PER = { g: 1, kg: 1000, mg: 0.001, oz: 28.3495, lb: 453.592 };
 const tempToSlider = (t) => (t <= 20 ? 39 : t >= 98 ? 96 : Math.min(95, Math.max(40, t)));
 const sliderToTemp = (s) => (s <= 39 ? 20 : s >= 96 ? 98 : s);
 
@@ -314,6 +325,7 @@ class XBloomPanel extends HTMLElement {
     this._hass = hass;
     // Follow the user's light/dark choice; the palette is the app's either way.
     this.toggleAttribute("dark", !!hass.themes?.darkMode);
+    displayTempUnit = hass.config?.unit_system?.temperature || "°C";
     if (first) this._loadMachines();
     this._onHassChanged();
   }
@@ -780,7 +792,7 @@ class XBloomPanel extends HTMLElement {
     }
     if (d.rangeLabel) {
       const out = this.shadowRoot.querySelector(`[data-range-out="${d.rangeLabel}"]`);
-      if (out) out.textContent = d.rangeFmt === "temp" ? sliderLabel(el.value) : el.value;
+      if (out) out.textContent = d.rangeFmt === "temp" ? endLabel(el.value, el.min, el.max, d.unit) : el.value;
     }
     if (!this._editor) return;
     const r = this._editor.recipe;
@@ -1263,13 +1275,19 @@ class XBloomPanel extends HTMLElement {
     if (!s) return "";
     const a = s.attributes;
     const v = Number(s.state);
-    // The pour temperature slider's ends are RT/BP, not 39/96 °C.
+    // The pour temperature slider's ends are RT/BP. Judged by the slider's
+    // own min/max, not 39/96, so it holds when HA shows the entity in °F.
     const isTemp = key === "number.temperature";
     const unit = isTemp ? "" : a.unit_of_measurement || "";
-    const shown = !Number.isFinite(v) ? "–" : isTemp ? sliderLabel(v) : num(v);
+    const shown = !Number.isFinite(v)
+      ? "–"
+      : isTemp
+        ? endLabel(v, a.min, a.max, a.unit_of_measurement)
+        : num(v);
     return `
       <label class="field wide"><span>${this._t(label)} <b><span data-range-out="${key}">${shown}</span> ${esc(unit)}</b></span>
-        <input type="range" data-number="${key}" data-range-label="${key}" ${isTemp ? 'data-range-fmt="temp"' : ""} min="${a.min}" max="${a.max}" step="${a.step}"
+        <input type="range" data-number="${key}" data-range-label="${key}" ${isTemp ? `data-range-fmt="temp" data-unit="${esc(a.unit_of_measurement || "")}"` : ""} min="${a.min}" max="${a.max}"
+          step="${isTemp && a.unit_of_measurement === "°F" ? "any" : a.step}"
           value="${Number.isFinite(v) ? v : a.min}" ${s.state === "unavailable" ? "disabled" : ""}>
       </label>`;
   }
@@ -1412,16 +1430,21 @@ class XBloomPanel extends HTMLElement {
     root.querySelectorAll("[data-live]").forEach((el) => {
       el.textContent = this._fmt(el.dataset.live);
       // The brewer temperature is the knob setpoint the machine pushes
-      // (literal °C), so its 39/96 ends are RT/BP just like the slider.
-      const v = Number(this._val(el.dataset.live));
-      if (el.dataset.liveFmt === "temp" && Number.isFinite(v) && (v <= 39 || v >= 96)) {
-        el.textContent = sliderLabel(v);
+      // (literal °C), so its 39/96 °C ends are RT/BP just like the slider —
+      // compared in °C even when HA shows the entity in °F.
+      if (el.dataset.liveFmt === "temp") {
+        const st = this._st(el.dataset.live);
+        const c = toCelsius(st?.state, st?.attributes.unit_of_measurement);
+        if (Number.isFinite(c) && (c <= 39.5 || c >= 95.5)) el.textContent = c <= 39.5 ? "RT" : "BP";
       }
     });
     const ring = root.querySelector("[data-live-ring]");
     if (ring) {
       const target = Number(ring.closest(".ring").dataset.target) || 0;
-      const w = Number(this._val("sensor.weight"));
+      // Target is the recipe's water in ml (≈ g); the scale may be shown in
+      // oz/lb if the user changed the entity's unit.
+      const ws = this._st("sensor.weight");
+      const w = Number(this._val("sensor.weight")) * (GRAMS_PER[ws?.attributes.unit_of_measurement] ?? 1);
       const frac = target > 0 && Number.isFinite(w) ? Math.max(0, Math.min(1, w / target)) : 0;
       ring.setAttribute("stroke-dashoffset", String(339.3 * (1 - frac)));
     }
