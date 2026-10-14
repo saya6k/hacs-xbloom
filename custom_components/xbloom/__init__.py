@@ -82,6 +82,7 @@ from .const import (
 from .coordinator import XBloomCoordinator
 from .default_recipes import DEFAULT_RECIPES
 from .llm_api import register_llm_api
+from .panel import async_register_panel
 
 # POUR_SCHEMA is re-exported, not used here — the `as` alias marks that
 # intent (see the schema note below).
@@ -662,6 +663,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             "Loaded %d default recipe(s); no YAML recipes configured",
             len(validated_defaults),
         )
+
+    # Sidebar panel (global — it lists every configured machine).
+    await async_register_panel(hass)
 
     return True
 
