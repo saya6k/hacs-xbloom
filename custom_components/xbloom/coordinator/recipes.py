@@ -868,6 +868,46 @@ class RecipesMixin:
             summary["share_url"] = recipe["share_url"]
         return summary
 
+    def save_pod_recipes(self, recipes: list[dict]) -> list[str]:
+        """Keep a scanned pod's recipes in the local store, once each.
+
+        A pod's recipe can't be found through the hub search, so the cloud
+        lookup on ``pod_detected`` (``fetch_pod_detail``) is the only way
+        to get it. Each recipe is saved with ``source: "pod"``; one already
+        saved — matched by its share link, or by name among earlier pod
+        saves when it has none — is skipped, so scanning the same pod again
+        adds nothing. Returns the names that were added.
+        """
+        options_recipes = self._options_recipes()
+        visible = dict(self.recipes or {})
+        added: list[str] = []
+        for raw in recipes:
+            share_url = raw.get("share_url") or ""
+            if share_url and find_recipe(visible, share_url):
+                continue
+            if not share_url and any(
+                isinstance(r, dict) and r.get("source") == "pod" and n == raw.get("name")
+                for n, r in visible.items()
+            ):
+                continue
+            candidate = {k: v for k, v in raw.items() if k != "share_url" or v}
+            try:
+                validated = RECIPE_SCHEMA(candidate)
+            except vol.Invalid as exc:
+                _LOGGER.warning("Pod recipe %r not saved: %s", raw.get("name"), exc)
+                continue
+            name = dedupe_name(validated["name"], visible)
+            validated["name"] = name
+            validated["uid"] = new_recipe_uid()
+            validated["source"] = "pod"
+            options_recipes[name] = validated
+            visible[name] = validated
+            added.append(name)
+        if added:
+            self._write_options_recipes(options_recipes)
+            _LOGGER.info("Saved scanned pod recipe(s): %s", ", ".join(added))
+        return added
+
     def list_local_recipes(self, query: str | None = None) -> dict:
         """List every local recipe (merged YAML + store view), optionally
         filtered by a case-insensitive name substring."""
