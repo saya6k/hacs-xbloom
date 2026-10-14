@@ -69,6 +69,8 @@ const STRINGS = {
     share_link: "Share link or recipe id", import_link: "Import link",
     cloud_hint: "Search XBloom's public recipe hub and import a copy into My recipes, which Home Assistant keeps for this machine — nothing is written to the xBloom machine itself. No account needed.",
     cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
+    buy_beans: "Buy the beans", uploaded: "Uploaded {date}",
+    cloud_detail_failed: "Couldn't load the full details — showing the search summary.",
     pods: "Pods", pods_empty: "Insert a pod or recipe card into the machine — it shows up here.",
     last_scanned: "Last scanned {when}", scans: "{n}× scanned",
     save_to_mine: "Save to my recipes", saved_as: "Saved as “{name}”",
@@ -137,6 +139,8 @@ const STRINGS = {
     share_link: "공유 링크 또는 레시피 ID", import_link: "링크로 가져오기",
     cloud_hint: "XBloom 공개 레시피 허브에서 검색해 내 레시피로 복사해 옵니다. 레시피는 Home Assistant에 이 기기용으로 저장되며, xBloom 기기 자체에는 저장되지 않습니다. 계정이 필요 없습니다.",
     cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
+    buy_beans: "원두 구매", uploaded: "{date} 업로드",
+    cloud_detail_failed: "상세 정보를 불러오지 못해 검색 요약만 표시합니다.",
     pods: "팟", pods_empty: "기기에 팟이나 레시피 카드를 꽂으면 여기에 나타납니다.",
     last_scanned: "마지막 스캔 {when}", scans: "{n}회 스캔",
     save_to_mine: "내 레시피로 저장", saved_as: "“{name}”(으)로 저장했습니다",
@@ -264,6 +268,8 @@ const savePref = (key, value) => {
 };
 
 const SAFE_IMAGE = /^https:\/\/[^\s"'()<>\\]+$/;
+// Only XBloom's own store pages are offered as "buy the beans" links.
+const SAFE_STORE_LINK = /^https:\/\/xbloom\.com\/products\/[a-z0-9-]+$/;
 // A pod's own colour (PodsModel.theColor) — only plain hex goes into a style.
 const POD_COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -789,6 +795,12 @@ class XBloomPanel extends HTMLElement {
         this._cloud[key] = value;
         return this._cloudSearch();
       }
+      case "open-cloud":
+        return this._openCloudDetail(Number(arg));
+      case "close-cloud":
+        this._cloud.open = null;
+        this._cloud.detail = null;
+        return this._render();
       case "cloud-search":
         return this._cloudSearch();
       case "cloud-more":
@@ -1112,11 +1124,11 @@ class XBloomPanel extends HTMLElement {
         return `<li>
           <div class="step">${i + 1}</div>
           <div class="pour-main">
-            <div class="pour-vol">${num(p.volume_ml)} ml <span class="muted">→ ${num(acc)} ml</span></div>
+            <div class="pour-vol">${p.name ? `<span class="pour-name">${esc(p.name)}</span>` : ""}${num(p.volume_ml)} ml <span class="muted">→ ${num(acc)} ml</span></div>
             <div class="pour-meta">
               <span>${tempLabel(p.temperature_c)}</span>
-              <span>${num(p.flow_rate ?? 3, 1)} ml/s</span>
-              <span class="pat">${PATTERN_ICON[PATTERNS[p.pattern] ?? p.pattern] || ""}${this._t(PATTERNS[p.pattern] ?? p.pattern)}</span>
+              ${p.flow_rate != null ? `<span>${num(p.flow_rate, 1)} ml/s</span>` : ""}
+              ${(PATTERNS[p.pattern] ?? p.pattern) ? `<span class="pat">${PATTERN_ICON[PATTERNS[p.pattern] ?? p.pattern] || ""}${this._t(PATTERNS[p.pattern] ?? p.pattern)}</span>` : ""}
               ${p.vibration && p.vibration !== "none" ? `<span>${this._t("vibration")}: ${this._t(`vib_${p.vibration}`)}</span>` : ""}
               ${Number(p.pause_seconds) ? `<span>⏱ ${num(p.pause_seconds)}s</span>` : ""}
             </div>
@@ -1134,7 +1146,9 @@ class XBloomPanel extends HTMLElement {
     const switcher = `<div class="segmented wide">${[["mine", "my_recipes"], ["pods", "pods"], ["cloud", "cloud"]]
       .map(([v, label]) => `<button class="${this._recipesView === v ? "active" : ""}" data-action="recipes-view" data-arg="${v}">${this._t(label)}</button>`)
       .join("")}</div>`;
-    if (this._recipesView === "cloud") return switcher + this._renderCloud();
+    if (this._recipesView === "cloud") {
+      return this._cloud.open != null ? this._renderCloudDetail() : switcher + this._renderCloud();
+    }
     if (this._recipesView === "pods") {
       return this._openPod ? this._renderPodDetail(this._openPod) : switcher + this._renderPods();
     }
@@ -1287,7 +1301,9 @@ class XBloomPanel extends HTMLElement {
     const busy = this._cloud.importing === key;
     const tea = /tea/i.test(String(item.cup_type || ""));
     const tags = [...(item.origin || []), item.roast, ...(item.flavor || [])].filter(Boolean).slice(0, 4);
-    return `<div class="recipe-card">
+    // The card opens the recipe's detail page; its Import button keeps its
+    // own action (the closest data-action wins).
+    return `<div class="recipe-card clickable" data-action="open-cloud" data-arg="${i}" role="button" tabindex="0">
       ${this._recipeArt({ name: item.name, cup_type: item.cup_type, dose_g: item.dose_g, pours: [{ volume_ml: item.total_water_ml || 0 }] }, "art", item.image_url)}
       <div class="rc-body">
         <div class="rc-top">
@@ -1308,6 +1324,77 @@ class XBloomPanel extends HTMLElement {
           ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
       </div>
     </div>`;
+  }
+
+  // ---- Cloud recipe detail (what collective.xbloom.com/recipe/{id} shows)
+
+  async _openCloudDetail(index) {
+    const item = this._cloud.results?.[index];
+    if (!item) return;
+    this._cloud.open = index;
+    this._cloud.detail = null;
+    this._render();
+    try {
+      this._cloud.detail = await this._hass.callWS({
+        type: "xbloom/cloud_detail", entry_id: this._entryId, community_recipe_id: item.community_recipe_id,
+      });
+    } catch (err) {
+      this._toast(err.message || String(err));
+      this._cloud.detail = { failed: true };
+    }
+    if (this._cloud.open === index) this._render();
+  }
+
+  _renderCloudDetail() {
+    const item = this._cloud.results?.[this._cloud.open] || {};
+    const d = this._cloud.detail;
+    const back = `<button class="link" data-action="close-cloud">‹ ${this._t("back")}</button>`;
+    if (!d) return `${back}<div class="empty">${this._t("loading")}</div>`;
+    const r = d.failed ? item : d;
+    const localShares = new Set(this._machine.recipes.map((x) => x.share_url).filter(Boolean));
+    const key = this._cloudKey(item);
+    const done = this._cloud.imported.has(key) || (item.share_url && localShares.has(item.share_url));
+    const busy = this._cloud.importing === key;
+    const tea = /tea/i.test(String(r.cup_type || ""));
+    const roast = Number(r.roast) || 0;
+    const rows = [["origin", r.origin], ["process", r.process], ["variety", r.varietal],
+      ["type", r.type], ["notes", r.flavor]].filter(([, v]) => v && typeof v === "string");
+    const product = SAFE_STORE_LINK.test(d.product_url || "") ? d.product_url : null;
+    const recipe = { name: r.name, cup_type: tea ? "tea" : r.cup_type, dose_g: r.dose_g, ratio: r.ratio,
+      grind_size: r.grind_size, pours: r.pours || [] };
+    return `${back}
+      <div class="detail-grid">
+      <section class="card detail">
+        <div class="detail-hero">
+          ${this._recipeArt({ name: r.name, cup_type: r.cup_type, dose_g: r.dose_g, pours: [] }, "art-hero", r.image_url)}
+          <div class="detail-head">
+            <div class="rc-top">
+              ${r.cup_type ? `<span class="badge ${tea ? "tea" : ""}">${esc(r.cup_type)}</span>` : ""}
+              ${r.official ? `<span class="badge gold">${this._t("official")}</span>` : ""}
+              ${r.likes_count != null ? `<span class="likes">♥ ${num(r.likes_count)}</span>` : ""}
+            </div>
+            <h1>${esc(r.name)}</h1>
+            <div class="dim small">${esc([!r.official && r.user_name ? this._t("by", { name: r.user_name }) : "",
+              r.upload_date ? this._t("uploaded", { date: r.upload_date }) : ""].filter(Boolean).join(" · "))}</div>
+          </div>
+        </div>
+        ${d.failed ? `<div class="alert">${this._t("cloud_detail_failed")}</div>` : ""}
+        ${r.introduce ? `<p class="intro">${esc(r.introduce)}</p>` : ""}
+        ${roast || rows.length ? `<div class="bean-sheet">
+          ${roast ? `<div class="kv"><span>${this._t("roast")}</span>
+            <span class="roast">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= roast ? "on" : ""}"></i>`).join("")}</span></div>` : ""}
+          ${rows.map(([k, v]) => `<div class="kv"><span>${this._t(k)}</span><span>${esc(v)}</span></div>`).join("")}
+        </div>` : ""}
+        ${r.dose_g != null ? this._renderRecipeMetrics(recipe) : ""}
+        ${r.rpm ? `<div class="kv"><span>${this._t("rpm")}</span><span>${num(r.rpm)}</span></div>` : ""}
+      </section>
+      ${(r.pours || []).length ? `<section class="card"><h2>${this._t("pours")}</h2>${this._renderPourTimeline(recipe)}</section>` : ""}
+      </div>
+      <div class="actions">
+        <button class="btn ${done ? "" : "go"}" data-action="cloud-import" data-arg="${this._cloud.open}" ${done || busy || this._cloud.importing ? "disabled" : ""}>
+          ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
+        ${product ? `<a class="btn" href="${product}" target="_blank" rel="noopener noreferrer">${this._t("buy_beans")} ↗</a>` : ""}
+      </div>`;
   }
 
   _renderRecipeGrid() {
@@ -1848,6 +1935,11 @@ const STYLE = `
     outline: 2px solid transparent; outline-offset: -2px; transition: transform .15s ease, outline-color .15s ease; }
   button.recipe-card:hover { transform: translateY(-2px); }
   .recipe-card.selected { outline-color: var(--xb-gold); }
+  .recipe-card.clickable { cursor: pointer; }
+  .recipe-card.clickable:hover { transform: translateY(-2px); }
+  .pour-name { color: var(--xb-gold); font-weight: 600; margin-right: 8px; }
+  .intro { margin: 0; line-height: 1.6; color: var(--xb-muted); font-size: 14px; }
+  a.btn { text-decoration: none; color: inherit; }
   .rc-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
   .rc-name { font-family: var(--xb-serif); font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
   .rc-specs { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--xb-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -1898,7 +1990,7 @@ const STYLE = `
   .detail-hero { display: flex; flex-direction: column; gap: 14px; }
   .detail-head { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .kv, .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; }
-  .kv span:first-child { color: var(--xb-muted); }
+  .kv span:first-child { color: var(--xb-muted); flex: none; white-space: nowrap; }
   .kv span:last-child { font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
   .slot-row { display: flex; gap: 8px; flex-wrap: wrap; }
 

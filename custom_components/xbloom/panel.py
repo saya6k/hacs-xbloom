@@ -76,6 +76,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     )
     websocket_api.async_register_command(hass, ws_machines)
     websocket_api.async_register_command(hass, ws_cloud_search)
+    websocket_api.async_register_command(hass, ws_cloud_detail)
     websocket_api.async_register_command(hass, ws_pods)
     websocket_api.async_register_command(hass, ws_pod_save_recipe)
     websocket_api.async_register_command(hass, ws_pod_delete)
@@ -211,6 +212,32 @@ async def ws_pod_delete(
     connection.send_result(
         msg["id"], {"deleted": await coordinator.pod_library.async_delete(msg["xid"])}
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/cloud_detail",
+        vol.Required("entry_id"): str,
+        vol.Required("community_recipe_id"): vol.All(int, vol.Range(min=1)),
+    }
+)
+@websocket_api.async_response
+async def ws_cloud_detail(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """A hub recipe's detail page, plus the store link for an official one."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        return
+    client = coordinator.cloud_client
+    detail = await client.fetch_collective_detail(msg["community_recipe_id"])
+    if detail is None:
+        connection.send_error(msg["id"], "fetch_failed", "Could not load that recipe from the hub.")
+        return
+    if detail.get("official"):
+        detail["product_url"] = await client.find_store_product(detail.get("name"))
+    connection.send_result(msg["id"], detail)
 
 
 @websocket_api.websocket_command(

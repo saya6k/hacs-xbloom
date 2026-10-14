@@ -33,6 +33,17 @@ _LOGGER = logging.getLogger(__name__)
 API_BASE = "https://client-api.xbloom.com"
 SHARE_BASE = "https://share-h5.xbloom.com"
 
+# XBloom's official web store (Shopify). Its public products.json is the
+# source for an official recipe's "buy the beans" link — see
+# XBloomCloudClient.find_store_product. Cached; ~150 products in 2026-10.
+STORE_BASE = "https://xbloom.com"
+_STORE_CACHE_S = 12 * 3600
+_STORE_MAX_PAGES = 4
+
+
+def _normalize_title(title: str) -> str:
+    return " ".join(str(title).casefold().split())
+
 # A THIRD, separate backend from API_BASE/COLLECTIVE_API_BASE below — a
 # newer Retrofit/JSON API (vs. API_BASE's RSA-encrypted .thtml forms),
 # reverse-engineered 2026-07-16 by decompiling the official Android app
@@ -473,6 +484,8 @@ class XBloomCloudClient:
         # machine/cupType name<->id maps) change rarely enough that
         # re-fetching on every search call would be wasteful.
         self._collective_criteria: dict | None = None
+        # (fetched at, normalized title -> handle) — see _store_products.
+        self._store_cache: tuple[float, dict[str, str]] | None = None
 
     @property
     def logged_in(self) -> bool:
@@ -617,6 +630,100 @@ class XBloomCloudClient:
             return None
         center = data.get("initPouringRadius")
         return int(center) if center is not None else None
+
+    async def fetch_collective_detail(self, community_recipe_id: int) -> dict | None:
+        """One hub recipe's detail page: description, bean info and the
+        named pour steps — what collective.xbloom.com/recipe/{id} shows
+        (``communityRecipe/recipe/detail``, no login; live 2026-10-15).
+        The pours are display-only (no flow rate/vibration here); importing
+        still goes through the share link for the full recipe."""
+        body = await self._post_collective(
+            "communityRecipe/recipe/detail", {"id": int(community_recipe_id), "type": 1}
+        )
+        if not body or body.get("code") != 200 or not body.get("data"):
+            return None
+        d = body["data"]
+
+        def joined(value: object) -> str | None:
+            text = " · ".join(value) if isinstance(value, list) else str(value or "")
+            return text.strip() or None
+
+        detail = {
+            "community_recipe_id": d.get("communityRecipeId"),
+            "name": d.get("recipeName"),
+            "official": bool(d.get("official")),
+            "user_name": d.get("userName"),
+            "image_url": d.get("imageUrl"),
+            "upload_date": d.get("uploadDate"),
+            "likes_count": d.get("likesCount"),
+            "introduce": joined(d.get("introduce")),
+            "type": joined(d.get("type")),
+            "origin": joined(d.get("origin")),
+            "process": joined(d.get("process")),
+            "varietal": joined(d.get("varietal")),
+            "flavor": joined(d.get("flavor")),
+            "roast": d.get("roast") if isinstance(d.get("roast"), int) else None,
+            "cup_type": d.get("cupType"),
+            "dose_g": d.get("dose"),
+            "ratio": d.get("grandWater"),
+            "grind_size": d.get("grinderSize"),
+            "rpm": d.get("rpm"),
+            "total_water_ml": d.get("volume"),
+            "share_url": d.get("shareRecipeLink"),
+            "pours": [
+                {
+                    "name": p.get("theName"),
+                    "volume_ml": p.get("volume"),
+                    "temperature_c": p.get("temperature"),
+                    "pause_seconds": p.get("pausing"),
+                    "pattern": _CLOUD_PATTERN_TO_LOCAL.get(p.get("pattern")),
+                }
+                for p in d.get("pourList") or []
+            ],
+        }
+        return {k: v for k, v in detail.items() if v is not None}
+
+    async def find_store_product(self, name: str | None) -> str | None:
+        """The official web store's product page for an official recipe.
+
+        The app sells beans in-app (``ShopProductDetailsVC`` opens the pod
+        page by id), and neither the hub nor the recipe data carries a web
+        link — but XBloom names an official recipe after the bean it sells
+        (2026-10-15: recipe "Legacy" ↔ xbloom.com/products/legacy). So the
+        link is the store product whose title matches the recipe name
+        exactly (case/space-insensitive); no fuzzy guessing.
+        """
+        if not name:
+            return None
+        products = await self._store_products()
+        handle = (products or {}).get(_normalize_title(name))
+        return f"{STORE_BASE}/products/{handle}" if handle else None
+
+    async def _store_products(self) -> dict[str, str] | None:
+        """Store product titles → handles, cached for ``_STORE_CACHE_S``."""
+        now = time.monotonic()
+        if self._store_cache is not None and now - self._store_cache[0] < _STORE_CACHE_S:
+            return self._store_cache[1]
+        titles: dict[str, str] = {}
+        try:
+            for page in range(1, _STORE_MAX_PAGES + 1):
+                async with self._session.get(
+                    f"{STORE_BASE}/products.json",
+                    params={"limit": 250, "page": page},
+                    headers={"User-Agent": _HEADERS["User-Agent"]},
+                    timeout=_TIMEOUT,
+                ) as resp:
+                    batch = (await resp.json(content_type=None) or {}).get("products") or []
+                if not batch:
+                    break
+                for product in batch:
+                    if product.get("title") and product.get("handle"):
+                        titles.setdefault(_normalize_title(product["title"]), product["handle"])
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            _LOGGER.warning("XBloom store product list failed: %s", exc)
+            return self._store_cache[1] if self._store_cache else None
+        self._store_cache = (now, titles)
+        return titles
 
     async def _resolve_collective_link(self, community_recipe_id: str) -> str | None:
         """Resolve a collective.xbloom.com/recipe/{id} link to its
