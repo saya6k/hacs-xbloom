@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from custom_components.xbloom import panel
+from custom_components.xbloom import machine_color, panel
 
 PKG = Path(__file__).resolve().parent.parent / "custom_components" / "xbloom"
 JS = (PKG / "frontend" / "xbloom-panel.js").read_text()
@@ -75,7 +75,6 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["mac"] == "AA:BB"
     # Serial "J15A02…" → the app's white-machine code; nothing picked yet.
     assert payload["detected_color"] == "moonlight_white"
-    assert payload["machine_color"] is None
 
 
 def test_color_from_serial_follows_the_official_app():
@@ -88,37 +87,19 @@ def test_color_from_serial_follows_the_official_app():
     assert panel.color_from_serial(None) is None
 
 
+def test_unmapped_colours_are_placeholders_never_matched():
+    """Only 01/02 are known (from the app); the other colours carry no
+    code yet, so no serial can resolve to them by accident."""
+    known = {c: code for c, code in machine_color.MACHINE_COLOR_CODES.items() if code}
+    assert known == {"midnight_black": "01", "moonlight_white": "02"}
+    for code in ("00", "03", "04", "05", "06", "99"):
+        assert panel.color_from_serial(f"J15A{code}B4CV030") is None
+
+
 def test_panel_photo_keys_match_machine_colors():
     block = JS.split("const MACHINE_IMAGES = {", 1)[1].split("};", 1)[0]
     keys = re.findall(r"^\s*([a-z_]+):", block, re.M)
-    assert tuple(keys) == panel.MACHINE_COLORS
-
-
-def _set_color(options, color):
-    entry = SimpleNamespace(domain="xbloom", options=options)
-    hass = MagicMock()
-    hass.config_entries.async_get_entry.return_value = entry
-    connection = MagicMock()
-    panel.ws_set_machine_color(
-        hass, connection, {"id": 3, "type": "xbloom/set_machine_color",
-                           "entry_id": "e1", "color": color}
-    )
-    return hass.config_entries.async_update_entry.call_args, connection
-
-
-def test_set_machine_color_saves_and_clears_the_option():
-    call, conn = _set_color({"mode": "pro"}, "twilight")
-    assert call.kwargs["options"] == {"mode": "pro", "machine_color": "twilight"}
-    conn.send_result.assert_called_once()
-    # None goes back to auto: the key is removed, other options kept.
-    call, _ = _set_color({"mode": "pro", "machine_color": "twilight"}, None)
-    assert call.kwargs["options"] == {"mode": "pro"}
-
-
-def test_machine_color_change_does_not_reload_the_entry():
-    from custom_components.xbloom import _NO_RELOAD_OPTION_KEYS
-
-    assert "machine_color" in _NO_RELOAD_OPTION_KEYS
+    assert tuple(keys) == machine_color.MACHINE_COLORS
 
 
 def _run_cloud_search(coordinator, msg):

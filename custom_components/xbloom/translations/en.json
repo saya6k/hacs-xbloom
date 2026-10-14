@@ -769,5 +769,11 @@
         "direct": "Direct Plumbed"
       }
     }
+  },
+  "issues": {
+    "unknown_machine_color": {
+      "title": "XBloom machine colour not recognised",
+      "description": "This machine's serial number carries colour code **{code}**, which the integration doesn't know yet, so the panel shows the Midnight Black photo instead.\n\nPlease help map it: [open a pre-filled GitHub issue]({report_url}) and add which colour your machine is. Only the two-character code is included, not the full serial number."
+    }
   }
 }

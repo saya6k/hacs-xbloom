@@ -10,8 +10,10 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
+from urllib.parse import quote
 
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 
 from custom_components.xbloom.ble.client import AckTimeout, XBloomClient, strict_ascii
 from custom_components.xbloom.ble.connection import HABleakConnection
@@ -24,6 +26,7 @@ from custom_components.xbloom.const import (
     CONF_WEIGHT_UNIT,
     DOMAIN,
 )
+from custom_components.xbloom.machine_color import color_code, color_from_serial
 
 from .constants import (
     _BLE_SILENCE_TIMEOUT_S,
@@ -48,6 +51,9 @@ from .constants import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Pre-filled "new issue" link the unknown-colour Repairs issue points at.
+_COLOR_REPORT_URL = "https://github.com/saya6k/hacs-xbloom/issues/new?title={title}&body={body}"
 
 _T = TypeVar("_T")
 
@@ -202,6 +208,9 @@ class ConnectionMixin:
         if not serial and not version:
             return  # nothing useful to push yet
 
+        if serial:
+            self._sync_machine_color_issue(serial)
+
         try:
             registry = dr.async_get(self.hass)
             device = registry.async_get_device_by_identifier(
@@ -218,6 +227,42 @@ class ConnectionMixin:
                     _LOGGER.info("Device registry updated: %s", updates)
         except Exception as exc:
             _LOGGER.debug("Device registry update failed: %s", exc)
+
+    def _sync_machine_color_issue(self, serial: str) -> None:
+        """Raise a Repairs issue when the serial's colour code is unmapped.
+
+        Only 01 (black) and 02 (white) are known — see machine_color.py.
+        For any other code the panel falls back to the black photo, and
+        this asks the owner to report which colour their machine is, via a
+        pre-filled GitHub issue carrying only the two-character code (not
+        the full serial). Cleared once the code is known.
+        """
+        issue_id = f"unknown_machine_color_{self.entry_id}"
+        code = color_code(serial)
+        try:
+            if code is None or color_from_serial(serial):
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                return
+            report_url = _COLOR_REPORT_URL.format(
+                title=quote(f"Machine colour code {code}"),
+                body=quote(
+                    f"Serial colour code: `{code}`\n"
+                    "Machine colour: (e.g. Sage Green · Green Knob, Sage Green · "
+                    "Gold Knob, Twilight, Offline Blue)\n"
+                ),
+            )
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="unknown_machine_color",
+                translation_placeholders={"code": code, "report_url": report_url},
+                learn_more_url=report_url,
+            )
+        except Exception as exc:
+            _LOGGER.debug("Machine colour issue update failed: %s", exc)
 
     async def async_connect(self) -> bool:
         """Establish a BLE connection. Safe to call when already connected.

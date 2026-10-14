@@ -70,8 +70,7 @@ const STRINGS = {
     cloud_hint: "Search XBloom's public recipe hub and import a copy into this machine's local recipes. No account needed.",
     cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
     stage_beans: "Ready", stage_grind: "Grinding", stage_pour: "Pouring", stage_enjoy: "Enjoy",
-    color: "Color", color_auto: "Auto",
-    color_auto_hint: "From the serial number (black or white; other colours have to be picked)",
+    color: "Color", color_unknown: "Unknown (serial code not mapped yet)",
     color_midnight_black: "Midnight Black", color_moonlight_white: "Moonlight White",
     color_sage_green_green: "Sage Green · Green Knob", color_sage_green_gold: "Sage Green · Gold Knob",
     color_twilight: "Twilight", color_offline_blue: "Offline Blue",
@@ -131,8 +130,7 @@ const STRINGS = {
     cloud_hint: "XBloom 공개 레시피 허브에서 검색해 이 머신의 로컬 레시피로 복사해 옵니다. 계정이 필요 없습니다.",
     cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
     stage_beans: "준비", stage_grind: "분쇄", stage_pour: "푸어", stage_enjoy: "완성",
-    color: "색상", color_auto: "자동",
-    color_auto_hint: "시리얼 번호로 판별 (블랙·화이트만 가능, 다른 색은 직접 선택)",
+    color: "색상", color_unknown: "알 수 없음 (시리얼 코드 미등록)",
     color_midnight_black: "미드나이트 블랙", color_moonlight_white: "문라이트 화이트",
     color_sage_green_green: "세이지 그린 · 그린 노브", color_sage_green_gold: "세이지 그린 · 골드 노브",
     color_twilight: "트와일라이트", color_offline_blue: "오프라인 블루",
@@ -181,8 +179,19 @@ const totalWater = (r) => {
 // The app's temperature slider: 39-96, where the ends ARE RT (room
 // temperature, 20 °C on the wire) and BP (boiling point, 98 °C) — the same
 // mapping as the coordinator's _wire_temperature for the manual slider.
-const tempLabel = (t) => (Number(t) <= 20 ? "RT" : Number(t) >= 98 ? "BP" : `${num(t)}°`);
-const sliderLabel = (s) => (Number(s) <= 39 ? "RT" : Number(s) >= 96 ? "BP" : `${num(s)}°`);
+// Recipes store °C; shown in HA's own temperature unit (set in `set hass`).
+let displayTempUnit = "°C";
+const showTemp = (c) =>
+  displayTempUnit === "°F" ? `${num((Number(c) * 9) / 5 + 32)}°F` : `${num(c)}°`;
+const tempLabel = (t) => (Number(t) <= 20 ? "RT" : Number(t) >= 98 ? "BP" : showTemp(t));
+// The manual temperature slider: its own ends are RT/BP (in any unit).
+const endLabel = (v, min, max, unit) =>
+  Number(v) <= Number(min) ? "RT" : Number(v) >= Number(max) ? "BP" : `${num(v)}${unit || "°"}`;
+// An entity's temperature in °C, whatever unit HA shows it in (an
+// imperial HA converts the °C entities to °F).
+const toCelsius = (v, unit) => (unit === "°F" ? ((Number(v) - 32) * 5) / 9 : Number(v));
+// Scale weight in grams, for comparing against a recipe's water (ml ≈ g).
+const GRAMS_PER = { g: 1, kg: 1000, mg: 0.001, oz: 28.3495, lb: 453.592 };
 const tempToSlider = (t) => (t <= 20 ? 39 : t >= 98 ? 96 : Math.min(95, Math.max(40, t)));
 const sliderToTemp = (s) => (s <= 39 ? 20 : s >= 96 ? 98 : s);
 
@@ -253,16 +262,9 @@ const MACHINE_IMAGES = {
   twilight: "Frame_34598248.png",
   offline_blue: "xbloomofflinebluestudioproductimage-3.webp",
 };
-// Swatch colours for the picker (approximations of the finishes).
-const MACHINE_SWATCHES = {
-  midnight_black: "linear-gradient(135deg, #3a3b3e, #111214)",
-  moonlight_white: "linear-gradient(135deg, #ffffff, #d9d8d4)",
-  sage_green_green: "linear-gradient(135deg, #aebfae, #7f957f)",
-  sage_green_gold: "linear-gradient(135deg, #aebfae 60%, #c9a45c 60%)",
-  twilight: "linear-gradient(135deg, #f1f0ec 50%, #1b1c1e 50%)",
-  offline_blue: "linear-gradient(135deg, #3a6be0, #1f45a8)",
-};
-const machineColor = (m) => m?.machine_color || m?.detected_color || "midnight_black";
+// The colour comes from the serial number only (panel.py's
+// MACHINE_COLOR_CODES); an unknown code shows the black machine.
+const machineColor = (m) => m?.detected_color || "midnight_black";
 const machineImage = (m) => `${SHOP_CDN}${MACHINE_IMAGES[machineColor(m)] || MACHINE_IMAGES.midnight_black}?width=720`;
 
 // A stable hue per recipe name, kept inside a warm (coffee) or green
@@ -323,6 +325,7 @@ class XBloomPanel extends HTMLElement {
     this._hass = hass;
     // Follow the user's light/dark choice; the palette is the app's either way.
     this.toggleAttribute("dark", !!hass.themes?.darkMode);
+    displayTempUnit = hass.config?.unit_system?.temperature || "°C";
     if (first) this._loadMachines();
     this._onHassChanged();
   }
@@ -634,16 +637,6 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
-  // null = back to auto (the colour the serial number encodes).
-  async _setMachineColor(color) {
-    try {
-      await this._hass.callWS({ type: "xbloom/set_machine_color", entry_id: this._entryId, color });
-    } catch (err) {
-      return this._toast(err.message || String(err));
-    }
-    return this._loadMachines();
-  }
-
   _cloudKey(item) {
     return String(item.community_recipe_id ?? item.share_url);
   }
@@ -744,8 +737,6 @@ class XBloomPanel extends HTMLElement {
         const v = Number(this.shadowRoot.querySelector(`#adv-${arg}`)?.value);
         return this._xb("advanced_settings", { [arg]: v });
       }
-      case "set-color":
-        return this._setMachineColor(arg || null);
       case "calibrate":
         if (this._confirm !== "calibrate") {
           this._confirm = "calibrate";
@@ -801,7 +792,7 @@ class XBloomPanel extends HTMLElement {
     }
     if (d.rangeLabel) {
       const out = this.shadowRoot.querySelector(`[data-range-out="${d.rangeLabel}"]`);
-      if (out) out.textContent = d.rangeFmt === "temp" ? sliderLabel(el.value) : el.value;
+      if (out) out.textContent = d.rangeFmt === "temp" ? endLabel(el.value, el.min, el.max, d.unit) : el.value;
     }
     if (!this._editor) return;
     const r = this._editor.recipe;
@@ -940,7 +931,7 @@ class XBloomPanel extends HTMLElement {
             .map((s, i) => `<li class="${stage === i ? "active" : stage > i ? "done" : ""}">${ICONS[s]}<span>${this._t(`stage_${s}`)}</span></li>`)
             .join("")}</ol>
           <div class="stats">
-            <div><span class="label">${this._t("brewer_temp")}</span><span class="stat" data-live="sensor.brewer_temperature">–</span></div>
+            <div><span class="label">${this._t("brewer_temp")}</span><span class="stat" data-live="sensor.brewer_temperature" data-live-fmt="temp">–</span></div>
             <div><span class="label">${this._t("flow")}</span><span class="stat" data-live="sensor.flow_rate">–</span></div>
           </div>
           ${armed ? `<div class="hint on-dark">${this._t("armed_hint")}</div>` : ""}
@@ -1284,13 +1275,19 @@ class XBloomPanel extends HTMLElement {
     if (!s) return "";
     const a = s.attributes;
     const v = Number(s.state);
-    // The pour temperature slider's ends are RT/BP, not 39/96 °C.
+    // The pour temperature slider's ends are RT/BP. Judged by the slider's
+    // own min/max, not 39/96, so it holds when HA shows the entity in °F.
     const isTemp = key === "number.temperature";
     const unit = isTemp ? "" : a.unit_of_measurement || "";
-    const shown = !Number.isFinite(v) ? "–" : isTemp ? sliderLabel(v) : num(v);
+    const shown = !Number.isFinite(v)
+      ? "–"
+      : isTemp
+        ? endLabel(v, a.min, a.max, a.unit_of_measurement)
+        : num(v);
     return `
       <label class="field wide"><span>${this._t(label)} <b><span data-range-out="${key}">${shown}</span> ${esc(unit)}</b></span>
-        <input type="range" data-number="${key}" data-range-label="${key}" ${isTemp ? 'data-range-fmt="temp"' : ""} min="${a.min}" max="${a.max}" step="${a.step}"
+        <input type="range" data-number="${key}" data-range-label="${key}" ${isTemp ? `data-range-fmt="temp" data-unit="${esc(a.unit_of_measurement || "")}"` : ""} min="${a.min}" max="${a.max}"
+          step="${isTemp && a.unit_of_measurement === "°F" ? "any" : a.step}"
           value="${Number.isFinite(v) ? v : a.min}" ${s.state === "unavailable" ? "disabled" : ""}>
       </label>`;
   }
@@ -1417,17 +1414,8 @@ class XBloomPanel extends HTMLElement {
       <section class="card device-card">
         <div class="device-stage"><img class="device-img" src="${machineImage(m)}" alt="xBloom Studio"></div>
         <h2>${this._t("device")}</h2>
-        <div class="color-row">
-          <span class="muted small">${this._t("color")}: <b>${esc(this._t(`color_${machineColor(m)}`))}</b></span>
-          <div class="swatches">
-            <button class="swatch-auto ${m.machine_color ? "" : "active"}" data-action="set-color" data-arg=""
-              title="${esc(this._t("color_auto_hint"))}">${this._t("color_auto")}</button>
-            ${Object.keys(MACHINE_IMAGES)
-              .map((c) => `<button class="swatch ${m.machine_color === c ? "active" : ""}" data-action="set-color" data-arg="${c}"
-                  title="${esc(this._t(`color_${c}`))}" aria-label="${esc(this._t(`color_${c}`))}" style="background:${MACHINE_SWATCHES[c]}"></button>`)
-              .join("")}
-          </div>
-        </div>
+        <div class="kv"><span>${this._t("color")}</span>
+          <span>${esc(this._t(m.detected_color ? `color_${m.detected_color}` : "color_unknown"))}</span></div>
         <div class="kv"><span>${this._t("mac")}</span><span>${esc(m.mac)}</span></div>
         <div class="kv"><span>${this._t("serial")}</span><span>${esc(this._fmt("sensor.serial_number"))}</span></div>
         <div class="kv"><span>${this._t("firmware")}</span><span>${esc(fw?.attributes.installed_version || "–")}</span></div>
@@ -1441,11 +1429,22 @@ class XBloomPanel extends HTMLElement {
     const root = this.shadowRoot;
     root.querySelectorAll("[data-live]").forEach((el) => {
       el.textContent = this._fmt(el.dataset.live);
+      // The brewer temperature is the knob setpoint the machine pushes
+      // (literal °C), so its 39/96 °C ends are RT/BP just like the slider —
+      // compared in °C even when HA shows the entity in °F.
+      if (el.dataset.liveFmt === "temp") {
+        const st = this._st(el.dataset.live);
+        const c = toCelsius(st?.state, st?.attributes.unit_of_measurement);
+        if (Number.isFinite(c) && (c <= 39.5 || c >= 95.5)) el.textContent = c <= 39.5 ? "RT" : "BP";
+      }
     });
     const ring = root.querySelector("[data-live-ring]");
     if (ring) {
       const target = Number(ring.closest(".ring").dataset.target) || 0;
-      const w = Number(this._val("sensor.weight"));
+      // Target is the recipe's water in ml (≈ g); the scale may be shown in
+      // oz/lb if the user changed the entity's unit.
+      const ws = this._st("sensor.weight");
+      const w = Number(this._val("sensor.weight")) * (GRAMS_PER[ws?.attributes.unit_of_measurement] ?? 1);
       const frac = target > 0 && Number.isFinite(w) ? Math.max(0, Math.min(1, w / target)) : 0;
       ring.setAttribute("stroke-dashoffset", String(339.3 * (1 - frac)));
     }
@@ -1562,14 +1561,6 @@ const STYLE = `
   .device-stage { margin: -20px -20px 0; height: 220px; display: flex; align-items: center; justify-content: center;
     background: var(--xb-hero); overflow: hidden; }
   .device-img { height: 200px; width: 200px; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
-  .color-row { display: flex; flex-direction: column; gap: 10px; }
-  .color-row b { color: var(--xb-text); font-weight: 600; }
-  .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .swatch { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--xb-line); padding: 0;
-    box-shadow: 0 0 0 3px transparent; transition: box-shadow .15s ease; }
-  .swatch.active, .swatch-auto.active { box-shadow: 0 0 0 2px var(--xb-bg), 0 0 0 4px var(--xb-gold); }
-  .swatch-auto { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--xb-line);
-    background: var(--xb-card-2); font-size: 12px; font-weight: 600; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 3; }
   .ring .track { stroke: rgba(255,255,255,.1); }

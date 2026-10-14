@@ -53,7 +53,6 @@ from .const import (
     CONF_EASY_SLOTS,
     CONF_EMAIL,
     CONF_MAC_ADDRESS,
-    CONF_MACHINE_COLOR,
     CONF_MODE,
     CONF_PASSWORD,
     CONF_RECIPES,
@@ -934,10 +933,7 @@ _RECIPE_ONLY_OPTION_KEYS = {
 # select change); their only follow-up is pushing the new values to the
 # machine, which coordinator._handle_unit_options_change() does in place.
 _UNIT_OPTION_KEYS = {CONF_WATER_SOURCE, CONF_WEIGHT_UNIT, CONF_TEMP_UNIT}
-# CONF_MACHINE_COLOR only picks the panel's product photo.
-_NO_RELOAD_OPTION_KEYS = (
-    _RECIPE_ONLY_OPTION_KEYS | {CONF_MODE, CONF_MACHINE_COLOR} | _UNIT_OPTION_KEYS
-)
+_NO_RELOAD_OPTION_KEYS = _RECIPE_ONLY_OPTION_KEYS | {CONF_MODE} | _UNIT_OPTION_KEYS
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

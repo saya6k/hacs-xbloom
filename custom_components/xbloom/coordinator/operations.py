@@ -44,6 +44,12 @@ _ARMED_QUIT_COMMANDS = {
 _STOP_VERIFY_ATTEMPTS = 10
 _STOP_VERIFY_INTERVAL_S = 0.25
 
+# A component stop (3505/4507) only stops the motor/water — the machine
+# stays on its grind/pour page (hardware 2026-10-14: after 4507 the page
+# code 0x03 came back ~0.85 s after the ACK). Cancel means "back home", so
+# the page's own quit (8012/8013) follows once the page has settled.
+_STOP_TO_QUIT_SETTLE_S = 1.0
+
 # Settle delay between 8007 ("enter pour page") and the entry push of HA's
 # temperature/pattern (4510/8016) in async_arm_pour — the machine needs to
 # finish its screen transition first (the 8007→4506 no-gap race is exactly
@@ -347,9 +353,13 @@ class OperationsMixin:
             elif active_operation == "manual_grind":
                 await self.client.grinder.stop()
                 await self._async_verify_component_stop("grinder")
+                await asyncio.sleep(_STOP_TO_QUIT_SETTLE_S)
+                await self.client._send_command(_ARMED_QUIT_COMMANDS["grind"])
             elif active_operation == "manual_pour":
                 await self.client.brewer.stop()
                 await self._async_verify_component_stop("brewer")
+                await asyncio.sleep(_STOP_TO_QUIT_SETTLE_S)
+                await self.client._send_command(_ARMED_QUIT_COMMANDS["pour"])
             else:
                 # Bare 40519, nothing else (2026-07-19) — matching the
                 # official app's AppJ15AutoManager.stop(), which sends only
