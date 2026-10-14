@@ -683,12 +683,13 @@ class StateMixin:
                     attributes.update(detail)
                     if detail.get("recipes"):
                         # The hub search can't find pod recipes, so keep
-                        # them locally the moment a pod is scanned. Never
-                        # let the save hold up or swallow the event.
+                        # the scanned pod in the pod library (panel data;
+                        # the user saves a recipe from it explicitly).
+                        # Never let this hold up or swallow the event.
                         try:
-                            self.save_pod_recipes(detail["recipes"])
+                            await self.pod_library.async_record(attributes["xid"], detail)
                         except Exception as exc:
-                            _LOGGER.warning("Saving the scanned pod's recipes failed: %s", exc)
+                            _LOGGER.warning("Recording the scanned pod failed: %s", exc)
                     _do_dispatch()
 
                 self.hass.loop.call_soon_threadsafe(

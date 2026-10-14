@@ -1,8 +1,10 @@
-"""A scanned pod's recipes are kept in the local store, once each.
+"""Scanned pods: recorded in the pod library, saved to recipes on request.
 
-User request 2026-10-14: pod recipes can't be found through the hub
-search, so the cloud lookup on pod_detected (fetch_pod_detail) is the only
-way to get them — save them the moment a pod is scanned.
+Pod recipes can't be found through the hub search, so the cloud lookup on
+pod_detected (fetch_pod_detail) is the only way to get them. The scan is
+kept in the pod library (panel data, see pods.py); "save to my recipes"
+then stores one recipe, once (user decision 2026-10-15 — auto-saving every
+scan as a recipe cluttered the recipe store).
 
 Calls the real RecipesMixin.save_pod_recipes with a minimal stand-in for
 `self` (same pattern as tests/test_easy_slot_tea_rejected.py).
@@ -10,6 +12,8 @@ Calls the real RecipesMixin.save_pod_recipes with a minimal stand-in for
 from __future__ import annotations
 
 import asyncio
+
+import pytest
 
 from custom_components.xbloom.coordinator.recipes import RecipesMixin
 from tests.test_pod_detected_dispatch import _dispatch_pod, _FakeCloud
@@ -94,38 +98,42 @@ def test_invalid_recipe_is_skipped_not_raised():
     assert save_pod_recipes(store, [{"name": "Broken"}]) == []
 
 
-def test_pod_detected_with_recipes_triggers_the_save_and_still_fires():
-    saved: list = []
-    detail = {"name": "Kenya", "default_recipe": "Legacy", "recipes": [_pod_recipe()]}
+class _Library:
+    def __init__(self, fail: bool = False) -> None:
+        self.recorded: list = []
+        self.fail = fail
 
+    async def async_record(self, xid, detail):
+        if self.fail:
+            raise RuntimeError("store unavailable")
+        self.recorded.append((xid, detail))
+
+
+def _dispatch_with_library(detail, library):
     async def run():
         from tests.test_finish_run_and_pause_gate import _Coordinator
 
-        _Coordinator.save_pod_recipes = lambda self, recipes: saved.append(recipes)
+        _Coordinator.pod_library = library
+        _Coordinator.save_pod_recipes = lambda self, recipes: pytest.fail("no auto-save")
         try:
             return await _dispatch_pod(_FakeCloud(result=detail))
         finally:
+            del _Coordinator.pod_library
             del _Coordinator.save_pod_recipes
 
-    _, log = asyncio.run(run())
-    assert saved == [detail["recipes"]]
+    return asyncio.run(run())
+
+
+def test_pod_detected_records_the_pod_and_saves_no_recipe():
+    """The scan goes to the pod library (panel data), not to the recipes —
+    the user saves a pod's recipe from the panel explicitly."""
+    library = _Library()
+    detail = {"name": "Kenya", "default_recipe": "Legacy", "recipes": [_pod_recipe()]}
+    _, log = _dispatch_with_library(detail, library)
+    assert library.recorded == [("KR0005", detail)]
     assert len(log) == 1  # the event still fired, once
 
 
-def test_a_failing_save_never_swallows_the_event():
-    detail = {"recipes": [_pod_recipe()]}
-
-    async def run():
-        from tests.test_finish_run_and_pause_gate import _Coordinator
-
-        def boom(self, recipes):
-            raise RuntimeError("store unavailable")
-
-        _Coordinator.save_pod_recipes = boom
-        try:
-            return await _dispatch_pod(_FakeCloud(result=detail))
-        finally:
-            del _Coordinator.save_pod_recipes
-
-    _, log = asyncio.run(run())
+def test_a_failing_record_never_swallows_the_event():
+    _, log = _dispatch_with_library({"recipes": [_pod_recipe()]}, _Library(fail=True))
     assert len(log) == 1

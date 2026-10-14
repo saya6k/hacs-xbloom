@@ -87,6 +87,7 @@ from .default_recipes import DEFAULT_RECIPES
 from .entity import scoped_unique_id
 from .llm_api import register_llm_api
 from .panel import async_register_panel
+from .pods import PodLibrary
 
 # POUR_SCHEMA is re-exported, not used here — the `as` alias marks that
 # intent (see the schema note below).
@@ -859,6 +860,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # own or XBloom's official recipes on top.
     coordinator.seed_bundled_recipes()
     coordinator._rebuild_recipes()
+    await coordinator.pod_library.async_load()
 
     # Initial data fetch (non-blocking; device may not be connected yet)
     await coordinator.async_refresh()
@@ -996,3 +998,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # _async_refresh_recipe_service_schemas).
             await remaining[0][DATA_COORDINATOR]._async_refresh_recipe_service_schemas()
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """The machine was removed — drop its pod library store."""
+    await PodLibrary(hass, entry.entry_id).async_remove()

@@ -69,6 +69,12 @@ const STRINGS = {
     share_link: "Share link or recipe id", import_link: "Import link",
     cloud_hint: "Search XBloom's public recipe hub and import a copy into this machine's local recipes. No account needed.",
     cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
+    pods: "Pods", pods_empty: "Insert a pod or recipe card into the machine — it shows up here.",
+    last_scanned: "Last scanned {when}", scans: "{n}× scanned",
+    save_to_mine: "Save to my recipes", saved_as: "Saved as “{name}”",
+    already_saved: "Already in my recipes as “{name}”",
+    bean_info: "Bean info", roast: "Roast", notes: "Notes", process: "Process",
+    variety: "Variety", type: "Type", origin: "Origin",
     stage_beans: "Ready", stage_grind: "Grinding", stage_pour: "Pouring", stage_enjoy: "Enjoy",
     color: "Color", color_unknown: "Unknown (serial code not mapped yet)",
     color_midnight_black: "Midnight Black", color_moonlight_white: "Moonlight White",
@@ -129,6 +135,12 @@ const STRINGS = {
     share_link: "공유 링크 또는 레시피 ID", import_link: "링크로 가져오기",
     cloud_hint: "XBloom 공개 레시피 허브에서 검색해 이 머신의 로컬 레시피로 복사해 옵니다. 계정이 필요 없습니다.",
     cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
+    pods: "팟", pods_empty: "기기에 팟이나 레시피 카드를 꽂으면 여기에 나타납니다.",
+    last_scanned: "마지막 스캔 {when}", scans: "{n}회 스캔",
+    save_to_mine: "내 레시피로 저장", saved_as: "“{name}”(으)로 저장했습니다",
+    already_saved: "이미 내 레시피에 “{name}”(으)로 있습니다",
+    bean_info: "원두 정보", roast: "로스팅", notes: "노트", process: "가공",
+    variety: "품종", type: "유형", origin: "원산지",
     stage_beans: "준비", stage_grind: "분쇄", stage_pour: "푸어", stage_enjoy: "완성",
     color: "색상", color_unknown: "알 수 없음 (시리얼 코드 미등록)",
     color_midnight_black: "미드나이트 블랙", color_moonlight_white: "문라이트 화이트",
@@ -248,6 +260,8 @@ const savePref = (key, value) => {
 };
 
 const SAFE_IMAGE = /^https:\/\/[^\s"'()<>\\]+$/;
+// A pod's own colour (PodsModel.theColor) — only plain hex goes into a style.
+const POD_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 // XBloom's own product shots, one per Studio colour, loaded from their
 // store CDN at view time — referenced, not bundled (the photos are
@@ -318,6 +332,9 @@ class XBloomPanel extends HTMLElement {
       loading: false, importing: null, imported: new Set(),
     };
     this._shareLink = "";
+    // Pod library (see pods.py): list, the open pod, its selected recipe.
+    this._pods = { list: null, open: null, recipe: 0, bean: false };
+    this._podEventSig = "";
   }
 
   set hass(hass) {
@@ -466,6 +483,13 @@ class XBloomPanel extends HTMLElement {
 
   _onHassChanged() {
     if (!this._machines) return;
+    // pod_detected fires after the scan was recorded in the pod library,
+    // so a new notification event is the cue to refresh an open pod list.
+    const podEventSig = this._val("event.notification_event") || "";
+    if (podEventSig !== this._podEventSig) {
+      this._podEventSig = podEventSig;
+      if (this._tab === "recipes" && this._recipesView === "pods") this._loadPods();
+    }
     const recipeSig = this._computeRecipeSig();
     if (recipeSig !== this._recipeSig) {
       this._recipeSig = recipeSig;
@@ -637,6 +661,52 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
+  async _loadPods() {
+    try {
+      const res = await this._hass.callWS({ type: "xbloom/pods", entry_id: this._entryId });
+      this._pods.list = res.pods || [];
+    } catch (err) {
+      this._toast(err.message || String(err));
+      if (this._pods.list === null) this._pods.list = [];
+    }
+    this._render();
+  }
+
+  get _openPod() {
+    return this._pods.list?.find((p) => p.xid === this._pods.open) || null;
+  }
+
+  async _savePodRecipe() {
+    const pod = this._openPod;
+    if (!pod) return;
+    try {
+      const res = await this._hass.callWS({
+        type: "xbloom/pods/save_recipe", entry_id: this._entryId, xid: pod.xid, index: this._pods.recipe,
+      });
+      this._toast(this._t(res.added ? "saved_as" : "already_saved", { name: res.name }));
+      await this._loadMachines();
+    } catch (err) {
+      this._toast(err.message || String(err));
+    }
+  }
+
+  async _forgetPod() {
+    const pod = this._openPod;
+    if (!pod) return;
+    if (this._confirm !== `forget:${pod.xid}`) {
+      this._confirm = `forget:${pod.xid}`;
+      return this._render();
+    }
+    this._confirm = null;
+    try {
+      await this._hass.callWS({ type: "xbloom/pods/delete", entry_id: this._entryId, xid: pod.xid });
+    } catch (err) {
+      return this._toast(err.message || String(err));
+    }
+    this._pods.open = null;
+    return this._loadPods();
+  }
+
   _cloudKey(item) {
     return String(item.community_recipe_id ?? item.share_url);
   }
@@ -669,9 +739,29 @@ class XBloomPanel extends HTMLElement {
         this._recipesView = arg;
         this._recipeView = null;
         this._editor = null;
+        this._pods.open = null;
         this._render();
         if (arg === "cloud" && this._cloud.results === null) this._cloudSearch();
+        if (arg === "pods") this._loadPods();
         return undefined;
+      case "open-pod":
+        this._pods = { ...this._pods, open: arg, recipe: 0, bean: false };
+        this._confirm = null;
+        return this._render();
+      case "close-pod":
+        this._pods.open = null;
+        this._confirm = null;
+        return this._render();
+      case "pod-recipe":
+        this._pods.recipe = Number(arg);
+        return this._render();
+      case "toggle-bean":
+        this._pods.bean = !this._pods.bean;
+        return this._render();
+      case "save-pod-recipe":
+        return this._savePodRecipe();
+      case "forget-pod":
+        return this._forgetPod();
       case "cloud-filter": {
         const [key, value] = arg.split(":");
         this._cloud[key] = value;
@@ -1019,10 +1109,13 @@ class XBloomPanel extends HTMLElement {
   // ---- Recipes
 
   _renderRecipes() {
-    const switcher = `<div class="segmented wide">${[["mine", "my_recipes"], ["cloud", "cloud"]]
+    const switcher = `<div class="segmented wide">${[["mine", "my_recipes"], ["pods", "pods"], ["cloud", "cloud"]]
       .map(([v, label]) => `<button class="${this._recipesView === v ? "active" : ""}" data-action="recipes-view" data-arg="${v}">${this._t(label)}</button>`)
       .join("")}</div>`;
     if (this._recipesView === "cloud") return switcher + this._renderCloud();
+    if (this._recipesView === "pods") {
+      return this._openPod ? this._renderPodDetail(this._openPod) : switcher + this._renderPods();
+    }
     const kinds = ["all", "coffee", "tea"];
     return `
       ${switcher}
@@ -1034,6 +1127,91 @@ class XBloomPanel extends HTMLElement {
         <button class="btn primary small" data-action="new-recipe">+ ${this._t("new_recipe")}</button>
       </div>
       <div class="grid" id="recipe-grid">${this._recipeCards()}</div>`;
+  }
+
+  // ---- Pods (pod library — modeled on the app's PodsDetailActivity)
+
+  _when(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const lang = this._hass?.locale?.language || "en";
+    return d.toLocaleString(lang, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  _podArt(pod, cls = "art") {
+    const image = SAFE_IMAGE.test(pod.image || "") ? pod.image : null;
+    // The app tints the pod screen with the pod's own colour (theColor).
+    const tint = POD_COLOR.test(pod.color || "") ? pod.color : null;
+    const style = [tint && `--pod:${tint}`, image && `background-image:url('${image}')`]
+      .filter(Boolean).join(";");
+    return image
+      ? `<div class="${cls} photo pod-art" style="${style}"></div>`
+      : `<div class="${cls} pod-art" style="${style}">${ICONS.home}<div class="art-figure">${esc(pod.xid)}</div></div>`;
+  }
+
+  _renderPods() {
+    const list = this._pods.list;
+    if (list === null) return `<div class="empty">${this._t("loading")}</div>`;
+    if (!list.length) return `<div class="empty">${this._t("pods_empty")}</div>`;
+    return `<div class="grid">${list
+      .map((pod) => `<button class="recipe-card" data-action="open-pod" data-arg="${esc(pod.xid)}">
+          ${this._podArt(pod)}
+          <div class="rc-body">
+            <div class="rc-top">
+              ${pod.type ? `<span class="badge">${esc(pod.type)}</span>` : ""}
+              <span class="badge gold">${esc(pod.xid)}</span>
+            </div>
+            <div class="rc-name"><span class="muted">xbloom｜</span>${esc(pod.name || pod.xid)}</div>
+            ${pod.roaster ? `<div class="muted small">${esc(pod.roaster)}</div>` : ""}
+            ${pod.origin ? `<div class="rc-specs"><span>${esc(pod.origin)}</span></div>` : ""}
+            <div class="muted small">${esc(this._t("last_scanned", { when: this._when(pod.last_scanned) }))} · ${esc(this._t("scans", { n: pod.scans || 1 }))}</div>
+          </div>
+        </button>`)
+      .join("")}</div>`;
+  }
+
+  _renderPodDetail(pod) {
+    const recipes = pod.recipes || [];
+    const index = Math.min(this._pods.recipe, Math.max(0, recipes.length - 1));
+    const recipe = recipes[index];
+    const confirmForget = this._confirm === `forget:${pod.xid}`;
+    const roast = Number(pod.roast) || 0;
+    const bean = [
+      ["notes", pod.flavor], ["process", pod.process], ["variety", pod.varietal],
+      ["type", pod.type], ["origin", pod.origin],
+    ].filter(([, v]) => v);
+    return `
+      <button class="link" data-action="close-pod">‹ ${this._t("back")}</button>
+      <div class="detail-grid">
+      <section class="card pod-card">
+        ${this._podArt(pod, "art-hero")}
+        ${recipes.length > 1 ? `<div class="segmented wide">${recipes
+          .map((r, i) => `<button class="${i === index ? "active" : ""}" data-action="pod-recipe" data-arg="${i}">${esc(r.name)}</button>`)
+          .join("")}</div>` : ""}
+        <button class="pod-row" data-action="toggle-bean" aria-expanded="${this._pods.bean}">
+          ${SAFE_IMAGE.test(pod.image || "") ? `<img class="pod-thumb" src="${pod.image}" alt="">` : ""}
+          <span class="pod-row-text">
+            <b><span class="muted">xbloom｜</span>${esc(pod.name || pod.xid)}</b>
+            <span class="muted small">${esc(pod.roaster || pod.origin || "")}</span>
+          </span>
+          <span class="pod-arrow">${this._pods.bean ? "▾" : "▸"}</span>
+        </button>
+        ${this._pods.bean ? `
+        <div class="bean-sheet">
+          <h2>${this._t("bean_info")}</h2>
+          ${pod.introduce ? `<p class="small">${esc(pod.introduce)}</p>` : ""}
+          ${roast ? `<div class="kv"><span>${this._t("roast")}</span>
+            <span class="roast">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= roast ? "on" : ""}"></i>`).join("")}</span></div>` : ""}
+          ${bean.map(([k, v]) => `<div class="kv"><span>${this._t(k)}</span><span>${esc(v)}</span></div>`).join("")}
+        </div>` : ""}
+        ${recipe ? this._renderRecipeMetrics(recipe) : ""}
+      </section>
+      ${recipe ? `<section class="card"><h2>${this._t("pours")}</h2>${this._renderPourTimeline(recipe)}</section>` : ""}
+      </div>
+      <div class="actions">
+        <button class="btn go" data-action="save-pod-recipe" ${recipe ? "" : "disabled"}>${this._t("save_to_mine")}</button>
+        <button class="btn danger" data-action="forget-pod">${this._t(confirmForget ? "confirm_delete" : "delete")}</button>
+      </div>`;
   }
 
   _renderCloud() {
@@ -1670,6 +1848,23 @@ const STYLE = `
   .art-figure { position: absolute; left: 16px; bottom: 12px; font-family: var(--xb-serif); font-size: 30px; letter-spacing: -.01em; }
   .art-figure small { font-family: -apple-system, system-ui, sans-serif; font-size: 12px; margin-left: 3px; opacity: .7; }
   .photo { background-size: cover; background-position: center; background-color: #18191b; }
+  /* Pods: tinted with the pod's own colour, like the app's pod screen. */
+  .pod-art { background-color: var(--pod, #18191b); }
+  .pod-art:not(.photo) { background:
+      radial-gradient(90% 120% at 85% 10%, color-mix(in srgb, var(--pod, #8a6a3a) 80%, white 10%), transparent 60%),
+      linear-gradient(160deg, color-mix(in srgb, var(--pod, #3a2c1c) 70%, black), #101010); }
+  .pod-card { background: linear-gradient(180deg, color-mix(in srgb, var(--xb-gold) 6%, var(--xb-card)), var(--xb-card)); }
+  .pod-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    border: 1px solid var(--xb-line); background: var(--xb-card-2); border-radius: 16px; padding: 10px 12px; }
+  .pod-thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: none; }
+  .pod-row-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .pod-row-text b { font-family: var(--xb-serif); font-weight: 500; font-size: 17px; }
+  .pod-arrow { color: var(--xb-muted); font-size: 18px; }
+  .bean-sheet { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+  .bean-sheet p { margin: 0 0 4px; line-height: 1.5; color: var(--xb-muted); }
+  .roast { display: inline-flex; gap: 5px; }
+  .roast i { width: 9px; height: 13px; border-radius: 50%; background: var(--xb-line); display: inline-block; }
+  .roast i.on { background: #8a5a2b; }
   .photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.35)); }
 
   .detail-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }

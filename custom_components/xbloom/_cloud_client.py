@@ -838,6 +838,8 @@ class XBloomCloudClient:
             return None
         pod = resp.get("podsVo") or {}
         detail: dict = {}
+        # The fields the app's own PodsModel carries (jadx 2026-10-15) — the
+        # pod screen and its bean sheet show all of these.
         for key, field in (
             ("name", "theName"),
             ("roaster", "subtitle"),
@@ -845,11 +847,19 @@ class XBloomCloudClient:
             ("process", "process"),
             ("varietal", "varietal"),
             ("flavor", "flavor"),
+            ("introduce", "introduce"),
+            ("type", "type"),
+            ("color", "theColor"),
         ):
             value = str(pod.get(field) or "").strip()
             if value and value.upper() != "N/A":
                 detail[key] = value
-        image = pod.get("image") or pod.get("imagePath")
+        # Roast level, shown by the app as 1-5 bean icons.
+        roast = pod.get("roast")
+        if isinstance(roast, int) and roast > 0:
+            detail["roast"] = roast
+        # imagePath is the photo the app shows (PodsModel has no "image").
+        image = pod.get("imagePath") or pod.get("image")
         if image:
             detail["image"] = image
         recipes = []
