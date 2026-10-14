@@ -21,7 +21,11 @@ class _Coordinator(StateMixin):
         self._no_beans = False
         self._water_shortage = False
         self._calibrating = False
-        self.client = SimpleNamespace(is_calibrating_grinder=lambda: self._calibrating)
+        self._sleeping = False
+        self.client = SimpleNamespace(
+            is_calibrating_grinder=lambda: self._calibrating,
+            is_sleeping=lambda: self._sleeping,
+        )
 
 
 def _status(
@@ -109,3 +113,36 @@ def test_errors_beat_the_page():
 def test_unknown_still_coerces_to_idle():
     coordinator = _Coordinator()
     assert coordinator._derive_state_string(_status(state=DeviceState.UNKNOWN)) == "idle"
+
+
+def test_sleeping_machine_reads_sleeping():
+    """8009 (live 2026-10-14: sent ~10 min after the last activity, even
+    with the link held)."""
+    coordinator = _Coordinator()
+    coordinator._sleeping = True
+    assert coordinator._derive_state_string(_status(screen="home")) == "sleeping"
+
+
+def test_sleep_outranks_a_stale_activity_label():
+    coordinator = _Coordinator()
+    coordinator._sleeping = True
+    assert coordinator._derive_state_string(_status(raw_state_label="ready")) == "sleeping"
+
+
+def test_water_shortage_outranks_sleep():
+    # A problem the user must act on stays visible while the machine sleeps.
+    coordinator = _Coordinator()
+    coordinator._sleeping = True
+    coordinator._water_shortage = True
+    assert coordinator._derive_state_string(_status()) == "water_shortage"
+
+
+def test_pod_wake_reads_recipe_loaded():
+    """A pod insert wakes the machine (8011 clears the flag) and the
+    heartbeat reports 0x1F — live 2026-10-14, pod KR0011."""
+    coordinator = _Coordinator()
+    coordinator._sleeping = False
+    assert (
+        coordinator._derive_state_string(_status(raw_state_label="recipe_loaded"))
+        == "recipe_loaded"
+    )

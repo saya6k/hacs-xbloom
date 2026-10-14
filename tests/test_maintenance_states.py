@@ -78,7 +78,9 @@ class _Coordinator(StateMixin):
         self._armed_operation = None
         self._no_beans = False
         self._water_shortage = False
-        self.client = SimpleNamespace(is_calibrating_grinder=lambda: False)
+        self.client = SimpleNamespace(
+            is_calibrating_grinder=lambda: False, is_sleeping=lambda: False
+        )
 
 
 @pytest.mark.parametrize("label", ["descaling", "calibrating_scale", "calibrating_grinder"])

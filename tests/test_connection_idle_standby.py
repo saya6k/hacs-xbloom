@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 
+from custom_components.xbloom.ble.models import DeviceStatus
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
 from custom_components.xbloom.coordinator.state import StateMixin
 
@@ -183,3 +184,44 @@ def test_successful_connect_clears_the_backoff():
 
     assert coordinator._reconnect_failures == 0
     assert coordinator.hass.tasks == ["async_connect"]
+
+
+class _AsleepClient(_FakeClient):
+    """Reaches the full status-read path (past both link-dropping gates)."""
+
+    def __init__(self) -> None:
+        super().__init__(sleeping=True)
+        self.status = DeviceStatus(is_sleeping=True)
+
+    def is_calibrating_grinder(self) -> bool:
+        return False
+
+
+def _full_path_coordinator(client) -> _Coordinator:
+    coordinator = _Coordinator(client, session_timeout=60)
+    coordinator._no_beans = False
+    coordinator._water_shortage = False
+    coordinator._mode = None
+    coordinator._executing_recipe = False
+    coordinator._active_recipe_pours = None
+    coordinator.current_pour_index = None
+    coordinator.temperature = 93
+    coordinator.pour_pattern = 2
+    coordinator._live_grind_size = None
+    coordinator._maybe_update_device_registry = lambda data: None
+    return coordinator
+
+
+def test_sleeping_does_not_count_as_activity():
+    """Every non-idle state restarts the idle countdown — but a sleeping
+    machine is the opposite of busy. Counting it would hold the link of a
+    machine that has been asleep for hours (live 2026-10-14: it sleeps on
+    its own ~10 min after the last activity, link or no link)."""
+    coordinator = _full_path_coordinator(_AsleepClient())
+    _idle_for(coordinator, 30)
+    before = coordinator._last_activity_monotonic
+
+    data = asyncio.run(_tick(coordinator))
+
+    assert data["state"] == "sleeping"
+    assert coordinator._last_activity_monotonic == before

@@ -180,6 +180,15 @@ class StateMixin:
             return "no_beans"
         if self._water_shortage:
             return "water_shortage"
+        if self.client.is_sleeping():
+            # 8009, cleared by 8011/8023 (ble/client.py). The machine runs
+            # its own sleep timer even with the link held — heart icon
+            # (8023 0x0A) at +5 min, 8009 at +10 min — and a pod insert or
+            # a button press (Easy Mode C: wakes only, no brew) wakes it
+            # with 8011 (live 2026-10-14).
+            # Nothing is running while it sleeps, so this outranks any
+            # stale activity label.
+            return "sleeping"
         if s.raw_state_label:
             # starting/brewing/ready/awaiting_confirm/… — an activity in
             # progress always outranks whatever page the machine last
@@ -325,10 +334,12 @@ class StateMixin:
                     "pour_radius": getattr(s, "pour_radius", None),
                     "vibration_amplitude": getattr(s, "vibration_amplitude", None),
                 }
-                if data["state"] != "idle":
+                if data["state"] not in ("idle", "sleeping"):
                     # The machine doing anything at all — including a brew
                     # started from its own touchscreen — counts as activity,
                     # so idle standby never drops the link mid-operation.
+                    # Sleeping is the opposite of activity: counting it
+                    # would keep a sleeping machine's link up forever.
                     self._note_activity()
                 # Mirror the physical temperature/pattern knobs onto the
                 # manual-pour setpoints so number.temperature and
