@@ -23,6 +23,17 @@ from .constants import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Machine page a manual operation runs from, both ways round.
+_PAGE_OPERATIONS = {"pour": "manual_pour", "grind": "manual_grind"}
+_OPERATION_PAGES = {op: page for page, op in _PAGE_OPERATIONS.items()}
+
+
+def _manual_running(s: DeviceStatus, op: str) -> bool:
+    """Whether the machine is actively running this manual operation."""
+    if op == "manual_pour":
+        return s.brewer.is_running or s.raw_state_label in ("starting", "brewing")
+    return s.grinder.is_running
+
 
 class StateMixin:
     """DataUpdateCoordinator's ``_async_update_data`` plus BLE event dispatch."""
@@ -158,6 +169,63 @@ class StateMixin:
         ):
             self._armed_operation = None
 
+    # Manual-run bookkeeping the telemetry alone can't carry — class
+    # defaults, same reason as _last_reconcile_screen.
+    _manual_paused = False
+    _manual_run_seen = False
+    # The machine has shown the paused page since the pause was sent. It
+    # keeps reporting brewing for ~1 s after 8019 (hardware 2026-10-14), so
+    # only running AFTER the pause was seen means it resumed.
+    _manual_pause_seen = False
+
+    def _reconcile_manual_operation(self, s: DeviceStatus) -> None:
+        """Track a manual pour/grind the machine started itself, and its end.
+
+        Hardware 2026-10-14: a pour started with the machine's own controls
+        shows only 9001/9005 and the pour page (0x03) → brewing (0x23) — no
+        RD_BREWER_BEGIN, so no brewing_started event and no
+        ``_active_operation``. Pause then fell through to the recipe pause
+        (40518), which the machine ignores mid-pour (water kept flowing);
+        8019/8021/4507 pause, resume and stop it (all live-verified). A run
+        that starts while the machine's last page was the pour/grind page
+        is therefore a manual one — an HA arm of the same page included.
+
+        It is over once it has been seen running and the machine is back
+        on its page unpaused, or has left the page. Requiring the run to
+        have been seen keeps an HA-started grind on its page (burrs still
+        adjusting) from being cleared before it begins.
+        """
+        page = getattr(s, "last_page", None)
+        op = _PAGE_OPERATIONS.get(page)
+        if op is not None and _manual_running(s, op):
+            if self._active_operation is None and self._armed_operation in (None, page):
+                self._armed_operation = None
+                self._active_operation = op
+            if self._active_operation == op:
+                self._manual_run_seen = True
+                if self._manual_pause_seen:
+                    # Running again after the machine showed it paused:
+                    # resumed (by our 8021/8020, or from the machine).
+                    self._manual_paused = False
+                    self._manual_pause_seen = False
+            return
+        own_page = _OPERATION_PAGES.get(self._active_operation)
+        if own_page is None:
+            self._clear_manual_run()
+        elif s.screen is not None and s.screen != own_page:
+            self._active_operation = None
+            self._clear_manual_run()
+        elif s.screen == own_page and self._manual_paused:
+            self._manual_pause_seen = True
+        elif s.screen == own_page and self._manual_run_seen:
+            self._active_operation = None
+            self._clear_manual_run()
+
+    def _clear_manual_run(self) -> None:
+        self._manual_paused = False
+        self._manual_run_seen = False
+        self._manual_pause_seen = False
+
     def _derive_state_string(self, s: DeviceStatus) -> str:
         """The sensor.state derivation chain, in priority order.
 
@@ -195,6 +263,12 @@ class StateMixin:
             # reported (the screen goes stale the moment activity codes
             # replace page codes on the heartbeat).
             return s.raw_state_label
+        if self._manual_paused and s.screen in (None, "grind", "pour"):
+            # An HA-paused manual pour/grind sits on its page exactly like
+            # an idle one — the machine sends no pause notification (no
+            # 9010 after 8019, hardware 2026-10-14) — so only our own
+            # bookkeeping can say it is paused rather than standing by.
+            return "paused"
         if (
             s.screen in ("grind", "pour", "scale")
             and not s.grinder.is_running
@@ -292,6 +366,7 @@ class StateMixin:
                 # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
                 # _water_shortage for provenance.
                 self._reconcile_armed_with_screen(s)
+                self._reconcile_manual_operation(s)
                 state_str = self._derive_state_string(s)
                 data = {
                     "connected": True,
@@ -394,6 +469,7 @@ class StateMixin:
         self._active_recipe_pours = None
         self.current_pour_index = None
         self._active_operation = None
+        self._clear_manual_run()
 
     def _dispatch_event(self, category: str, event_type: str, attributes: dict) -> None:
         """Forward a BLE event to all registered HA event entities.

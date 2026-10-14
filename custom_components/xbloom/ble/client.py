@@ -767,6 +767,7 @@ class XBloomClient:
         self._status.screen_code = code
         self._status.screen = _SCREEN_CODE_MAP.get(code)
         if self._status.screen is not None:
+            self._status.last_page = self._status.screen
             # The machine showing a page or home means nothing is actively
             # running — clear any latched run flags. Needed because a
             # 4507-stopped pour never sends 40511/RD_Brewer_Stop (hardware

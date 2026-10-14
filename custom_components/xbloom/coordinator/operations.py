@@ -241,16 +241,23 @@ class OperationsMixin:
             return
         state = (self.data or {}).get("state", "unknown")
         try:
-            if self._active_operation == "manual_grind":
+            # A manual run's pause is only visible through our own flag —
+            # the machine just shows its page (see _reconcile_manual_operation).
+            # On resume the flag stays up until the run is seen running
+            # again (~1 s), so the page in between doesn't read as finished.
+            if self._active_operation in ("manual_grind", "manual_pour"):
+                controller = (
+                    self.client.grinder
+                    if self._active_operation == "manual_grind"
+                    else self.client.brewer
+                )
                 if state == "paused":
-                    await self.client.grinder.restart()
+                    await controller.restart()
+                    self._manual_pause_seen = True
                 else:
-                    await self.client.grinder.pause()
-            elif self._active_operation == "manual_pour":
-                if state == "paused":
-                    await self.client.brewer.restart()
-                else:
-                    await self.client.brewer.pause()
+                    await controller.pause()
+                    self._manual_paused = True
+                    self._manual_pause_seen = False
             elif state == "paused":
                 await self.client._send_command(_CMD_RECIPE_RESTART)
             elif state in ("starting", "brewing", "grinding"):
@@ -312,6 +319,9 @@ class OperationsMixin:
         self._active_recipe_pours = None
         self.current_pour_index = None
         self._active_operation = None
+        self._manual_paused = False
+        self._manual_run_seen = False
+        self._manual_pause_seen = False
         self._armed_operation = None
         self._armed_recipe_is_tea = False
         self._armed_recipe_tea_payload = None

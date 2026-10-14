@@ -116,6 +116,12 @@ class DeviceStatus:
     # auxiliary channel.
     screen_code: int | None = None
     screen: str | None = None
+    # The last page the heartbeat reported (``screen`` goes None the moment
+    # an activity code replaces the page code). A pour started with the
+    # machine's own controls shows only 9001/9005 and pour page → brewing
+    # (no RD_BREWER_BEGIN), so this is how the coordinator can tell it was a
+    # manual pour — hardware 2026-10-14.
+    last_page: str | None = None
 
 
 @dataclass
