@@ -919,7 +919,7 @@ class XBloomPanel extends HTMLElement {
             .map((s, i) => `<li class="${stage === i ? "active" : stage > i ? "done" : ""}">${ICONS[s]}<span>${this._t(`stage_${s}`)}</span></li>`)
             .join("")}</ol>
           <div class="stats">
-            <div><span class="label">${this._t("brewer_temp")}</span><span class="stat" data-live="sensor.brewer_temperature">–</span></div>
+            <div><span class="label">${this._t("brewer_temp")}</span><span class="stat" data-live="sensor.brewer_temperature" data-live-fmt="temp">–</span></div>
             <div><span class="label">${this._t("flow")}</span><span class="stat" data-live="sensor.flow_rate">–</span></div>
           </div>
           ${armed ? `<div class="hint on-dark">${this._t("armed_hint")}</div>` : ""}
@@ -1411,6 +1411,12 @@ class XBloomPanel extends HTMLElement {
     const root = this.shadowRoot;
     root.querySelectorAll("[data-live]").forEach((el) => {
       el.textContent = this._fmt(el.dataset.live);
+      // The brewer temperature is the knob setpoint the machine pushes
+      // (literal °C), so its 39/96 ends are RT/BP just like the slider.
+      const v = Number(this._val(el.dataset.live));
+      if (el.dataset.liveFmt === "temp" && Number.isFinite(v) && (v <= 39 || v >= 96)) {
+        el.textContent = sliderLabel(v);
+      }
     });
     const ring = root.querySelector("[data-live-ring]");
     if (ring) {
