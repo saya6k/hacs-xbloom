@@ -5,6 +5,7 @@ constants.py's module docstring).
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import time
@@ -13,7 +14,12 @@ from typing import Any
 
 from custom_components.xbloom.ble.models import DeviceStatus
 
-from .constants import _BLE_SILENCE_TIMEOUT_S, DEFAULT_STATE, WATER_SOURCE_TANK
+from .constants import (
+    _BLE_SILENCE_TIMEOUT_S,
+    _POD_LOOKUP_TIMEOUT_S,
+    DEFAULT_STATE,
+    WATER_SOURCE_TANK,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -579,7 +585,43 @@ class StateMixin:
                         _LOGGER.error("Event listener error: %s", exc)
 
         if self.hass and self.hass.loop:
+            if (
+                category == "notification" and event_type == "pod_detected"
+                and attributes.get("xid")
+            ):
+                # Enrich with the cloud's bean/recipe detail first, then
+                # dispatch — see _async_lookup_pod.
+                async def _enrich_and_dispatch() -> None:
+                    attributes.update(await self._async_lookup_pod(attributes["xid"]))
+                    _do_dispatch()
+
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.hass.async_create_task(_enrich_and_dispatch())
+                )
+                return
             self.hass.loop.call_soon_threadsafe(_do_dispatch)
         else:
             # Fallback: already on the right thread or hass not yet set
             _do_dispatch()
+
+    async def _async_lookup_pod(self, xid: str) -> dict:
+        """Cloud detail for a detected pod / recipe card, or ``{}``.
+
+        40501 carries only the 6-byte xid; the bean info and recipes live
+        in XBloom's cloud (``XBloomCloudClient.fetch_pod_detail``, no login
+        needed). Any failure — offline, unknown xid, slower than
+        ``_POD_LOOKUP_TIMEOUT_S`` — just leaves the event with the xid.
+        """
+        try:
+            async with asyncio.timeout(_POD_LOOKUP_TIMEOUT_S):
+                detail = await self.cloud_client.fetch_pod_detail(xid)
+        except TimeoutError:
+            _LOGGER.warning("XBloom pod lookup for %s timed out", xid)
+            return {}
+        except Exception as exc:  # never let a lookup swallow the event
+            _LOGGER.warning("XBloom pod lookup for %s failed: %s", xid, exc)
+            return {}
+        if detail is None:
+            _LOGGER.debug("XBloom pod lookup for %s found nothing", xid)
+            return {}
+        return detail

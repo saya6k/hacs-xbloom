@@ -177,6 +177,24 @@ Assist(LLM)에서는 같은 표면이 도구로 노출됩니다: `list_xbloom_re
 | Cold Brew | 58–80 |
 | Cold Drip | 59–80 |
 
+## 팟과 레시피 카드
+
+머신이 NFC 팟이나 레시피 카드를 읽으면 `event.notification`에서
+`pod_detected`가 발생합니다. 머신 자체는 태그의 6자리 ID(`xid`, 예:
+`KR0005`)만 알려 주고 레시피는 스스로 장전합니다. 그래서 통합이 이 ID를
+XBloom 클라우드에서 조회해(계정 불필요) 찾은 정보를 덧붙입니다.
+
+| 속성 | 의미 |
+|---|---|
+| `xid` | 태그 ID — 항상 포함 |
+| `name`, `roaster`, `origin`, `process`, `varietal`, `flavor`, `image` | 원두 정보. 클라우드에서 비어 있거나 `N/A`인 필드는 생략 |
+| `recipes` | 태그에 연결된 모든 레시피. 로컬 레시피와 같은 형태에 `share_url`이 추가됨 (팟은 1개, 3-pour 카드는 3개) |
+| `default_recipe` | 공식 앱이 기본으로 선택하는 레시피 이름 |
+
+이벤트는 조회를 최대 5초 기다립니다. 클라우드가 느리거나 연결되지 않으면
+`xid`만 담아 발생합니다. 레시피 카드의 원두 필드는 자리 표시용 값입니다
+(`name`은 "Recipe Card", `origin`에는 슬로건이 들어 있음).
+
 ## 문제 해결
 
 머신 알람은 `event.error` 엔티티에 번역된 이벤트 타입으로 표시되며 원시

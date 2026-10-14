@@ -802,6 +802,67 @@ class XBloomCloudClient:
             return None
         return cloud_recipe_to_local(resp.get("recipeVo") or {})
 
+    async def fetch_pod_detail(self, xid: str) -> dict | None:
+        """Look up an NFC pod / recipe card by the xid the machine reports
+        in ``RD_Pods`` (40501). No login required.
+
+        Wraps ``tRecipeDetailOfPods.thtml``, the app's own lookup
+        (``PodsDetailActivity.getData``). ``isRefreshScanTime=2`` is the
+        app's value for a non-scan lookup, so this doesn't count as a scan.
+        Returns the bean fields that carry a real value (recipe cards fill
+        them with "N/A"), every recipe linked to the xid (a pod has one, the
+        3-pour card three) as ``RECIPE_SCHEMA``-shaped dicts plus their
+        ``share_url``, and ``default_recipe`` — the ``isDefault == 1`` one,
+        else the first, which is what the app preselects. ``None`` if the
+        call fails or the xid is unknown.
+        """
+        resp = await self._post_plain(
+            "tRecipeDetailOfPods.thtml",
+            {
+                "interfaceVersion": _AUTH_INTERFACE_VERSION,
+                "skey": _AUTH_SKEY,
+                "phoneType": "Android",
+                "clientType": 2,
+                "languageType": 1,
+                "xid": xid,
+                "adaptedModel": 1,
+                "isRefreshScanTime": 2,
+                "is_sync_default": 2,
+            },
+        )
+        if not resp or resp.get("result") != "success":
+            return None
+        cloud_recipes = resp.get("list") or []
+        if not cloud_recipes:
+            return None
+        pod = resp.get("podsVo") or {}
+        detail: dict = {}
+        for key, field in (
+            ("name", "theName"),
+            ("roaster", "subtitle"),
+            ("origin", "origin"),
+            ("process", "process"),
+            ("varietal", "varietal"),
+            ("flavor", "flavor"),
+        ):
+            value = str(pod.get(field) or "").strip()
+            if value and value.upper() != "N/A":
+                detail[key] = value
+        image = pod.get("image") or pod.get("imagePath")
+        if image:
+            detail["image"] = image
+        recipes = []
+        for cloud in cloud_recipes:
+            recipe = cloud_recipe_to_local(cloud)
+            recipe["share_url"] = cloud.get("shareRecipeLink") or ""
+            recipes.append(recipe)
+        default_index = next(
+            (i for i, c in enumerate(cloud_recipes) if c.get("isDefault") == 1), 0
+        )
+        detail["default_recipe"] = recipes[default_index]["name"]
+        detail["recipes"] = recipes
+        return detail
+
     async def get_latest_firmware(self) -> dict | None:
         """Query xBloom's live "is there a newer firmware" endpoint. No
         login required (same public-endpoint class as
