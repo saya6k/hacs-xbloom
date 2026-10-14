@@ -25,7 +25,7 @@
           "session_timeout": "Idle disconnect timeout (seconds)"
         },
         "data_description": {
-          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected permanently — not recommended: the official app never holds an unattended connection, and machines left connected have locked up."
+          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected — needed to detect pods and recipe cards and to show the sleep state while idle. The machine still goes to sleep on its own while connected. Long-term stability of an always-on connection is not yet proven: a machine once locked up after being left connected overnight."
         }
       },
       "account": {
@@ -70,7 +70,7 @@
           "water_source": "Water source"
         },
         "data_description": {
-          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected permanently — not recommended: the official app never holds an unattended connection, and machines left connected have locked up."
+          "session_timeout": "Disconnect Bluetooth after this long with nothing happening, and reconnect automatically on the next action. Set to 0 to stay connected — needed to detect pods and recipe cards and to show the sleep state while idle. The machine still goes to sleep on its own while connected. Long-term stability of an always-on connection is not yet proven: a machine once locked up after being left connected overnight."
         }
       },
       "account": {
