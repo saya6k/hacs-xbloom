@@ -173,6 +173,10 @@ class StateMixin:
     # defaults, same reason as _last_reconcile_screen.
     _manual_paused = False
     _manual_run_seen = False
+    # The machine has shown the paused page since the pause was sent. It
+    # keeps reporting brewing for ~1 s after 8019 (hardware 2026-10-14), so
+    # only running AFTER the pause was seen means it resumed.
+    _manual_pause_seen = False
 
     def _reconcile_manual_operation(self, s: DeviceStatus) -> None:
         """Track a manual pour/grind the machine started itself, and its end.
@@ -199,20 +203,28 @@ class StateMixin:
                 self._active_operation = op
             if self._active_operation == op:
                 self._manual_run_seen = True
-                # Running again: resumed, possibly from the machine itself.
-                self._manual_paused = False
+                if self._manual_pause_seen:
+                    # Running again after the machine showed it paused:
+                    # resumed (by our 8021/8020, or from the machine).
+                    self._manual_paused = False
+                    self._manual_pause_seen = False
             return
         own_page = _OPERATION_PAGES.get(self._active_operation)
         if own_page is None:
-            self._manual_paused = False
-            self._manual_run_seen = False
+            self._clear_manual_run()
         elif s.screen is not None and s.screen != own_page:
             self._active_operation = None
-            self._manual_paused = False
-            self._manual_run_seen = False
-        elif s.screen == own_page and self._manual_run_seen and not self._manual_paused:
+            self._clear_manual_run()
+        elif s.screen == own_page and self._manual_paused:
+            self._manual_pause_seen = True
+        elif s.screen == own_page and self._manual_run_seen:
             self._active_operation = None
-            self._manual_run_seen = False
+            self._clear_manual_run()
+
+    def _clear_manual_run(self) -> None:
+        self._manual_paused = False
+        self._manual_run_seen = False
+        self._manual_pause_seen = False
 
     def _derive_state_string(self, s: DeviceStatus) -> str:
         """The sensor.state derivation chain, in priority order.
@@ -457,8 +469,7 @@ class StateMixin:
         self._active_recipe_pours = None
         self.current_pour_index = None
         self._active_operation = None
-        self._manual_paused = False
-        self._manual_run_seen = False
+        self._clear_manual_run()
 
     def _dispatch_event(self, category: str, event_type: str, attributes: dict) -> None:
         """Forward a BLE event to all registered HA event entities.

@@ -203,3 +203,37 @@ def test_ha_grind_on_its_page_before_it_starts_is_not_cleared():
     c.tick(_status(last_page="grind", grinder=True))
     c.tick(_status(screen="grind"))
     assert c._active_operation is None
+
+
+def test_hardware_sequence_with_the_machines_reporting_lag():
+    """Replays the 2026-10-14 live run: the machine kept reporting brewing
+    for ~1 s after 8019 and stayed on the pour page for ~1 s after 8021.
+    The first implementation read that lag as 'resumed' then 'finished',
+    dropped the run, and the second press did nothing."""
+    c = _Coordinator()
+    c.tick(POUR_PAGE)
+    c.tick(POURING)
+    asyncio.run(c.async_pause_resume())          # 8019
+    assert c.tick(POURING) == "brewing"           # lag: still reports brewing
+    assert c.tick(POURING) == "brewing"
+    assert c.tick(POUR_PAGE) == "paused"          # machine shows it paused
+    assert c.tick(POUR_PAGE) == "paused"
+    assert c._active_operation == "manual_pour"
+    asyncio.run(c.async_pause_resume())          # 8021
+    assert c.tick(POUR_PAGE) == "paused"          # lag: page until water flows
+    assert c._active_operation == "manual_pour"
+    assert c.tick(POURING) == "brewing"           # resumed
+    assert c._manual_paused is False
+    asyncio.run(c.async_cancel())                 # 4507
+    assert c.client.sent == [8019, 8021, 4507]
+
+
+def test_a_pause_the_machine_never_honoured_still_shows_brewing():
+    """If 8019 were dropped the machine keeps brewing — the heartbeat's own
+    label wins, so HA doesn't claim a pause that didn't happen."""
+    c = _Coordinator()
+    c.tick(POUR_PAGE)
+    c.tick(POURING)
+    asyncio.run(c.async_pause_resume())
+    for _ in range(5):
+        assert c.tick(POURING) == "brewing"
