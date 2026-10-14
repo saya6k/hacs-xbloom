@@ -260,6 +260,11 @@ def cloud_recipe_to_local(cloud: dict) -> dict:
     ratio = float(ratio_raw) if (dose_g > 0 and ratio_raw) else None
     cup_val = int(cloud.get("cupType", 2) or 2)
     pour_list = cloud.get("pourList") or []
+    # isEnableBypassWater (1=on, 2=off) gates the bypass fields: a disabled
+    # bypass can still carry stale volume/temp values (pod KR0005 has 5ml/
+    # 40°C with the flag off), and the app sends zeros unless it's 1
+    # (PodsDetailActivity.sendBypassJ15). Absent flag = trust the values.
+    bypass_on = cloud.get("isEnableBypassWater") in (None, 1)
     return {
         "name": str(cloud.get("theName") or "Imported Recipe"),
         "grind_size": int(cloud.get("grinderSize", 50) or 0),
@@ -267,8 +272,8 @@ def cloud_recipe_to_local(cloud: dict) -> dict:
         "dose_g": dose_g,
         "ratio": ratio,
         "cup_type": _CLOUD_CUP_TYPE_TO_LOCAL.get(cup_val, "other"),
-        "bypass_volume": float(cloud.get("bypassVolume", 0) or 0),
-        "bypass_temperature": float(cloud.get("bypassTemp", 0) or 0),
+        "bypass_volume": float(cloud.get("bypassVolume", 0) or 0) if bypass_on else 0.0,
+        "bypass_temperature": float(cloud.get("bypassTemp", 0) or 0) if bypass_on else 0.0,
         "pours": [_cloud_pour_to_local(p) for p in pour_list],
     }
 
