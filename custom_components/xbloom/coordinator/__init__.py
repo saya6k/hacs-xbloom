@@ -45,6 +45,7 @@ from custom_components.xbloom.const import (
     DEFAULT_WEIGHT_UNIT,
     DOMAIN,
 )
+from custom_components.xbloom.pods import PodLibrary
 
 from .advanced_settings import AdvancedSettingsMixin
 from .connection import ConnectionMixin
@@ -118,6 +119,8 @@ class XBloomCoordinator(
         self._cloud_email = cloud_email
         self._cloud_password = cloud_password
         self.cloud_client = XBloomCloudClient(async_get_clientsession(hass))
+        # Scanned pods (panel data, not recipes) — loaded in async_setup_entry.
+        self.pod_library = PodLibrary(hass, entry_id)
 
         # Merged recipe view (name → dict) — YAML < entry.options; see
         # _rebuild_recipes. The options layer (the local store) is the

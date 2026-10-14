@@ -869,14 +869,14 @@ class RecipesMixin:
         return summary
 
     def save_pod_recipes(self, recipes: list[dict]) -> list[str]:
-        """Keep a scanned pod's recipes in the local store, once each.
+        """Save a scanned pod's recipe(s) to the local store, once each.
 
-        A pod's recipe can't be found through the hub search, so the cloud
-        lookup on ``pod_detected`` (``fetch_pod_detail``) is the only way
-        to get it. Each recipe is saved with ``source: "pod"``; one already
+        Called from the panel's pod library ("save to my recipes") — a
+        pod's recipe can't be found through the hub search, so the pod
+        library (filled by the lookup on ``pod_detected``) is the only
+        source. Each recipe is saved with ``source: "pod"``; one already
         saved — matched by its share link, or by name among earlier pod
-        saves when it has none — is skipped, so scanning the same pod again
-        adds nothing. Returns the names that were added.
+        saves when it has none — is skipped. Returns the names added.
         """
         options_recipes = self._options_recipes()
         visible = dict(self.recipes or {})

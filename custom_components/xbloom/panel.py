@@ -3,10 +3,11 @@
 The panel is a single, build-free web component (``frontend/xbloom-panel.js``)
 served from this package. It reads live state straight from the entities
 and acts through the existing entities/services, so the only backend it
-needs is two read-only websocket commands: ``xbloom/machines``, which hands
-it each machine's entity map plus the full recipe store (``list_recipes``
-only returns summaries — the editor needs the pours), and
-``xbloom/cloud_search``, a paged collective-hub search.
+needs is a few websocket commands: ``xbloom/machines``, which hands it each
+machine's entity map plus the full recipe store (``list_recipes`` only
+returns summaries — the editor needs the pours), ``xbloom/cloud_search``, a
+paged collective-hub search, and ``xbloom/pods*`` for the pod library
+(list, save one of a pod's recipes, forget a pod).
 
 Registered once from ``async_setup`` — the panel is global, not per entry;
 it lists every configured machine and lets the user switch between them.
@@ -26,6 +27,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import CONF_MAC_ADDRESS, DATA_COORDINATOR, DOMAIN
 from .machine_color import color_from_serial
+from .schema import find_recipe
 
 PANEL_URL_PATH = "xbloom"
 PANEL_ICON = "mdi:coffee-maker"
@@ -74,6 +76,9 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     )
     websocket_api.async_register_command(hass, ws_machines)
     websocket_api.async_register_command(hass, ws_cloud_search)
+    websocket_api.async_register_command(hass, ws_pods)
+    websocket_api.async_register_command(hass, ws_pod_save_recipe)
+    websocket_api.async_register_command(hass, ws_pod_delete)
 
 
 def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> dict:
@@ -118,6 +123,72 @@ def ws_machines(
         if isinstance(data, dict) and DATA_COORDINATOR in data
     ]
     connection.send_result(msg["id"], {"machines": machines})
+
+
+def _coordinator(hass: HomeAssistant, entry_id: str) -> Any | None:
+    data = hass.data.get(DOMAIN, {}).get(entry_id)
+    return data[DATA_COORDINATOR] if isinstance(data, dict) and DATA_COORDINATOR in data else None
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "xbloom/pods", vol.Required("entry_id"): str}
+)
+@callback
+def ws_pods(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """The machine's pod library — every pod scanned, newest first."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        return
+    connection.send_result(msg["id"], {"pods": coordinator.pod_library.pods()})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/pods/save_recipe",
+        vol.Required("entry_id"): str,
+        vol.Required("xid"): str,
+        vol.Required("index"): vol.All(int, vol.Range(min=0)),
+    }
+)
+@callback
+def ws_pod_save_recipe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Save one of a pod's recipes to the local recipes ("save to my recipes")."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    pod = coordinator.pod_library.get(msg["xid"]) if coordinator else None
+    recipes = (pod or {}).get("recipes") or []
+    if msg["index"] >= len(recipes):
+        connection.send_error(msg["id"], "not_found", "No such pod recipe.")
+        return
+    recipe = recipes[msg["index"]]
+    added = coordinator.save_pod_recipes([recipe])
+    # Already saved earlier: report the local copy's name instead.
+    existing = find_recipe(coordinator.recipes or {}, recipe.get("share_url") or "")
+    name = added[0] if added else (existing[0] if existing else recipe.get("name"))
+    connection.send_result(msg["id"], {"name": name, "added": bool(added)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/pods/delete",
+        vol.Required("entry_id"): str,
+        vol.Required("xid"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_pod_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Forget a pod (its saved recipes, if any, stay)."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        return
+    connection.send_result(
+        msg["id"], {"deleted": await coordinator.pod_library.async_delete(msg["xid"])}
+    )
 
 
 @websocket_api.websocket_command(

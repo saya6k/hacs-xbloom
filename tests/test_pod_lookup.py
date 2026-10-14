@@ -29,6 +29,7 @@ POD_RESPONSE = {
         "origin": "Ethiopia 80%, Colombia 20%", "process": "Natural 80%, Washed 20%",
         "varietal": "Mix", "flavor": "Mixed berry, Cherry, Maple syrup, Juicy",
         "introduce": "N/A", "image": "https://example/pod.png", "imagePath": "https://example/pod.jpg",
+        "roast": 2, "type": "Blend", "theColor": "#C9473C",
     },
     "list": [{
         "theName": "Mucho Berry", "isDefault": 1, "cupType": 2, "dose": 15.0,
@@ -88,7 +89,12 @@ def test_pod_lookup_returns_bean_info_and_recipe(monkeypatch):
     assert detail["name"] == "Mucho Berry"
     assert detail["roaster"] == "MOMOS COFFEE"
     assert detail["origin"] == "Ethiopia 80%, Colombia 20%"
-    assert detail["image"] == "https://example/pod.png"
+    # imagePath is what the app's PodsModel shows; "image" is only a fallback.
+    assert detail["image"] == "https://example/pod.jpg"
+    # The bean-sheet fields the app shows; "N/A" introduce is dropped.
+    assert detail["roast"] == 2 and detail["type"] == "Blend"
+    assert detail["color"] == "#C9473C"
+    assert "introduce" not in detail
     assert detail["default_recipe"] == "Mucho Berry"
     (recipe,) = detail["recipes"]
     assert recipe["dose_g"] == 15.0 and recipe["ratio"] == 16.0
@@ -109,8 +115,8 @@ def test_recipe_card_omits_na_fields_and_lists_every_recipe(monkeypatch):
     detail = asyncio.run(client.fetch_pod_detail("XB0001"))
     for field in ("process", "varietal", "flavor"):
         assert field not in detail
-    # Empty "image" falls back to imagePath.
     assert detail["image"] == "https://example/card.jpg"
+    assert "roast" not in detail  # no roast on a recipe card
     assert [r["name"] for r in detail["recipes"]] == [
         "Brew on xPod", "Basic brew", "Brew on Omni Dripper",
     ]
