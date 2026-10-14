@@ -359,3 +359,34 @@ def test_settings_pages_are_a_known_screen(caplog):
         client._on_notification(None, bytearray(_heartbeat(0x18)))
     assert client.status.screen == "settings"
     assert not [r for r in caplog.records if "not in the known-code map" in r.message]
+
+
+def _paused_client() -> XBloomClient:
+    client = _client()
+    client._on_notification(None, bytearray(_frame(9010)))  # RD_BrewerPause
+    assert client.status.state == DeviceState.PAUSED
+    return client
+
+
+def test_home_report_clears_a_stale_paused_state():
+    """Hardware-reported 2026-10-14: cancel while paused sent the machine
+    home, but no stop signal arrives from a paused run, so the cmd-tagged
+    PAUSED stuck and sensor.state read "paused" on the home screen."""
+    client = _paused_client()
+    client._on_notification(None, bytearray(_heartbeat(0x01)))
+    assert client.status.state == DeviceState.IDLE
+
+
+def test_page_report_clears_stale_activity_state():
+    client = _client()
+    client.status.state = DeviceState.BREWING
+    client._on_notification(None, bytearray(_heartbeat(0x17)))  # settings page
+    assert client.status.state == DeviceState.IDLE
+
+
+def test_activity_code_keeps_paused_state():
+    """A frame that is not a page (activity or unmapped code) says nothing
+    about the run having ended — a genuinely paused brew stays paused."""
+    client = _paused_client()
+    client._on_notification(None, bytearray(_heartbeat(0x50)))
+    assert client.status.state == DeviceState.PAUSED
