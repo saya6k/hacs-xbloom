@@ -681,15 +681,16 @@ class StateMixin:
                 async def _enrich_and_dispatch() -> None:
                     detail = await self._async_lookup_pod(attributes["xid"])
                     attributes.update(detail)
-                    if detail.get("recipes"):
-                        # The hub search can't find pod recipes, so keep
-                        # the scanned pod in the pod library (panel data;
-                        # the user saves a recipe from it explicitly).
-                        # Never let this hold up or swallow the event.
-                        try:
-                            await self.pod_library.async_record(attributes["xid"], detail)
-                        except Exception as exc:
-                            _LOGGER.warning("Recording the scanned pod failed: %s", exc)
+                    # The hub search can't find pod recipes, so keep the
+                    # scanned pod in the pod library (panel data; the user
+                    # saves a recipe from it explicitly). Recorded even when
+                    # the lookup failed — the cloud API was answering 502
+                    # (2026-10-15) and the scan vanished; the panel retries
+                    # the lookup. Never let this hold up or swallow the event.
+                    try:
+                        await self.pod_library.async_record(attributes["xid"], detail)
+                    except Exception as exc:
+                        _LOGGER.warning("Recording the scanned pod failed: %s", exc)
                     _do_dispatch()
 
                 self.hass.loop.call_soon_threadsafe(

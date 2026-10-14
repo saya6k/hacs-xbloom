@@ -75,6 +75,8 @@ const STRINGS = {
     already_saved: "Already in my recipes as “{name}”",
     bean_info: "Bean info", roast: "Roast", notes: "Notes", process: "Process",
     variety: "Variety", type: "Type", origin: "Origin",
+    pod_no_info: "Couldn't load this pod's info from the XBloom cloud.", pod_retry: "Retry",
+    pod_loaded: "Pod info loaded", pod_still_unavailable: "Still unavailable — try again later.",
     stage_beans: "Ready", stage_grind: "Grinding", stage_pour: "Pouring", stage_enjoy: "Enjoy",
     color: "Color", color_unknown: "Unknown (serial code not mapped yet)",
     color_midnight_black: "Midnight Black", color_moonlight_white: "Moonlight White",
@@ -141,6 +143,8 @@ const STRINGS = {
     already_saved: "이미 내 레시피에 “{name}”(으)로 있습니다",
     bean_info: "원두 정보", roast: "로스팅", notes: "노트", process: "가공",
     variety: "품종", type: "유형", origin: "원산지",
+    pod_no_info: "XBloom 클라우드에서 이 팟 정보를 불러오지 못했습니다.", pod_retry: "다시 불러오기",
+    pod_loaded: "팟 정보를 불러왔습니다", pod_still_unavailable: "아직 불러올 수 없습니다. 잠시 후 다시 시도하세요.",
     stage_beans: "준비", stage_grind: "분쇄", stage_pour: "푸어", stage_enjoy: "완성",
     color: "색상", color_unknown: "알 수 없음 (시리얼 코드 미등록)",
     color_midnight_black: "미드나이트 블랙", color_moonlight_white: "문라이트 화이트",
@@ -690,6 +694,22 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
+  // Retry the cloud lookup for a pod scanned while it failed.
+  async _refreshPod() {
+    const pod = this._openPod;
+    if (!pod || this._pods.refreshing) return;
+    this._pods.refreshing = true;
+    this._render();
+    try {
+      const res = await this._hass.callWS({ type: "xbloom/pods/refresh", entry_id: this._entryId, xid: pod.xid });
+      this._toast(this._t(res.updated ? "pod_loaded" : "pod_still_unavailable"));
+    } catch (err) {
+      this._toast(err.message || String(err));
+    }
+    this._pods.refreshing = false;
+    await this._loadPods();
+  }
+
   async _forgetPod() {
     const pod = this._openPod;
     if (!pod) return;
@@ -762,6 +782,8 @@ class XBloomPanel extends HTMLElement {
         return this._savePodRecipe();
       case "forget-pod":
         return this._forgetPod();
+      case "refresh-pod":
+        return this._refreshPod();
       case "cloud-filter": {
         const [key, value] = arg.split(":");
         this._cloud[key] = value;
@@ -1160,6 +1182,7 @@ class XBloomPanel extends HTMLElement {
             <div class="rc-top">
               ${pod.type ? `<span class="badge">${esc(pod.type)}</span>` : ""}
               <span class="badge gold">${esc(pod.xid)}</span>
+              ${pod.recipes?.length ? "" : `<span class="badge warn-badge">!</span>`}
             </div>
             <div class="rc-name"><span class="muted">xbloom｜</span>${esc(pod.name || pod.xid)}</div>
             ${pod.roaster ? `<div class="muted small">${esc(pod.roaster)}</div>` : ""}
@@ -1185,6 +1208,9 @@ class XBloomPanel extends HTMLElement {
       <div class="detail-grid">
       <section class="card pod-card">
         ${this._podArt(pod, "art-hero")}
+        ${recipes.length ? "" : `<div class="alert">${this._t("pod_no_info")}</div>
+          <button class="btn go" data-action="refresh-pod" ${this._pods.refreshing ? "disabled" : ""}>
+            ${this._t(this._pods.refreshing ? "loading" : "pod_retry")}</button>`}
         ${recipes.length > 1 ? `<div class="segmented wide">${recipes
           .map((r, i) => `<button class="${i === index ? "active" : ""}" data-action="pod-recipe" data-arg="${i}">${esc(r.name)}</button>`)
           .join("")}</div>` : ""}
@@ -1834,6 +1860,7 @@ const STYLE = `
     border-radius: 999px; background: var(--xb-card-2); color: var(--xb-muted); }
   .badge.gold { background: color-mix(in srgb, var(--xb-gold) 18%, transparent); color: var(--xb-gold); }
   .badge.tea { background: color-mix(in srgb, var(--xb-tea) 18%, transparent); color: var(--xb-tea); }
+  .badge.warn-badge { background: color-mix(in srgb, var(--xb-danger) 16%, transparent); color: var(--xb-danger); }
 
   /* card art: generated tile or hub photo */
   .art, .art-banner, .art-hero { position: relative; overflow: hidden; color: rgba(255,255,255,.9);

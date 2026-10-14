@@ -39,10 +39,16 @@ class PodLibrary:
         return self._pods.get(xid)
 
     async def async_record(self, xid: str, detail: dict[str, Any]) -> None:
-        """Add or refresh a pod from a cloud lookup and count the scan."""
+        """Count a scan, with whatever the cloud lookup returned.
+
+        An empty ``detail`` (lookup failed — offline, or the cloud API
+        down) still records the scan; bean info from an earlier successful
+        lookup is kept rather than wiped.
+        """
         now = dt_util.utcnow().isoformat()
         previous = self._pods.get(xid) or {}
         self._pods[xid] = {
+            **(previous if not detail.get("recipes") else {}),
             **detail,
             "xid": xid,
             "first_scanned": previous.get("first_scanned", now),
@@ -50,6 +56,16 @@ class PodLibrary:
             "scans": int(previous.get("scans", 0)) + 1,
         }
         await self._async_save()
+
+    async def async_update_detail(self, xid: str, detail: dict[str, Any]) -> bool:
+        """Fill in a pod's bean info/recipes from a retried lookup (no scan)."""
+        pod = self._pods.get(xid)
+        if pod is None or not detail.get("recipes"):
+            return False
+        keep = {k: pod[k] for k in ("xid", "first_scanned", "last_scanned", "scans") if k in pod}
+        self._pods[xid] = {**detail, **keep}
+        await self._async_save()
+        return True
 
     async def async_delete(self, xid: str) -> bool:
         if self._pods.pop(xid, None) is None:
