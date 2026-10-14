@@ -210,6 +210,12 @@ const STAGE_OF_STATE = {
 
 const SAFE_IMAGE = /^https:\/\/[^\s"'()<>\\]+$/;
 
+// XBloom's own product shot, loaded from their store CDN at view time —
+// referenced, not bundled (the photo is XBloom's copyright). Hidden if it
+// fails to load.
+const MACHINE_IMAGE =
+  "https://cdn.shopify.com/s/files/1/0611/5704/8544/files/xbloom_Studio_Midnight_Black_03.webp?width=720";
+
 // A stable hue per recipe name, kept inside a warm (coffee) or green
 // (tea) band, so generated card art is varied but consistent.
 const nameHue = (name, tea) => {
@@ -301,6 +307,12 @@ class XBloomPanel extends HTMLElement {
       }, 0);
     });
     // A render deferred while a control had focus lands once it lets go.
+    // error doesn't bubble — capture it to drop a product shot that can't load.
+    root.addEventListener("error", (ev) => {
+      if (ev.target.classList?.contains("machine-img") || ev.target.classList?.contains("device-img")) {
+        ev.target.remove();
+      }
+    }, true);
     root.addEventListener("focusout", () => {
       setTimeout(() => {
         if (this._pendingRender && !this._hasFocus()) this._render();
@@ -839,18 +851,25 @@ class XBloomPanel extends HTMLElement {
       ${alerts.map((a) => `<div class="alert">${esc(a)}</div>`).join("")}
       <div class="brew-grid">
         <section class="hero">
-          <div class="ring" data-target="${stage === undefined ? 0 : target}">
-            <svg viewBox="0 0 120 120">
-              <circle class="track" cx="60" cy="60" r="54"/>
-              <circle class="bar" cx="60" cy="60" r="54" data-live-ring
-                stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
-            </svg>
-            <div class="ring-center">
-              <div class="big" data-live="sensor.weight">–</div>
-              <div class="sub">${esc(this._fmt("sensor.state"))}</div>
-              ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
-            </div>
-          </div>
+          ${stage === undefined
+            // Idle: the machine itself, like the app's home screen.
+            ? `<div class="machine">
+                <img class="machine-img" src="${MACHINE_IMAGE}" alt="xBloom Studio">
+                <div class="big" data-live="sensor.weight">–</div>
+                <div class="sub">${esc(this._fmt("sensor.state"))}</div>
+              </div>`
+            : `<div class="ring" data-target="${target}">
+                <svg viewBox="0 0 120 120">
+                  <circle class="track" cx="60" cy="60" r="54"/>
+                  <circle class="bar" cx="60" cy="60" r="54" data-live-ring
+                    stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+                </svg>
+                <div class="ring-center">
+                  <div class="big" data-live="sensor.weight">–</div>
+                  <div class="sub">${esc(this._fmt("sensor.state"))}</div>
+                  ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
+                </div>
+              </div>`}
           <ol class="stages">${STAGES
             .map((s, i) => `<li class="${stage === i ? "active" : stage > i ? "done" : ""}">${ICONS[s]}<span>${this._t(`stage_${s}`)}</span></li>`)
             .join("")}</ol>
@@ -1326,7 +1345,8 @@ class XBloomPanel extends HTMLElement {
         </div>
       </section>
 
-      <section class="card">
+      <section class="card device-card">
+        <div class="device-stage"><img class="device-img" src="${MACHINE_IMAGE}" alt="xBloom Studio"></div>
         <h2>${this._t("device")}</h2>
         <div class="kv"><span>${this._t("mac")}</span><span>${esc(m.mac)}</span></div>
         <div class="kv"><span>${this._t("serial")}</span><span>${esc(this._fmt("sensor.serial_number"))}</span></div>
@@ -1453,6 +1473,15 @@ const STYLE = `
     background-image: radial-gradient(rgba(255,255,255,.18) 1px, transparent 1.4px); background-size: 14px 14px;
     mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); }
   .ring { position: relative; width: min(280px, 72vw); aspect-ratio: 1; }
+  .machine { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+  .machine::before { content: ""; position: absolute; top: 6%; left: 50%; width: 78%; aspect-ratio: 1; transform: translateX(-50%);
+    border-radius: 50%; background: radial-gradient(circle, rgba(197,175,119,.16), transparent 68%); pointer-events: none; }
+  .machine-img { position: relative; width: min(300px, 70vw); aspect-ratio: 1; object-fit: contain;
+    filter: drop-shadow(0 28px 36px rgba(0,0,0,.55)); }
+  .device-card { overflow: hidden; }
+  .device-stage { margin: -20px -20px 0; height: 220px; display: flex; align-items: center; justify-content: center;
+    background: var(--xb-hero); overflow: hidden; }
+  .device-img { height: 200px; width: 200px; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 3; }
   .ring .track { stroke: rgba(255,255,255,.1); }
@@ -1615,6 +1644,8 @@ const STYLE = `
     .content { padding: 14px 14px; padding-bottom: calc(24px + var(--xb-nav-h)); gap: 14px; }
     .card { padding: 16px; }
     .recipe-panel .art-banner { margin: 0 -16px; }
+    .device-stage { margin: -16px -16px 0; height: 190px; }
+    .device-img { height: 172px; width: 172px; }
     .recipe-panel > .card-head:first-child { margin-top: 16px; }
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .rc-body { padding: 10px 12px 12px; }
