@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import XBloomCoordinator
+from .entity import scope_unique_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     async_add_entities(
-        [
+        scope_unique_ids(entry.entry_id, [
             XBloomGrindButton(coordinator, entry),
             XBloomPourButton(coordinator, entry),
             XBloomExecuteRecipeButton(coordinator, entry),
@@ -33,7 +34,7 @@ async def async_setup_entry(
             XBloomWriteSlotAButton(coordinator, entry),
             XBloomWriteSlotBButton(coordinator, entry),
             XBloomWriteSlotCButton(coordinator, entry),
-        ]
+        ])
     )
 
 

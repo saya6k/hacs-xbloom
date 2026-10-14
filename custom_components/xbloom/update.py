@@ -24,6 +24,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import XBloomCoordinator, _firmware_build
+from .entity import scope_unique_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: XBloomCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
-    async_add_entities([XBloomFirmwareUpdateEntity(coordinator, entry)])
+    async_add_entities(
+        scope_unique_ids(entry.entry_id, [XBloomFirmwareUpdateEntity(coordinator, entry)])
+    )
 
 
 class XBloomFirmwareUpdateEntity(CoordinatorEntity[XBloomCoordinator], UpdateEntity):
