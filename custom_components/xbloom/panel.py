@@ -25,9 +25,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_MAC_ADDRESS, DATA_COORDINATOR, DOMAIN
+from .const import CONF_MAC_ADDRESS, CONF_STORE_REGION, DATA_COORDINATOR, DOMAIN
 from .machine_color import color_from_serial
 from .schema import find_recipe
+from .stores import STORE_REGIONS, STORES, effective_region, region_for_country
 
 PANEL_URL_PATH = "xbloom"
 PANEL_ICON = "mdi:coffee-maker"
@@ -77,6 +78,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_machines)
     websocket_api.async_register_command(hass, ws_cloud_search)
     websocket_api.async_register_command(hass, ws_cloud_detail)
+    websocket_api.async_register_command(hass, ws_set_store_region)
     websocket_api.async_register_command(hass, ws_pods)
     websocket_api.async_register_command(hass, ws_pod_save_recipe)
     websocket_api.async_register_command(hass, ws_pod_delete)
@@ -110,7 +112,48 @@ def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> di
         "cloud_login": coordinator.cloud_login_configured,
         # None when the code is unknown — the panel falls back to black.
         "detected_color": color_from_serial(_machine_serial(hass, coordinator)),
+        # The machine's own display unit (g/oz/ml) — the scale sensor is
+        # always grams, so the panel converts to match the machine screen.
+        "weight_unit": getattr(coordinator, "_weight_unit", "g"),
+        **_store_payload(hass, entry),
     }
+
+
+def _store_payload(hass: HomeAssistant, entry: Any) -> dict:
+    """The panel's store region: the user's choice or, by default, the one
+    Home Assistant's country implies (the app's own region rule)."""
+    setting = entry.options.get(CONF_STORE_REGION) if entry else None
+    region = effective_region(setting, hass.config.country)
+    return {
+        "store_region_setting": setting if setting in STORE_REGIONS else "auto",
+        "store_region": region,
+        "store_auto_region": region_for_country(hass.config.country),
+        "store": STORES[region],
+    }
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "xbloom/set_store_region",
+        vol.Required("entry_id"): str,
+        # "auto" follows Home Assistant's country.
+        vol.Required("region"): vol.In(("auto", *STORE_REGIONS)),
+    }
+)
+@callback
+def ws_set_store_region(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Save which XBloom web store the panel's shop links open."""
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        return
+    options = {k: v for k, v in entry.options.items() if k != CONF_STORE_REGION}
+    if msg["region"] != "auto":
+        options[CONF_STORE_REGION] = msg["region"]
+    hass.config_entries.async_update_entry(entry, options=options)
+    connection.send_result(msg["id"], _store_payload(hass, entry))
 
 
 @websocket_api.websocket_command({vol.Required("type"): "xbloom/machines"})
@@ -235,8 +278,15 @@ async def ws_cloud_detail(
     if detail is None:
         connection.send_error(msg["id"], "fetch_failed", "Could not load that recipe from the hub.")
         return
-    if detail.get("official"):
-        detail["product_url"] = await client.find_store_product(detail.get("name"))
+    store = _store_payload(hass, hass.config_entries.async_get_entry(msg["entry_id"]))
+    # Product-level links only exist for xbloom.com (see stores.py); the
+    # Korean and Chinese stores get a link to their xPod page / home.
+    if store["store_region"] == "global":
+        if detail.get("official"):
+            detail["product_url"] = await client.find_store_product(detail.get("name"))
+    else:
+        detail["store_url"] = store["store"]["pods"]
+    detail["store_region"] = store["store_region"]
     connection.send_result(msg["id"], detail)
 
 

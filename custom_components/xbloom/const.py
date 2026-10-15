@@ -23,6 +23,11 @@ CONF_ACCOUNT_RECIPES_SEEDED = "account_recipes_seeded"
 # contents, so this record is the only source for the slot sensor entities.
 CONF_EASY_SLOTS = "easy_slots"
 
+# entry.options: which XBloom web store the panel's shop links open —
+# "global" / "kr" / "cn", absent = auto (from Home Assistant's country).
+# Mirrors the official app's region setting (RegionLanguageActivity).
+CONF_STORE_REGION = "store_region"
+
 # XBloom cloud account — both optional. Absent entirely (not just empty
 # strings) when the user skips the account step; cloud-backed services/LLM
 # tools must check for their absence and fail gracefully, never assume they

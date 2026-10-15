@@ -70,6 +70,10 @@ const STRINGS = {
     cloud_hint: "Search XBloom's public recipe hub and import a copy into My recipes, which Home Assistant keeps for this machine — nothing is written to the xBloom machine itself. No account needed.",
     cloud_empty: "No recipes found.", results: "{n} results", by: "by {name}",
     buy_beans: "Buy the beans", uploaded: "Uploaded {date}",
+    store: "Store", store_region: "Region",
+    region_auto: "Auto", region_global: "Global", region_kr: "Korea", region_cn: "China",
+    region_auto_hint: "From Home Assistant's country: {region}",
+    store_global: "xBloom store", store_kr: "xBloom Korea store", store_cn: "xBloom Tmall store",
     cloud_detail_failed: "Couldn't load the full details — showing the search summary.",
     pods: "Pods", pods_empty: "Insert a pod or recipe card into the machine — it shows up here.",
     last_scanned: "Last scanned {when}", scans: "{n}× scanned",
@@ -140,6 +144,10 @@ const STRINGS = {
     cloud_hint: "XBloom 공개 레시피 허브에서 검색해 내 레시피로 복사해 옵니다. 레시피는 Home Assistant에 이 기기용으로 저장되며, xBloom 기기 자체에는 저장되지 않습니다. 계정이 필요 없습니다.",
     cloud_empty: "검색 결과가 없습니다.", results: "{n}개 결과", by: "작성자 {name}",
     buy_beans: "원두 구매", uploaded: "{date} 업로드",
+    store: "스토어", store_region: "지역",
+    region_auto: "자동", region_global: "글로벌", region_kr: "한국", region_cn: "중국",
+    region_auto_hint: "Home Assistant 국가 설정 기준: {region}",
+    store_global: "xBloom 스토어", store_kr: "xBloom 코리아 스토어", store_cn: "xBloom 티몰 스토어",
     cloud_detail_failed: "상세 정보를 불러오지 못해 검색 요약만 표시합니다.",
     pods: "팟", pods_empty: "기기에 팟이나 레시피 카드를 꽂으면 여기에 나타납니다.",
     last_scanned: "마지막 스캔 {when}", scans: "{n}회 스캔",
@@ -700,6 +708,18 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
+  // "auto" follows Home Assistant's country (the app's own region rule).
+  async _setStoreRegion(region) {
+    try {
+      await this._hass.callWS({ type: "xbloom/set_store_region", entry_id: this._entryId, region });
+    } catch (err) {
+      return this._toast(err.message || String(err));
+    }
+    this._cloud.detail = null;
+    this._cloud.open = null;
+    return this._loadMachines();
+  }
+
   // Retry the cloud lookup for a pod scanned while it failed.
   async _refreshPod() {
     const pod = this._openPod;
@@ -749,7 +769,10 @@ class XBloomPanel extends HTMLElement {
         this._recipeView = null;
         this._editor = null;
         this._confirm = null;
-        return this._render();
+        this._render();
+        // Machine-side settings (display units, store region) can change
+        // without any entity changing — refresh them on every tab switch.
+        return this._loadMachines();
       case "press":
         return this._press(arg);
       // Segmented buttons standing in for a select entity.
@@ -861,6 +884,8 @@ class XBloomPanel extends HTMLElement {
         const v = Number(this.shadowRoot.querySelector(`#adv-${arg}`)?.value);
         return this._xb("advanced_settings", { [arg]: v });
       }
+      case "set-store-region":
+        return this._setStoreRegion(arg);
       case "calibrate":
         if (this._confirm !== "calibrate") {
           this._confirm = "calibrate";
@@ -1036,7 +1061,7 @@ class XBloomPanel extends HTMLElement {
             // Idle: the machine itself, like the app's home screen.
             ? `<div class="machine">
                 <img class="machine-img" src="${machineImage(m)}" alt="xBloom Studio">
-                <div class="big" data-live="sensor.weight">–</div>
+                <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
                 <div class="sub">${esc(this._fmt("sensor.state"))}</div>
               </div>`
             : `<div class="ring" data-target="${target}">
@@ -1046,7 +1071,7 @@ class XBloomPanel extends HTMLElement {
                     stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
                 </svg>
                 <div class="ring-center">
-                  <div class="big" data-live="sensor.weight">–</div>
+                  <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
                   <div class="sub">${esc(this._fmt("sensor.state"))}</div>
                   ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
                 </div>
@@ -1360,6 +1385,9 @@ class XBloomPanel extends HTMLElement {
     const rows = [["origin", r.origin], ["process", r.process], ["variety", r.varietal],
       ["type", r.type], ["notes", r.flavor]].filter(([, v]) => v && typeof v === "string");
     const product = SAFE_STORE_LINK.test(d.product_url || "") ? d.product_url : null;
+    // Korea / China: the regional store's xPod page (only ever one of the
+    // panel's own known store URLs).
+    const regional = d.store_url && d.store_url === this._machine?.store?.pods ? d.store_url : null;
     const recipe = { name: r.name, cup_type: tea ? "tea" : r.cup_type, dose_g: r.dose_g, ratio: r.ratio,
       grind_size: r.grind_size, pours: r.pours || [] };
     return `${back}
@@ -1394,6 +1422,7 @@ class XBloomPanel extends HTMLElement {
         <button class="btn ${done ? "" : "go"}" data-action="cloud-import" data-arg="${this._cloud.open}" ${done || busy || this._cloud.importing ? "disabled" : ""}>
           ${this._t(done ? "imported" : busy ? "importing" : "import")}</button>
         ${product ? `<a class="btn" href="${product}" target="_blank" rel="noopener noreferrer">${this._t("buy_beans")} ↗</a>` : ""}
+        ${regional ? `<a class="btn" href="${regional}" target="_blank" rel="noopener noreferrer">${this._t(`store_${d.store_region}`)} ↗</a>` : ""}
       </div>`;
   }
 
@@ -1622,7 +1651,7 @@ class XBloomPanel extends HTMLElement {
 
       <section class="card">
         <h2 class="with-icon">${ICONS.scale}${this._t("scale")}</h2>
-        <div class="big center" data-live="sensor.weight">–</div>
+        <div class="big center" data-live="sensor.weight" data-live-fmt="weight">–</div>
         <div class="actions">
           <button class="btn" data-action="press" data-arg="button.tare_scale">${this._t("tare")}</button>
           <button class="btn" data-action="press" data-arg="button.scale_mode">${this._t(state === "standalone_scale" ? "exit_scale" : "scale_mode")}</button>
@@ -1702,6 +1731,19 @@ class XBloomPanel extends HTMLElement {
         </div>
       </section>
 
+      <section class="card">
+        <h2>${this._t("store")}</h2>
+        <div class="row">
+          <span>${this._t("store_region")}</span>
+          <div class="segmented">${["auto", "global", "kr", "cn"]
+            .map((r) => `<button class="${(m.store_region_setting || "auto") === r ? "active" : ""}" data-action="set-store-region" data-arg="${r}">${this._t(`region_${r}`)}</button>`)
+            .join("")}</div>
+        </div>
+        ${(m.store_region_setting || "auto") === "auto"
+          ? `<div class="muted small">${esc(this._t("region_auto_hint", { region: this._t(`region_${m.store_auto_region || "global"}`) }))}</div>` : ""}
+        ${m.store?.home ? `<a class="btn" href="${esc(m.store.home)}" target="_blank" rel="noopener noreferrer">${this._t(`store_${m.store_region}`)} ↗</a>` : ""}
+      </section>
+
       <section class="card device-card">
         <div class="device-stage"><img class="device-img" src="${machineImage(m)}" alt="xBloom Studio"></div>
         <h2>${this._t("device")}</h2>
@@ -1716,6 +1758,24 @@ class XBloomPanel extends HTMLElement {
 
   // ---------------------------------------------------------------- live
 
+  // The scale reading in the unit the machine's own screen uses (g/oz/ml —
+  // its display-unit setting); the sensor itself is grams. For water,
+  // 1 g ≈ 1 ml, which is what the machine shows in ml mode.
+  _weightLabel() {
+    const st = this._st("sensor.weight");
+    const v = Number(st?.state);
+    if (!st || !Number.isFinite(v)) return null;
+    const grams = v * (GRAMS_PER[st.attributes.unit_of_measurement] ?? 1);
+    switch (this._machine?.weight_unit) {
+      case "ml":
+        return `${num(grams, 1)} ml`;
+      case "oz":
+        return `${(grams / GRAMS_PER.oz).toFixed(2)} oz`;
+      default:
+        return `${num(grams, 1)} g`;
+    }
+  }
+
   _updateLive() {
     const root = this.shadowRoot;
     root.querySelectorAll("[data-live]").forEach((el) => {
@@ -1727,6 +1787,10 @@ class XBloomPanel extends HTMLElement {
         const st = this._st(el.dataset.live);
         const c = toCelsius(st?.state, st?.attributes.unit_of_measurement);
         if (Number.isFinite(c) && (c <= 39.5 || c >= 95.5)) el.textContent = c <= 39.5 ? "RT" : "BP";
+      }
+      if (el.dataset.liveFmt === "weight") {
+        const w = this._weightLabel();
+        if (w) el.textContent = w;
       }
     });
     const ring = root.querySelector("[data-live-ring]");
