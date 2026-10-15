@@ -81,7 +81,7 @@ from the name alone.
 
 | id | name | payload | status | notes |
 | ---: | --- | --- | --- | --- |
-| 3500 | `APP_GRINDER_START` | size, speed | Active | manual + recipe grind; runs in Easy Mode too (hardware 2026-07-19 — see the 8001 note on the absent mode gate) |
+| 3500 | `APP_GRINDER_START` | 3× LE u32 `(1000, size, speed)` | Active | manual + recipe grind; runs in Easy Mode too (hardware 2026-07-19 — see the 8001 note on the absent mode gate). The app's grind page sends `CodeModule(3500, "磨豆挡位调节开始", 1000, size, speed)` (jadx 2026-10-15) — the machine moves the burrs to `size`, then grinds. This integration sent it bare until 2026-10-15 (the size drifted before the grind began). 8006 alone reports no gear position over BLE while the page is armed (hardware 2026-10-15) |
 | 3502 | `CMD_CALIBRATE_GRINDER` | `[1000]` fixed | Active | fire-and-forget; machine runs ~120s sweep autonomously |
 | 3505 | `APP_GRINDER_STOP` | — | Active | manual-grind stop only, not whole-recipe |
 | 4506 | `APP_BREWER_START` | volume, temp, flow, pattern | Active | manual pour |

@@ -44,19 +44,35 @@ class GrinderController:
             self._speed = speed
         await self.enter_mode()
         await asyncio.sleep(2.0)
-        return await self._client._send_command(Command.GRINDER_START)
+        return await self._send_start()
 
-    async def confirm_start(self) -> bool:
-        """Send the bare start command only — no enter_mode()/sleep.
+    async def confirm_start(self, size: int | None = None, speed: int | None = None) -> bool:
+        """Send the start command only — no enter_mode()/sleep.
 
         For the two-stage arm/confirm manual-grind button flow (2026-07-18):
-        enter_mode() is sent alone as the "arm" press (size/speed set,
-        burrs adjust), and this is sent alone as the second "confirm"
-        press once the user is ready — the real user-paced gap between
-        presses replaces the fixed 2.0s sleep start() uses for its
-        single-shot form.
+        enter_mode() is sent alone as the "arm" press, and this is sent
+        alone as the second "confirm" press once the user is ready — the
+        real user-paced gap between presses replaces the fixed 2.0s sleep
+        start() uses for its single-shot form.
         """
-        return await self._client._send_command(Command.GRINDER_START)
+        if size is not None:
+            self._size = size
+        if speed is not None:
+            self._speed = speed
+        return await self._send_start()
+
+    async def _send_start(self) -> bool:
+        """3500 with the target, exactly as the app's grind page sends it:
+        ``CodeModule(3500, "磨豆挡位调节开始", 1000, size, speed)`` (jadx
+        2026-10-15, GrinderActivity). The machine moves the burrs to
+        ``size`` and then grinds; sent bare, it had no target to move to
+        (user-reported on rc.6, 2026-10-15: the size drifted before the
+        grind began). 8006 alone reports no gear position over BLE while
+        armed (hardware 2026-10-15).
+        """
+        return await self._client._send_command(
+            Command.GRINDER_START, [1000, self._size, self._speed]
+        )
 
     async def stop(self) -> bool:
         return await self._client._send_command(Command.GRINDER_STOP)
