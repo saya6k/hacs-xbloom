@@ -26,6 +26,7 @@ const STRINGS = {
     pause: "Pause", resume: "Resume", cancel: "Cancel",
     armed_hint: "The recipe is loaded on the machine. Place your cup, then start.",
     pour_armed_hint: "The pour page is open on the machine. Place your cup, then start.",
+    grind_armed_hint: "The grind page is open on the machine. Add your beans, then start.",
     busy_hint: "Finish or cancel the current operation first.",
     water_low: "Water tank is low", problem: "The machine reports a problem",
     weight: "Weight", brewer_temp: "Water temp", flow: "Flow",
@@ -101,6 +102,7 @@ const STRINGS = {
     pause: "일시정지", resume: "재개", cancel: "취소",
     armed_hint: "머신에 레시피가 준비되었습니다. 컵을 놓은 뒤 시작하세요.",
     pour_armed_hint: "머신에 푸어 화면이 열렸습니다. 컵을 놓은 뒤 시작하세요.",
+    grind_armed_hint: "머신에 분쇄 화면이 열렸습니다. 원두를 넣은 뒤 시작하세요.",
     busy_hint: "진행 중인 작업을 끝내거나 취소한 뒤 사용하세요.",
     water_low: "물탱크가 부족합니다", problem: "머신이 문제를 보고했습니다",
     weight: "무게", brewer_temp: "물 온도", flow: "유량",
@@ -1051,10 +1053,10 @@ class XBloomPanel extends HTMLElement {
     return this._manualActive("pour");
   }
 
-  // Progress toward the volume set on the pour page. The weight keeps the
-  // machine's own unit, like the app's pour page (weightUnitReal()).
-  _pourRing() {
-    const target = Number(this._val("number.volume")) || 0;
+  // The live scale in a ring, filling toward `target` (ml ≈ g) when there
+  // is one. The weight's unit follows the page, like the app's own pages
+  // (see _weightLabel).
+  _modeRing(target = 0) {
     return `
       <div class="ring" data-target="${target}">
         <svg viewBox="0 0 120 120">
@@ -1068,6 +1070,50 @@ class XBloomPanel extends HTMLElement {
           ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
         </div>
       </div>`;
+  }
+
+  // Progress toward the volume set on the pour page.
+  _pourRing() {
+    return this._modeRing(Number(this._val("number.volume")) || 0);
+  }
+
+  // Home follows whatever the machine is doing: a pour, grind or scale page
+  // (armed, running or paused) gets its own hero; null leaves the recipe one.
+  _modeHero() {
+    const state = this._state;
+    const stat = (label, value, live) =>
+      `<div><span class="label">${this._t(label)}</span><span class="stat" ${live ? `data-live="${live}"` : ""}>${esc(value)}</span></div>`;
+    let body;
+    if (this._manualActive("pour")) {
+      body = `
+        ${this._pourRing()}
+        <div class="stats">
+          ${stat("temperature", this._pourTempLabel())}
+          ${stat("pattern", this._t(this._val("select.pour_pattern") || "–"))}
+          ${stat("flow", "–", "sensor.flow_rate")}
+        </div>
+        ${state === "standalone_pour" ? `<div class="hint on-dark">${this._t("pour_armed_hint")}</div>` : ""}
+        ${this._manualActions("pour")}`;
+    } else if (this._manualActive("grind")) {
+      body = `
+        ${this._modeRing()}
+        <div class="stats">
+          ${stat("grind_size", this._val("number.grind_size") ?? "–")}
+          ${stat("rpm", this._val("number.rpm") ?? "–")}
+        </div>
+        ${state === "standalone_grind" ? `<div class="hint on-dark">${this._t("grind_armed_hint")}</div>` : ""}
+        ${this._manualActions("grind")}`;
+    } else if (state === "standalone_scale") {
+      body = `
+        ${this._modeRing()}
+        <div class="actions">
+          <button class="btn go" data-action="press" data-arg="button.tare_scale">${this._t("tare")}</button>
+          <button class="btn ghost" data-action="press" data-arg="button.scale_mode">${this._t("exit_scale")}</button>
+        </div>`;
+    } else {
+      return null;
+    }
+    return `<section class="hero">${body}</section>`;
   }
 
   // The pour temperature, RT/BP at the slider's ends like the slider itself.
@@ -1112,22 +1158,10 @@ class XBloomPanel extends HTMLElement {
     const options = (this._st("select.recipe")?.attributes.options || [])
       .filter((o) => m.recipes.some((r) => r.name === o));
     const stage = STAGE_OF_STATE[state];
-    const pourHero = this._pourActive
-      ? `<section class="hero">
-          ${this._pourRing()}
-          <div class="stats">
-            <div><span class="label">${this._t("temperature")}</span><span class="stat">${esc(this._pourTempLabel())}</span></div>
-            <div><span class="label">${this._t("pattern")}</span><span class="stat">${esc(this._t(this._val("select.pour_pattern") || "–"))}</span></div>
-            <div><span class="label">${this._t("flow")}</span><span class="stat" data-live="sensor.flow_rate">–</span></div>
-          </div>
-          ${state === "standalone_pour" ? `<div class="hint on-dark">${this._t("pour_armed_hint")}</div>` : ""}
-          ${this._manualActions("pour")}
-        </section>`
-      : "";
     return `
       ${alerts.map((a) => `<div class="alert">${esc(a)}</div>`).join("")}
       <div class="brew-grid">
-        ${pourHero || `<section class="hero">
+        ${this._modeHero() || `<section class="hero">
           ${stage === undefined
             // Idle: the machine itself, like the app's home screen.
             ? `<div class="machine">
@@ -1832,7 +1866,7 @@ class XBloomPanel extends HTMLElement {
     const v = Number(st?.state);
     if (!st || !Number.isFinite(v)) return null;
     const grams = v * (GRAMS_PER[st.attributes.unit_of_measurement] ?? 1);
-    const grinding = ["standalone_grind", "grinding"].includes(this._val("sensor.state"));
+    const grinding = this._state === "grinding" || this._manualActive("grind");
     switch (this._machine?.weight_unit) {
       case "ml":
         return `${num(grams, 1)} ${brewing || grinding ? "g" : "ml"}`;
