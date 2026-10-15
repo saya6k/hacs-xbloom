@@ -1,7 +1,7 @@
 [project]
-site_name = "XBloom Coffee Machine"
+site_name = "xBloom Coffee Machine"
 site_url = "https://saya6k.github.io/hacs-xbloom/en/"
-site_description = "Local Bluetooth control of an XBloom Studio coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud."
+site_description = "Local Bluetooth control of an xBloom Studio coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud."
 docs_dir = "docs/en"
 site_dir = "site/en"
 repo_url = "https://github.com/saya6k/hacs-xbloom"

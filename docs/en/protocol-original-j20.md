@@ -1,4 +1,4 @@
-# XBloom Original (J20) cloud protocol reference
+# xBloom Original (J20) cloud protocol reference
 
 > Source of truth — see [한국어](../ko/protocol-original-j20.md) for the Korean
 > translation (may lag). Written entirely from statically decompiling the
@@ -6,7 +6,7 @@
 > `com.chisalsoft.andite`, via `jadx` — inspected as a zip/dex/source dump
 > only, never published or redistributed). **Unlike [`protocol.md`](./protocol.md)
 > (Studio BLE), nothing here has been verified against real hardware** — this
-> integration has no XBloom Original unit, does not implement Original, and
+> integration has no xBloom Original unit, does not implement Original, and
 > Original is out of scope for this integration. This is a decompile-
 > derived map kept so a future contributor with Original hardware has a
 > starting point, not a spec this integration follows. Every claim traces to a
@@ -33,7 +33,7 @@ is reusable.
 
 ## Architecture: Wi-Fi + AWS IoT thing shadow
 
-Original is a Wi-Fi appliance controlled through XBloom's cloud, not directly.
+Original is a Wi-Fi appliance controlled through xBloom's cloud, not directly.
 The pattern is a classic AWS IoT **thing shadow** (a.k.a. device shadow):
 
 1. The app never sends a brew/grind command to the machine directly. It `POST`s

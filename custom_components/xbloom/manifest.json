@@ -1,6 +1,6 @@
 {
   "domain": "xbloom",
-  "name": "XBloom Coffee Machine",
+  "name": "xBloom Coffee Machine",
   "bluetooth": [
     {
       "service_uuid": "0000e0ff-3c17-d293-8e48-14fe2e4da212"
