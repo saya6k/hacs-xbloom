@@ -119,6 +119,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "weight": 0.0,
     "temperature": None,
     "state": "unknown",
+    "operation": None,
     "grinder_running": False,
     "brewer_running": False,
     "water_level_ok": False,

@@ -25,6 +25,7 @@ const STRINGS = {
     load_recipe: "Load recipe", start_brew: "Start brewing",
     pause: "Pause", resume: "Resume", cancel: "Cancel",
     armed_hint: "The recipe is loaded on the machine. Place your cup, then start.",
+    pour_armed_hint: "The pour page is open on the machine. Place your cup, then start.",
     busy_hint: "Finish or cancel the current operation first.",
     water_low: "Water tank is low", problem: "The machine reports a problem",
     weight: "Weight", brewer_temp: "Water temp", flow: "Flow",
@@ -99,6 +100,7 @@ const STRINGS = {
     load_recipe: "레시피 불러오기", start_brew: "추출 시작",
     pause: "일시정지", resume: "재개", cancel: "취소",
     armed_hint: "머신에 레시피가 준비되었습니다. 컵을 놓은 뒤 시작하세요.",
+    pour_armed_hint: "머신에 푸어 화면이 열렸습니다. 컵을 놓은 뒤 시작하세요.",
     busy_hint: "진행 중인 작업을 끝내거나 취소한 뒤 사용하세요.",
     water_low: "물탱크가 부족합니다", problem: "머신이 문제를 보고했습니다",
     weight: "무게", brewer_temp: "물 온도", flow: "유량",
@@ -494,7 +496,7 @@ class XBloomPanel extends HTMLElement {
         const s = this._hass.states[id];
         if (!s) return "";
         const a = s.attributes;
-        return `${s.state}|${a.min ?? ""}|${a.max ?? ""}|${a.installed_version ?? ""}`;
+        return `${s.state}|${a.min ?? ""}|${a.max ?? ""}|${a.installed_version ?? ""}|${a.operation ?? ""}`;
       })
       .join(";");
   }
@@ -1036,6 +1038,63 @@ class XBloomPanel extends HTMLElement {
     }
   }
 
+  // ---- Manual pour (shared by home and the manual tab)
+
+  // The pour/grind page armed or open on the machine, or that manual run
+  // going or paused — "brewing"/"paused" alone can't tell it from a recipe.
+  _manualActive(kind) {
+    return this._state === `standalone_${kind}`
+      || this._st("sensor.state")?.attributes.operation === `manual_${kind}`;
+  }
+
+  get _pourActive() {
+    return this._manualActive("pour");
+  }
+
+  // Progress toward the volume set on the pour page. The weight keeps the
+  // machine's own unit, like the app's pour page (weightUnitReal()).
+  _pourRing() {
+    const target = Number(this._val("number.volume")) || 0;
+    return `
+      <div class="ring" data-target="${target}">
+        <svg viewBox="0 0 120 120">
+          <circle class="track" cx="60" cy="60" r="54"/>
+          <circle class="bar" cx="60" cy="60" r="54" data-live-ring
+            stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+        </svg>
+        <div class="ring-center">
+          <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
+          <div class="sub">${esc(this._fmt("sensor.state"))}</div>
+          ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
+        </div>
+      </div>`;
+  }
+
+  // The pour temperature, RT/BP at the slider's ends like the slider itself.
+  _pourTempLabel() {
+    const s = this._st("number.temperature");
+    const v = Number(s?.state);
+    return s && Number.isFinite(v)
+      ? endLabel(v, s.attributes.min, s.attributes.max, s.attributes.unit_of_measurement)
+      : "–";
+  }
+
+  // One button that walks a manual pour/grind through its steps — arm,
+  // start, pause, resume — with cancel beside it.
+  _manualActions(kind, disabled = false) {
+    const state = this._state;
+    const active = this._manualActive(kind);
+    const [go, start] = kind === "pour" ? ["pour", "start_pour"] : ["grind_btn", "start_grind"];
+    const [arg, label] = active && PAUSABLE_STATES.has(state)
+      ? ["button.pause", state === "paused" ? "resume" : "pause"]
+      : [`button.${kind === "pour" ? "pour" : "grind"}`, state === `standalone_${kind}` ? start : go];
+    return `
+      <div class="actions">
+        <button class="btn go" data-action="press" data-arg="${arg}" ${disabled && !active ? "disabled" : ""}>${this._t(label)}</button>
+        <button class="btn ghost" data-action="press" data-arg="button.cancel" ${active ? "" : "disabled"}>${this._t("cancel")}</button>
+      </div>`;
+  }
+
   // ---- Brew (home)
 
   _renderHome() {
@@ -1053,10 +1112,22 @@ class XBloomPanel extends HTMLElement {
     const options = (this._st("select.recipe")?.attributes.options || [])
       .filter((o) => m.recipes.some((r) => r.name === o));
     const stage = STAGE_OF_STATE[state];
+    const pourHero = this._pourActive
+      ? `<section class="hero">
+          ${this._pourRing()}
+          <div class="stats">
+            <div><span class="label">${this._t("temperature")}</span><span class="stat">${esc(this._pourTempLabel())}</span></div>
+            <div><span class="label">${this._t("pattern")}</span><span class="stat">${esc(this._t(this._val("select.pour_pattern") || "–"))}</span></div>
+            <div><span class="label">${this._t("flow")}</span><span class="stat" data-live="sensor.flow_rate">–</span></div>
+          </div>
+          ${state === "standalone_pour" ? `<div class="hint on-dark">${this._t("pour_armed_hint")}</div>` : ""}
+          ${this._manualActions("pour")}
+        </section>`
+      : "";
     return `
       ${alerts.map((a) => `<div class="alert">${esc(a)}</div>`).join("")}
       <div class="brew-grid">
-        <section class="hero">
+        ${pourHero || `<section class="hero">
           ${stage === undefined
             // Idle: the machine itself, like the app's home screen.
             ? `<div class="machine">
@@ -1091,7 +1162,7 @@ class XBloomPanel extends HTMLElement {
                    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>${this._t(state === "armed_recipe" ? "start_brew" : "load_recipe")}</button>`}
             <button class="btn ghost" data-action="press" data-arg="button.cancel" ${IDLE_STATES.has(state) ? "disabled" : ""}>${this._t("cancel")}</button>
           </div>
-        </section>
+        </section>`}
 
         <section class="card recipe-panel">
           ${recipe ? this._recipeArt(recipe, "art-banner") : ""}
@@ -1627,26 +1698,19 @@ class XBloomPanel extends HTMLElement {
           <div><span class="label">${this._t("grind")}</span><span data-live="sensor.live_grind_size">–</span></div>
           <div><span class="label">${this._t("rpm")}</span><span data-live="sensor.live_grind_speed">–</span></div>
         </div>
-        <div class="actions">
-          <button class="btn go" data-action="press" data-arg="button.grind" ${busy ? "disabled" : ""}>
-            ${this._t(state === "standalone_grind" ? "start_grind" : "grind_btn")}</button>
-          <button class="btn" data-action="press" data-arg="button.cancel" ${IDLE_STATES.has(state) ? "disabled" : ""}>${this._t("cancel")}</button>
-        </div>
+        ${this._manualActions("grind", busy)}
       </section>
 
       <section class="card">
         <h2 class="with-icon">${ICONS.pour}${this._t("brewer")}</h2>
+        ${this._pourActive ? this._pourRing() : ""}
         ${this._numberControl("number.volume", "volume")}
         ${this._numberControl("number.temperature", "temperature")}
         ${patternState ? `
         <div class="segmented wide">${(patternState.attributes.options || PATTERNS)
           .map((o) => `<button class="${patternState.state === o ? "active" : ""}" data-action="set-pattern" data-arg="${esc(o)}">${PATTERN_ICON[o] || ""}${this._t(o)}</button>`)
           .join("")}</div>` : ""}
-        <div class="actions">
-          <button class="btn go" data-action="press" data-arg="button.pour" ${busy ? "disabled" : ""}>
-            ${this._t(state === "standalone_pour" ? "start_pour" : "pour")}</button>
-          <button class="btn" data-action="press" data-arg="button.pause" ${PAUSABLE_STATES.has(state) ? "" : "disabled"}>${this._t(state === "paused" ? "resume" : "pause")}</button>
-        </div>
+        ${this._manualActions("pour", busy)}
       </section>
 
       <section class="card">
@@ -1924,6 +1988,9 @@ const STYLE = `
   .ring .track { stroke: rgba(255,255,255,.1); }
   .ring .bar { stroke: #c5af77; stroke-linecap: round; transition: stroke-dashoffset .5s ease;
     filter: drop-shadow(0 0 6px rgba(197,175,119,.45)); }
+  .card .ring { width: min(200px, 56vw); margin: 0 auto 8px; }
+  .card .ring .track { stroke: var(--xb-line); }
+  .card .ring .big { font-size: 34px; }
   .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; }
   .big { font-family: var(--xb-serif); font-size: 54px; font-weight: 400; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .card .big { font-size: 46px; }
