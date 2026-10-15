@@ -207,6 +207,16 @@
           "recipe_loaded": "Recipe loaded",
           "descaling": "Descaling",
           "calibrating_scale": "Calibrating Scale"
+        },
+        "state_attributes": {
+          "operation": {
+            "name": "Operation",
+            "state": {
+              "recipe": "Recipe",
+              "manual_pour": "Manual pour",
+              "manual_grind": "Manual grind"
+            }
+          }
         }
       },
       "weight": {

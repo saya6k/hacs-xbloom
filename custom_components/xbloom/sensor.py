@@ -70,6 +70,10 @@ class XBloomStateSensor(_XBloomSensor):
     def native_value(self) -> str:
         return self.coordinator.data.get("state", "unknown")
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"operation": self.coordinator.data.get("operation")}
+
 
 class XBloomWeightSensor(_XBloomSensor):
     _attr_translation_key = "weight"

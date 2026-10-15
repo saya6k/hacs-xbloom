@@ -379,6 +379,10 @@ class StateMixin:
                     # avoids showing a misleading temperature.
                     "temperature": round(s.brewer.temperature, 1) if s.brewer.temperature else None,
                     "state": state_str,
+                    # Which run "brewing"/"grinding"/"paused" belongs to —
+                    # "recipe" / "manual_pour" / "manual_grind" / None — so
+                    # the panel can tell a manual pour from a recipe brew.
+                    "operation": self._active_operation,
                     "grinder_running": s.grinder.is_running,
                     "brewer_running": s.brewer.is_running,
                     "water_level_ok": water_ok,

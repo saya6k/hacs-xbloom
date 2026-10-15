@@ -207,6 +207,16 @@
           "recipe_loaded": "레시피 준비됨",
           "descaling": "디스케일링",
           "calibrating_scale": "저울 캘리브레이션 중"
+        },
+        "state_attributes": {
+          "operation": {
+            "name": "작업",
+            "state": {
+              "recipe": "레시피",
+              "manual_pour": "수동 푸어",
+              "manual_grind": "수동 분쇄"
+            }
+          }
         }
       },
       "weight": {
