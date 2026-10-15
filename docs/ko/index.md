@@ -1,6 +1,6 @@
 # xBloom Coffee Machine — Home Assistant 통합
 
-> Home Assistant **2026.10.0b0 이상**이 필요합니다. LLM 도구는 `llm.ToolResult`를 반환하며 기존 응답 필드는 `data`에 유지됩니다.
+> Home Assistant **2026.10.0b0** 이상이 필요합니다.
 
 > 이 페이지는 [`en/index.md`](../en/index.md)의 번역본입니다. 영문판이 source of truth이며, 한글본은 뒤늦게 동기화될 수 있습니다.
 
@@ -31,10 +31,6 @@
 - **한국어·영어** UI 번역.
 
 ## 설치 (HACS)
-
-> **Home Assistant `2026.10.0b0` 이상 필요.** LLM 도구는 새 ToolResult API를 사용합니다.
-> Studio의 그라인더, 저울, 브루어를 메인 머신의 논리적 구성 요소로
-> 표현하는 child device를 지원합니다. 이전 버전은 지원하지 않습니다.
 
 1. HACS → Integrations → ⋮ → **Custom repositories**에서 이 repo URL을 카테고리 **Integration**으로 추가.
 2. **xBloom Coffee Machine** 설치.

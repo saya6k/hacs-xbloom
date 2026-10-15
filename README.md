@@ -1,6 +1,6 @@
 # xBloom Coffee Machine — Home Assistant Integration
 
-> Requires Home Assistant **2026.10.0b0 or later**. LLM tools return `llm.ToolResult`, preserving existing response fields in `data`.
+> Requires Home Assistant **2026.10.0b0** or later.
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with%20Claude%20Code-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/code)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
@@ -35,10 +35,6 @@ This integration's own protocol reference now lives in [`docs/en/protocol.md`](d
 - **Korean and English** UI translations.
 
 ## Installation (HACS)
-
-> **Requires Home Assistant `2026.10.0b0` or newer.** LLM tools use the new ToolResult API.
-> Child devices represent the Studio's grinder, scale, and brewer
-> as logical parts of the main machine. Older versions are not supported.
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=hacs-xbloom&category=integration)
 
