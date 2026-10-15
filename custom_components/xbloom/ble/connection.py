@@ -52,7 +52,7 @@ class HABleakConnection:
             self._hass, address, connectable=True
         )
         if ble_device is None:
-            raise ConnectionError(f"XBloom device {address} not found via HA Bluetooth")
+            raise ConnectionError(f"xBloom device {address} not found via HA Bluetooth")
         self._client = await establish_connection(
             BleakClient,
             ble_device,

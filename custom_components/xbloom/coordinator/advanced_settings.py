@@ -239,7 +239,7 @@ class AdvancedSettingsMixin:
                 "success": False,
                 "error": "cloud_login_required",
                 "message": (
-                    "pour_radius_level requires an XBloom cloud account login "
+                    "pour_radius_level requires an xBloom cloud account login"
                     "(Options → Account) — this integration has no other way to "
                     "know the machine's factory-default pour-radius center."
                 ),
@@ -248,7 +248,7 @@ class AdvancedSettingsMixin:
             return {
                 "success": False,
                 "error": "not_connected",
-                "message": "The XBloom is not connected over Bluetooth.",
+                "message": "The xBloom is not connected over Bluetooth.",
             }
         try:
             if pour_radius_level is not None:
@@ -283,7 +283,7 @@ class AdvancedSettingsMixin:
                         "error": "cloud_center_unavailable",
                         "message": (
                             "Could not fetch the factory-default pour-radius "
-                            "center from XBloom's cloud account — try again "
+                            "center from xBloom's cloud account — try again "
                             "later."
                         ),
                     }

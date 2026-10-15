@@ -409,7 +409,7 @@ async def _async_arm_coffee(
     including the unresolved no-grind observation recorded there.
     """
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
 
     grinding = recipe.grind_size > 0 and recipe.bean_weight > 0
     # dose (sent via 8102) must track the recipe's actual weighed dose
@@ -547,7 +547,7 @@ async def _async_arm_tea(client: XBloomClient, recipe: XBloomRecipe) -> bytes:
     so nothing brewed — the full tea path is still unverified end to end.
     """
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
 
     _LOGGER.info(
         "Tea brew arm: %s — %d steep(s)", recipe.name, len(recipe.pours),
@@ -671,7 +671,7 @@ async def async_tare(client: XBloomClient) -> None:
     Mirrors ``send_command.py tare`` in the upstream xbloom-ble. No payload.
     """
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
     _LOGGER.info("Scale tare")
     await client._send_command(_CMD_TARE)
 
@@ -679,7 +679,7 @@ async def async_tare(client: XBloomClient) -> None:
 async def async_enter_scale(client: XBloomClient) -> None:
     """Show the scale screen on the machine (cmd 8003). No payload."""
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
     _LOGGER.info("Scale screen enter")
     await client._send_command(_CMD_SCALE_IN)
 
@@ -687,7 +687,7 @@ async def async_enter_scale(client: XBloomClient) -> None:
 async def async_exit_scale(client: XBloomClient) -> None:
     """Leave the scale screen on the machine (cmd 8014). No payload."""
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
     _LOGGER.info("Scale screen exit")
     await client._send_command(_CMD_SCALE_QUIT)
 
@@ -732,7 +732,7 @@ async def async_write_easy_slots(
     be real, not because we've observed it change anything.
     """
     if not client.is_connected:
-        raise ConnectionError("XBloom not connected")
+        raise ConnectionError("xBloom not connected")
     missing = [letter for letter in _SLOT_INDEX_BY_LETTER if letter not in slot_recipes]
     if missing:
         raise ValueError(f"slot_recipes missing entries for: {missing}")

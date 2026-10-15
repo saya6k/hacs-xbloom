@@ -19,12 +19,12 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
     """Trigger the XBloom's grinder gear-position calibration sweep."""
 
     name = "calibrate_xbloom_grinder"
-    title = "Calibrate XBloom grinder"
+    title = "Calibrate xBloom grinder"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Run the XBloom's grinder gear-position calibration. Use this when "
+        "Run the xBloom's grinder gear-position calibration. Use this when "
         "the user asks to calibrate, recalibrate, or reset the grinder "
         "(e.g. after grind sizes seem off). The sweep runs autonomously on "
         "the machine for about 120 seconds after this call returns — it "
@@ -51,7 +51,7 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

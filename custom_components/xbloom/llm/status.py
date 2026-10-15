@@ -17,12 +17,12 @@ class XBloomStatusTool(XBloomBaseTool):
     """Return the current state of the XBloom machine."""
 
     name = "get_xbloom_status"
-    title = "Get XBloom status"
+    title = "Get xBloom status"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=True
     )
     description = (
-        "Get the current status of the XBloom coffee machine: BLE connection, "
+        "Get the current status of the xBloom coffee machine: BLE connection, "
         "running state (idle/grinding/brewing/paused/error/sleeping), brewer "
         "temperature, scale weight, water level, firmware version, and any "
         "active error."
@@ -49,7 +49,7 @@ class XBloomStatusTool(XBloomBaseTool):
                         "mac_address": self.coordinator.mac_address,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

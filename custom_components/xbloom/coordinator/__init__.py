@@ -370,8 +370,8 @@ class XBloomCoordinator(
         version = data.get("version") or None
         info = DeviceInfo(
             identifiers={(DOMAIN, self.entry_id)},
-            name="XBloom Coffee Machine",
-            manufacturer="XBloom",
+            name="xBloom Coffee Machine",
+            manufacturer="xBloom",
             serial_number=serial,
         )
         if version:

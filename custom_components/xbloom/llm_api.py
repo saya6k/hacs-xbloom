@@ -54,7 +54,7 @@ class XBloomCoffeeAPI(llm.API):
         llm_tools = platform.async_get_tools(self.hass, llm_context, self.id)
         if llm_tools is None:
             # The entry was unloaded after the agent resolved this API.
-            raise HomeAssistantError("XBloom machine is no longer available")
+            raise HomeAssistantError("xBloom machine is no longer available")
         return llm.APIInstance(
             api=self,
             api_prompt=llm_tools.prompt or "",

@@ -25,12 +25,12 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
     """
 
     name = "write_xbloom_easy_slot"
-    title = "Write XBloom easy slot"
+    title = "Write xBloom easy slot"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Save an XBloom recipe into one of the machine's three onboard "
+        "Save an xBloom recipe into one of the machine's three onboard "
         "Easy Mode slots (A, B, or C). After this the user can run the "
         "recipe directly from the device's slot button without using "
         "Home Assistant. This action does NOT brew anything — it only "
@@ -89,7 +89,7 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

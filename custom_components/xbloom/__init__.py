@@ -306,7 +306,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_execute_recipe(call: ServiceCall) -> None:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         for coord in coordinators:
             identifier = call.data.get(ATTR_RECIPE)
             if identifier:
@@ -358,7 +358,7 @@ def _register_services(hass: HomeAssistant) -> None:
         _async_brew_tea, which takes no dose/ratio/grind/bypass overrides."""
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         for coord in coordinators:
             identifier = call.data.get(ATTR_RECIPE)
             if identifier:
@@ -398,7 +398,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_cloud_import_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         identifier = call.data.get(ATTR_SHARE_URL) or call.data.get(ATTR_RECIPE_ID)
         # Imports into every targeted machine's local store; the response
         # reflects the first machine (there is usually exactly one).
@@ -432,7 +432,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_write_recipe_to_easy_slot(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         result = await coordinators[0].async_write_easy_slot(
             call.data[ATTR_SLOT], identifier=call.data.get(ATTR_RECIPE)
         )
@@ -453,7 +453,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_advanced_settings(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         result = await coordinators[0].async_set_advanced_settings(
             pour_radius_level=call.data.get(ATTR_POUR_RADIUS_LEVEL),
             vibration_amplitude_level=call.data.get(ATTR_VIBRATION_AMPLITUDE_LEVEL),
@@ -474,7 +474,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_cloud_export_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         # Cloud accounts are per-machine credentials — export from the
         # first targeted machine's store/account.
         result = await coordinators[0].async_export_recipe(call.data[ATTR_RECIPE])
@@ -503,7 +503,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_list_recipes(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         result = coordinators[0].list_local_recipes(query=call.data.get(ATTR_QUERY))
         return {"recipes": result["recipes"]}
 
@@ -527,7 +527,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_create_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         parsed = _parse_yaml_mapping(call.data[ATTR_RECIPE_YAML])
         result = coordinators[0].create_local_recipe(parsed)
         if not result.get("success"):
@@ -545,7 +545,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_edit_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         # Partial by design — only the fields present in `changes` move;
         # everything else (including uid/cloud metadata) stays.
         changes = _parse_yaml_mapping(call.data[ATTR_CHANGES])
@@ -567,7 +567,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_delete_recipe(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         result = coordinators[0].delete_local_recipe(call.data[ATTR_RECIPE])
         if not result.get("success"):
             raise HomeAssistantError(result.get("message", "delete_recipe failed"))
@@ -584,7 +584,7 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_cloud_search_collective_recipes(call: ServiceCall) -> ServiceResponse:
         coordinators = _coordinators_for_call(hass, call)
         if not coordinators:
-            raise HomeAssistantError("No XBloom machine matched the service call.")
+            raise HomeAssistantError("No xBloom machine matched the service call.")
         # Public, unauthenticated, and not tied to any one machine's cloud
         # account — reuses the first targeted machine's coordinator purely
         # for its HTTP session / cached criteria lookup, same device
@@ -887,8 +887,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     main_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.entry_id)},
-        name="XBloom Coffee Machine",
-        manufacturer="XBloom",
+        name="xBloom Coffee Machine",
+        manufacturer="xBloom",
     )
     coordinator.parent_device_id = main_device.id
 

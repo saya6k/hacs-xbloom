@@ -106,16 +106,16 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
     """Import a recipe from an XBloom cloud share URL/id as a local recipe."""
 
     name = "import_xbloom_cloud_recipe"
-    title = "Import XBloom cloud recipe"
+    title = "Import xBloom cloud recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=False, open_world=True
     )
     description = (
-        "Import a recipe from an XBloom cloud share URL or share id (e.g. "
+        "Import a recipe from an xBloom cloud share URL or share id (e.g. "
         "from the official app's Share button), or from a "
         "collective.xbloom.com/recipe/{id} community-hub link, and save it "
         "as a local recipe, so it shows up in list_xbloom_recipes / "
-        "execute_xbloom_recipe. No XBloom account login is required for "
+        "execute_xbloom_recipe. No xBloom account login is required for "
         "this — both source endpoints are public."
     )
     parameters = vol.Schema(
@@ -160,15 +160,15 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     """Search XBloom's public collective.xbloom.com community recipe hub."""
 
     name = "search_xbloom_collective_recipes"
-    title = "Search XBloom collective recipes"
+    title = "Search xBloom collective recipes"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=True
     )
     description = (
-        "Search XBloom's public community recipe hub (collective.xbloom.com) "
+        "Search xBloom's public community recipe hub (collective.xbloom.com) "
         "— recipes shared by xBloom and other users, entirely separate from "
         "the user's local recipes (use list_xbloom_recipes for those). No "
-        "XBloom account is required. Results include a share_url that can be passed "
+        "xBloom account is required. Results include a share_url that can be passed "
         "straight to import_xbloom_cloud_recipe to save one locally. "
         "The bean-profile filters (origin/varietal/process/roast/flavor) "
         "accept free-text names (e.g. 'Ethiopia', 'Washed', 'Dark Roast') "
@@ -255,16 +255,16 @@ class XBloomExportRecipeTool(XBloomBaseTool):
     """Export a local recipe to the XBloom cloud account (share link)."""
 
     name = "export_xbloom_recipe"
-    title = "Export XBloom recipe"
+    title = "Export xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Export a local XBloom recipe to the user's XBloom cloud account "
+        "Export a local xBloom recipe to the user's xBloom cloud account "
         "so it shows up in the official app and gets a share link. If the "
         "recipe was exported before, the same cloud recipe is updated in "
         "place (its id and share link stay stable). Without a configured "
-        "XBloom account nothing is uploaded — the tool returns just the "
+        "xBloom account nothing is uploaded — the tool returns just the "
         "recipe definition, with no cloud id or share link."
     )
     parameters = vol.Schema(
@@ -295,16 +295,16 @@ class XBloomExportRecipeTool(XBloomBaseTool):
             out["id"] = result["id"]
             out["link"] = result.get("link")
             out["instruction"] = (
-                "Tell the user the recipe is now on their XBloom cloud "
+                "Tell the user the recipe is now on their xBloom cloud "
                 "account (visible in the official app), and read out the "
                 "share link if they asked to share it."
             )
         else:
             out["instruction"] = (
-                "No XBloom cloud account is configured, so nothing was "
+                "No xBloom cloud account is configured, so nothing was "
                 "uploaded — the recipe stays local only. Tell the user "
                 "they can add an account under Settings > Devices & "
-                "Services > XBloom > Configure to get a share link."
+                "Services > xBloom > Configure to get a share link."
             )
         if result.get("warning"):
             out["warning"] = result["warning"]
