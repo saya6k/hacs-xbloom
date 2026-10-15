@@ -1071,7 +1071,7 @@ class XBloomPanel extends HTMLElement {
                     stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
                 </svg>
                 <div class="ring-center">
-                  <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
+                  <div class="big" data-live="sensor.weight" data-live-fmt="weight-brew">–</div>
                   <div class="sub">${esc(this._fmt("sensor.state"))}</div>
                   ${target ? `<div class="sub dim">${this._t("target")} ${num(target)} ml</div>` : ""}
                 </div>
@@ -1760,15 +1760,18 @@ class XBloomPanel extends HTMLElement {
 
   // The scale reading in the unit the machine's own screen uses (g/oz/ml —
   // its display-unit setting); the sensor itself is grams. For water,
-  // 1 g ≈ 1 ml, which is what the machine shows in ml mode.
-  _weightLabel() {
+  // 1 g ≈ 1 ml, which is what the machine shows in ml mode. A running
+  // recipe and the grind page follow the app's AutoActivity/GrinderActivity
+  // instead (weightUnit()): ml mode reads in g there, only oz is converted.
+  _weightLabel(brewing = false) {
     const st = this._st("sensor.weight");
     const v = Number(st?.state);
     if (!st || !Number.isFinite(v)) return null;
     const grams = v * (GRAMS_PER[st.attributes.unit_of_measurement] ?? 1);
+    const grinding = ["standalone_grind", "grinding"].includes(this._val("sensor.state"));
     switch (this._machine?.weight_unit) {
       case "ml":
-        return `${num(grams, 1)} ml`;
+        return `${num(grams, 1)} ${brewing || grinding ? "g" : "ml"}`;
       case "oz":
         return `${(grams / GRAMS_PER.oz).toFixed(2)} oz`;
       default:
@@ -1788,8 +1791,8 @@ class XBloomPanel extends HTMLElement {
         const c = toCelsius(st?.state, st?.attributes.unit_of_measurement);
         if (Number.isFinite(c) && (c <= 39.5 || c >= 95.5)) el.textContent = c <= 39.5 ? "RT" : "BP";
       }
-      if (el.dataset.liveFmt === "weight") {
-        const w = this._weightLabel();
+      if (el.dataset.liveFmt === "weight" || el.dataset.liveFmt === "weight-brew") {
+        const w = this._weightLabel(el.dataset.liveFmt === "weight-brew");
         if (w) el.textContent = w;
       }
     });
