@@ -730,10 +730,10 @@ class ConnectionMixin:
         """(command id, payload, human-readable value) for one option key."""
         if key == CONF_WEIGHT_UNIT:
             code = WEIGHT_UNIT_OPTIONS.get(self._weight_unit, WEIGHT_UNIT_OPTIONS["g"])
-            return 8005, bytes([code]), self._weight_unit
+            return 8005, [code], self._weight_unit
         if key == CONF_TEMP_UNIT:
             code = TEMP_UNIT_OPTIONS.get(self._temp_unit, TEMP_UNIT_OPTIONS["c"])
-            return 8010, bytes([code]), self._temp_unit
+            return 8010, [code], self._temp_unit
         return _CMD_SWITCH_WATER_FEED, [self.water_source], str(self.water_source)
 
     async def _async_send_unit_command(

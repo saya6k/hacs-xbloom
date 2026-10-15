@@ -90,8 +90,10 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 8002 | `APP_RECIPE_EXECUTE` | — | Active | 큐에 넣은 레시피 커밋/시작 |
 | 8003 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "电子秤功能进入指令" — 기기에 저울 화면 표시; 앱은 자기 저울 페이지를 열기 전에 ACK 확인 후 전송 (`HomeActivity.onClickOperator3`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태코드가 홈 `0x01` → `0x04` → `0x05`(저울 화면)로 이동; 노브 진입 시의 9002/9008 보고는 BLE 명령 경로에서는 발화하지 않았음 |
 | 8004 | `APP_RECIPE_SEND_MANUAL` | 레시피 블롭 | Active | 그라인딩 없는(바이패스) 커피 레시피 — 앱의 선택 기준은 8001 항목 참고 |
+| 8005 | 무게 표시 단위 | LE u32 (0=ml, 1=g, 2=oz) | Active | `WeightUnitType`, 앱의 g/ml/oz 버튼이 전송. 다른 정수 `CodeModule`과 마찬가지로 반드시 u32여야 함: 1바이트 페이로드는 ACK되지만 무시됨 (하드웨어 2026-10-15, 8010에서 확인) |
 | 8006 | `APP_GRINDER_IN` | 굵기, 속도 | Active | "그라인딩 화면 진입"; 수동/레시피 그라인딩 전에 내부적으로 전송. 앱은 그라인딩 페이지에서 실행 중이 아닐 때 굵기/RPM 슬라이더가 바뀌면 이를 **실시간 조절 명령으로 재전송** (`GrinderActivity.adjustGrinder`, 실패 무시 best-effort) — 재전송이 하드웨어에서 깔끔히 ACK됨 (2026-07-19 라이브), 그리고 분쇄 페이지는 Easy 모드에서도 열림 (8023 index `0x02`로 보고) |
 | 8007 | `APP_BREWER_IN` (enum 이름 `RD_BREWER_IN`) | — | Active | "추출 화면 진입"; 앱 동작 일치를 위해 수동 추출 전에 전송, 필수는 아님. 추출 화면을 엶(상태/8023 코드 `0x03`) — 단, 한 라이브 런에서는 이후 코드 방출이 없었어서 보고가 완전히 일관되지는 않음 |
+| 8010 | 온도 표시 단위 | LE u32 (0=°F, 1=°C) | Active | 앱의 °C 버튼이 1, °F 버튼이 0을 전송. 하드웨어 2026-10-15: `[0]`으로 Studio가 °F로 바뀌었고(솔로 추출 페이지 RT 104 / 203 BP) `[1]`로 °C 복귀; 1바이트 페이로드는 ACK되지만 아무것도 바뀌지 않음 |
 | 8012 | `APP_GRINDER_QUIT` | — | Active | 분쇄 페이지 나가기 — armed 수동 분쇄 취소 |
 | 8013 | `APP_BREWER_QUIT` | — | Active | 추출 페이지 나가기 — armed 수동 추출 취소 |
 | 8014 | *(enum 이름 없음 — 앱 내 raw 리터럴)* | — | Active | "退出称重页面" — 저울 화면 나가기; 앱 저울 페이지의 뒤로가기 핸들러에서 전송 (`ScaleActivity.onBackPressed`). 2026-07-19 라이브 하드웨어 확인: ACK 후 상태가 홈 `0x01`로 복귀 |
@@ -124,7 +126,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | ---: | --- | --- | --- | --- |
 | 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모드 전환 재시도를 게이팅 |
 | 8011 | `RD_MachineNotSleeping` | — | Active | sleep 플래그 해제 |
-| 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨 |
+| 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨; 코드는 8005/8010/4508과 동일 (앱은 `DeviceUnitBleModel`에 그대로 저장). 앱 쪽 8005/8010 SET 후에는 돌아오지 않음 (하드웨어 2026-10-15) |
 | 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 단, 항상 엄격한 짝은 아님: Easy 모드에서 분쇄 페이지를 열면 8023 `index=0x02`만 오고 대응하는 raw 하트비트 프레임은 **없었음** — 8023이 더 완전한 페이지 전환 채널. 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용. 앱 쪽 소비(jadx): `index == 1`(홈)은 버스 이벤트로 재게시되어 `AppJ15AutoManager`가 자동 추출 트래킹의 세션 종료로 처리; `TeaAutoFragment`는 `index == 35`에서 푸어 리스트를 갱신 |
 | 8105 | `RD_GRINDER_SIZE` | LE u32, `-30` 오프셋 | Telemetry | 실시간 그라인딩 굵기 노브 |
 | 8106 | `RD_GRINDER_SPEED` | LE u32 | Telemetry | 실시간 RPM; 그라인딩 정지 시 명시적으로 0 처리(0은 실제 값이지 "알 수 없음"이 아님) |
