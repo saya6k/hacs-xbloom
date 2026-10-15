@@ -234,24 +234,30 @@ const PATTERN_ICON = {
 };
 
 // Dot-matrix glyphs in the spirit of the app's icon set ("#" = dot).
-const dotIcon = (rows, cls = "dots") => {
-  const w = Math.max(...rows.map((r) => r.length));
+const dotIcon = (rows, cls = "dots", r = 0.36) => {
+  const w = Math.max(...rows.map((row) => row.length));
   const circles = rows
-    .flatMap((r, y) => [...r].map((c, x) => (c === "#" ? `<circle cx="${x + 0.5}" cy="${y + 0.5}" r="0.36"/>` : "")))
+    .flatMap((row, y) => [...row].map((c, x) => (c === "#" ? `<circle cx="${x + 0.5}" cy="${y + 0.5}" r="${r}"/>` : "")))
     .join("");
   return `<svg class="${cls}" viewBox="0 0 ${w} ${rows.length}" fill="currentColor">${circles}</svg>`;
 };
+// Redrawn after the app's own icons (dot positions read off
+// auto_icon_grinding/_pour/_enjoy and visitor_icon_scale): a 5×5 grid
+// with dots at 0.3 of the pitch.
+const appDots = (rows) => dotIcon(rows, "dots", 0.3);
 
 const ICONS = {
   home: dotIcon(["...#...", "..###..", ".#####.", "#######", "#######", ".#####.", "..###.."]),
   recipes: dotIcon(["##.####", ".......", "##.####", ".......", "##.####", ".......", "##.####"]),
   manual: dotIcon(["#######", ".#####.", "..###..", "...#...", "...#...", "..###..", ".#####."]),
   settings: dotIcon(["..#....", "#######", "..#....", ".......", "....#..", "#######", "....#.."]),
-  beans: dotIcon(["..###..", ".##.##.", "##.####", "##.####", "###.###", ".##.##.", "..###.."]),
-  grind: dotIcon(["#######", ".#####.", "..###..", "...#...", "..#.#..", ".#.#.#.", "#.#.#.#"]),
-  pour: dotIcon(["#.#.#.#", ".......", ".#.#.#.", ".......", "..#.#..", ".......", "...#..."]),
-  enjoy: dotIcon([".......", "#####..", "######.", "#####.#", "######.", "#####..", ".###..."]),
-  scale: dotIcon([".......", ".......", "..###..", ".......", "#######", "#######", "......."]),
+  // The app's bean (auto_icon_beans) is a solid silhouette, not dots: a
+  // tilted bean with an S-shaped split.
+  beans: '<svg class="dots" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><g transform="rotate(-38 12 12)"><path d="M12 2.6c3.9 0 6.6 4.2 6.6 9.4S15.9 21.4 12 21.4 5.4 17.2 5.4 12 8.1 2.6 12 2.6z M11.4 3.4C9 6.4 9 9.2 11.4 12s2.4 5.6 0 8.6h1.3c2.4-3 2.4-5.8 0-8.6S10.3 6.4 12.7 3.4z"/></g></svg>',
+  grind: appDots(["#.#.#", ".#.#.", "#.#.#", ".#.#.", "#.#.#"]),
+  pour: appDots(["..#..", ".###.", "#####", "#####", ".###."]),
+  enjoy: appDots(["..#.#.", ".#.#..", "#####.", "#...##", "#...##", ".###.."]),
+  scale: appDots(["#####", ".###.", "#####", "#####", "#####"]),
   tea: dotIcon(["....###", "..#####", ".######", ".#####.", "#####..", "#.#....", "#......"]),
 };
 
