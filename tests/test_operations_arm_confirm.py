@@ -32,8 +32,9 @@ class _FakeGrinder:
         self.enter_mode_calls.append({"size": size, "speed": speed})
         return True
 
-    async def confirm_start(self) -> bool:
+    async def confirm_start(self, size=None, speed=None) -> bool:
         self.confirm_start_calls += 1
+        self.confirm_start_args = {"size": size, "speed": speed}
         return True
 
     async def stop(self) -> bool:
@@ -133,8 +134,29 @@ def test_confirm_grind_starts_and_clears_armed_state():
     asyncio.run(coordinator.async_confirm_grind())
 
     assert coordinator.client.grinder.confirm_start_calls == 1
+    # The start carries the target, like the app's 3500 (the machine
+    # moves the burrs there before grinding).
+    assert coordinator.client.grinder.confirm_start_args == {
+        "size": coordinator.grind_size, "speed": coordinator.rpm,
+    }
     assert coordinator._armed_operation is None
     assert coordinator._active_operation == "manual_grind"
+
+
+def test_grinder_start_sends_the_apps_payload():
+    """3500 [1000, size, speed] — GrinderActivity's CodeModule (jadx)."""
+    from custom_components.xbloom.ble.components import GrinderController
+
+    sent = []
+
+    class _Client:
+        async def _send_command(self, command, data=None):
+            sent.append((int(command), data))
+            return True
+
+    grinder = GrinderController(_Client())
+    asyncio.run(grinder.confirm_start(size=30, speed=100))
+    assert sent == [(3500, [1000, 30, 100])]
 
 
 def test_arm_pour_enters_mode_without_starting():

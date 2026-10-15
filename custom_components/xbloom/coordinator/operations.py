@@ -213,7 +213,7 @@ class OperationsMixin:
             self._active_operation = "manual_grind"
             # Deferred per-retry lookup — see async_arm_pour's note.
             await self._async_retry_while_sleeping(
-                lambda: self.client.grinder.confirm_start()  # noqa: PLW0108
+                lambda: self.client.grinder.confirm_start(size=self.grind_size, speed=self.rpm)
             )
         except Exception as exc:
             _LOGGER.error("Grind confirm error: %s", exc)
