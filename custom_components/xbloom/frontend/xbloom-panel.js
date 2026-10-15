@@ -1084,13 +1084,16 @@ class XBloomPanel extends HTMLElement {
     const stat = (label, value, live) =>
       `<div><span class="label">${this._t(label)}</span><span class="stat" ${live ? `data-live="${live}"` : ""}>${esc(value)}</span></div>`;
     let body;
+    // The same controls as the manual tab's card, so the page the machine
+    // is on can be adjusted from home too.
     if (this._manualActive("pour")) {
       body = `
         ${this._pourRing()}
-        <div class="stats">
-          ${stat("temperature", this._pourTempLabel())}
-          ${stat("pattern", this._t(this._val("select.pour_pattern") || "–"))}
-          ${stat("flow", "–", "sensor.flow_rate")}
+        <div class="stats">${stat("flow", "–", "sensor.flow_rate")}</div>
+        <div class="mode-controls">
+          ${this._numberControl("number.volume", "volume")}
+          ${this._numberControl("number.temperature", "temperature")}
+          ${this._patternControl()}
         </div>
         ${state === "standalone_pour" ? `<div class="hint on-dark">${this._t("pour_armed_hint")}</div>` : ""}
         ${this._manualActions("pour")}`;
@@ -1098,8 +1101,12 @@ class XBloomPanel extends HTMLElement {
       body = `
         ${this._modeRing()}
         <div class="stats">
-          ${stat("grind_size", this._val("number.grind_size") ?? "–")}
-          ${stat("rpm", this._val("number.rpm") ?? "–")}
+          ${stat("grind", "–", "sensor.live_grind_size")}
+          ${stat("rpm", "–", "sensor.live_grind_speed")}
+        </div>
+        <div class="mode-controls">
+          ${this._numberControl("number.grind_size", "grind_size")}
+          ${this._numberControl("number.rpm", "rpm")}
         </div>
         ${state === "standalone_grind" ? `<div class="hint on-dark">${this._t("grind_armed_hint")}</div>` : ""}
         ${this._manualActions("grind")}`;
@@ -1114,15 +1121,6 @@ class XBloomPanel extends HTMLElement {
       return null;
     }
     return `<section class="hero">${body}</section>`;
-  }
-
-  // The pour temperature, RT/BP at the slider's ends like the slider itself.
-  _pourTempLabel() {
-    const s = this._st("number.temperature");
-    const v = Number(s?.state);
-    return s && Number.isFinite(v)
-      ? endLabel(v, s.attributes.min, s.attributes.max, s.attributes.unit_of_measurement)
-      : "–";
   }
 
   // One button that walks a manual pour/grind through its steps — arm,
@@ -1717,10 +1715,18 @@ class XBloomPanel extends HTMLElement {
       </label>`;
   }
 
+  _patternControl() {
+    const s = this._st("select.pour_pattern");
+    if (!s) return "";
+    return `
+      <div class="segmented wide">${(s.attributes.options || PATTERNS)
+        .map((o) => `<button class="${s.state === o ? "active" : ""}" data-action="set-pattern" data-arg="${esc(o)}">${PATTERN_ICON[o] || ""}${this._t(o)}</button>`)
+        .join("")}</div>`;
+  }
+
   _renderManual() {
     const state = this._state;
     const busy = BUSY_STATES.has(state) || ARMED_STATES.has(state);
-    const patternState = this._st("select.pour_pattern");
     return `
       <div class="hint">${this._t("arm_hint")}</div>
       <div class="cols">
@@ -1740,10 +1746,7 @@ class XBloomPanel extends HTMLElement {
         ${this._pourActive ? this._pourRing() : ""}
         ${this._numberControl("number.volume", "volume")}
         ${this._numberControl("number.temperature", "temperature")}
-        ${patternState ? `
-        <div class="segmented wide">${(patternState.attributes.options || PATTERNS)
-          .map((o) => `<button class="${patternState.state === o ? "active" : ""}" data-action="set-pattern" data-arg="${esc(o)}">${PATTERN_ICON[o] || ""}${this._t(o)}</button>`)
-          .join("")}</div>` : ""}
+        ${this._patternControl()}
         ${this._manualActions("pour", busy)}
       </section>
 
@@ -2046,6 +2049,12 @@ const STYLE = `
   .stat { font-size: 20px; font-variant-numeric: tabular-nums; }
   .stats.inline { justify-content: flex-start; }
   .hero .actions { width: 100%; max-width: 420px; }
+  .mode-controls { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+  .hero .field { color: rgba(255,255,255,.55); }
+  .hero .field b { color: #f2f2f2; }
+  .hero .segmented { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); }
+  .hero .segmented button { color: rgba(255,255,255,.6); }
+  .hero .segmented button.active { background: #f2f2f2; color: #1a1a1a; }
   .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .card-head select { flex: 1; max-width: 65%; }
   .recipe-panel { padding-top: 0; overflow: hidden; }
