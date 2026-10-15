@@ -158,8 +158,13 @@ WATER_SOURCE_OPTIONS = {
 # changed, one ACK-gated command at a time — never re-asserted on connect
 # or on a telemetry refresh, since each SET opens that setting's own page
 # on the machine's screen. See _apply_unit_preferences.
-WEIGHT_UNIT_OPTIONS = {"g": 0, "oz": 1, "ml": 2}
-TEMP_UNIT_OPTIONS = {"c": 0, "f": 1}
+# Codes are the official app's (jadx 2026-10-15): WeightUnitType ml=0/g=1/
+# oz=2, and MachineJ15Fragment's °C button sends 8010 [1], °F sends [0] —
+# each one LE u32 like every int CodeModule. Hardware 2026-10-15: 8010 [0]
+# switched the machine to °F and [1] back; a 1-byte payload was ACKed but
+# changed nothing.
+WEIGHT_UNIT_OPTIONS = {"ml": 0, "g": 1, "oz": 2}
+TEMP_UNIT_OPTIONS = {"f": 0, "c": 1}
 _RAW_TO_WEIGHT_UNIT = {v: k for k, v in WEIGHT_UNIT_OPTIONS.items()}
 _RAW_TO_TEMP_UNIT = {v: k for k, v in TEMP_UNIT_OPTIONS.items()}
 

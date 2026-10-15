@@ -147,7 +147,7 @@ def test_machine_side_sync_is_ignored_while_a_push_is_pending():
 
     asyncio.run(
         coordinator._async_sync_units_from_machine(
-            {"weight_unit": 0, "temp_unit": 0, "water_source": 0}
+            {"weight_unit": 1, "temp_unit": 1, "water_source": 0}
         )
     )
 
@@ -162,7 +162,7 @@ def test_machine_side_sync_applies_when_nothing_is_pending():
 
     asyncio.run(
         coordinator._async_sync_units_from_machine(
-            {"weight_unit": 0, "temp_unit": 0, "water_source": 1}
+            {"weight_unit": 1, "temp_unit": 1, "water_source": 1}
         )
     )
 
@@ -212,7 +212,7 @@ def test_each_setting_maps_to_its_own_command():
     asyncio.run(coordinator._apply_unit_preferences())
 
     assert client.sent == [
-        (8005, b"\x01"), (8010, b"\x01"), (4508, [0]), (8022, None),
+        (8005, [2]), (8010, [0]), (4508, [0]), (8022, None),
     ]
 
 
@@ -285,7 +285,7 @@ def test_two_overlapping_pushes_are_serialized():
     assert client.sent == [
         (4508, [1]),
         (8022, None),
-        (8005, bytes([1])),
+        (8005, [2]),
         (8022, None),
     ]
     assert coordinator._pending_unit_pushes == set()
@@ -324,7 +324,7 @@ def test_a_change_to_the_same_key_mid_send_is_not_swallowed():
     # The follow-up push (the one _handle_unit_options_change schedules)
     # delivers the newer value and clears the key.
     asyncio.run(coordinator._apply_unit_preferences())
-    assert client.sent[-2:] == [(8005, bytes([2])), (8022, None)]
+    assert client.sent[-2:] == [(8005, [0]), (8022, None)]
     assert coordinator._pending_unit_pushes == set()
 
 
