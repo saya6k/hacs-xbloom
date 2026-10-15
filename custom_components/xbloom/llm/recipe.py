@@ -113,12 +113,12 @@ class XBloomGetRecipeTool(XBloomBaseTool):
     """Return the full configuration of one saved recipe."""
 
     name = "get_xbloom_recipe"
-    title = "Get XBloom recipe"
+    title = "Get xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=False
     )
     description = (
-        "Get the full configuration of one saved XBloom recipe: "
+        "Get the full configuration of one saved xBloom recipe: "
         "grind size, RPM, bean weight, total water, and every pour's "
         "volume, temperature, flow rate, and pour pattern (with 0-based "
         "pour_index). Use this before execute_xbloom_recipe when the user "
@@ -158,12 +158,12 @@ class XBloomListRecipesTool(XBloomBaseTool):
     """List recipes configured for this machine."""
 
     name = "list_xbloom_recipes"
-    title = "List XBloom recipes"
+    title = "List xBloom recipes"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=False
     )
     description = (
-        "List every local XBloom recipe (the source of truth — what the "
+        "List every local xBloom recipe (the source of truth — what the "
         "Recipe dropdown shows), with a short summary of each: local uid, "
         "cup type, bean weight, total water, number of pours, and any "
         "cloud id / share URL if the recipe has been imported/exported."
@@ -218,12 +218,12 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
     """Execute a saved recipe by name, after the user confirms beans are loaded."""
 
     name = "execute_xbloom_recipe"
-    title = "Execute XBloom recipe"
+    title = "Execute xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Execute a saved XBloom recipe. Any top-level scalar (grind_size, "
+        "Execute a saved xBloom recipe. Any top-level scalar (grind_size, "
         "rpm, dose_g, ratio, cup_type, bypass) can be overridden for this "
         "brew only — the stored recipe is unchanged, and a dose/ratio "
         "override rescales the pour volumes proportionally. SAFETY: before calling this "
@@ -453,7 +453,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),
@@ -476,7 +476,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     "success": False,
                     "error": "water_low",
                     "instruction": (
-                        "Do NOT start the recipe. Tell the user the XBloom's "
+                        "Do NOT start the recipe. Tell the user the xBloom's "
                         "water tank is low and ask them to refill it before "
                         "brewing. Do not retry until they confirm it's refilled."
                     ),

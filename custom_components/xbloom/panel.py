@@ -32,7 +32,7 @@ from .stores import STORE_REGIONS, STORES, effective_region, region_for_country
 
 PANEL_URL_PATH = "xbloom"
 PANEL_ICON = "mdi:coffee-maker"
-PANEL_TITLE = "XBloom"
+PANEL_TITLE = "xBloom"
 _WEBCOMPONENT = "xbloom-panel"
 _STATIC_URL = "/xbloom_static"
 _FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -147,7 +147,7 @@ def ws_set_store_region(
     """Save which XBloom web store the panel's shop links open."""
     entry = hass.config_entries.async_get_entry(msg["entry_id"])
     if entry is None or entry.domain != DOMAIN:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        connection.send_error(msg["id"], "not_found", "No xBloom machine with that entry id.")
         return
     options = {k: v for k, v in entry.options.items() if k != CONF_STORE_REGION}
     if msg["region"] != "auto":
@@ -183,7 +183,7 @@ def ws_pods(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg
     """The machine's pod library — every pod scanned, newest first."""
     coordinator = _coordinator(hass, msg["entry_id"])
     if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        connection.send_error(msg["id"], "not_found", "No xBloom machine with that entry id.")
         return
     connection.send_result(msg["id"], {"pods": coordinator.pod_library.pods()})
 
@@ -250,7 +250,7 @@ async def ws_pod_delete(
     """Forget a pod (its saved recipes, if any, stay)."""
     coordinator = _coordinator(hass, msg["entry_id"])
     if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        connection.send_error(msg["id"], "not_found", "No xBloom machine with that entry id.")
         return
     connection.send_result(
         msg["id"], {"deleted": await coordinator.pod_library.async_delete(msg["xid"])}
@@ -271,7 +271,7 @@ async def ws_cloud_detail(
     """A hub recipe's detail page, plus the store link for an official one."""
     coordinator = _coordinator(hass, msg["entry_id"])
     if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        connection.send_error(msg["id"], "not_found", "No xBloom machine with that entry id.")
         return
     client = coordinator.cloud_client
     detail = await client.fetch_collective_detail(msg["community_recipe_id"])
@@ -313,7 +313,7 @@ async def ws_cloud_search(
     """
     data = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
     if not isinstance(data, dict) or DATA_COORDINATOR not in data:
-        connection.send_error(msg["id"], "not_found", "No XBloom machine with that entry id.")
+        connection.send_error(msg["id"], "not_found", "No xBloom machine with that entry id.")
         return
     result = await data[DATA_COORDINATOR].async_search_collective_recipes(
         keyword=msg.get("keyword") or None,

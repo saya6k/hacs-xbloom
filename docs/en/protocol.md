@@ -1,6 +1,6 @@
-# XBloom Studio BLE protocol reference
+# xBloom Studio BLE protocol reference
 
-> **This document covers XBloom Studio (BLE) only.** XBloom Original is a
+> **This document covers xBloom Studio (BLE) only.** xBloom Original is a
 > different machine on a Wi-Fi + cloud IoT protocol with no BLE control path —
 > see [`protocol-original-j20.md`](./protocol-original-j20.md) for that
 > (decompile-only, unverified) map.

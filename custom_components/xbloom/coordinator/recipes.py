@@ -222,7 +222,7 @@ class RecipesMixin:
             "water_level_ok", True
         ):
             raise HomeAssistantError(
-                "XBloom water level is too low — refill the tank before brewing."
+                "xBloom water level is too low — refill the tank before brewing."
             )
         if not self.selected_recipe or self.selected_recipe not in self.recipes:
             _LOGGER.warning("No valid recipe selected (%s)", self.selected_recipe)
@@ -238,7 +238,7 @@ class RecipesMixin:
             self.data.get("version"), MIN_FIRMWARE_TEA
         ):
             raise HomeAssistantError(
-                f"Tea recipes require XBloom firmware {MIN_FIRMWARE_TEA} or newer "
+                f"Tea recipes require xBloom firmware {MIN_FIRMWARE_TEA} or newer "
                 f"(current: {self.data.get('version') or 'unknown'})."
             )
         raw = self.recipes[self.selected_recipe]
@@ -518,7 +518,7 @@ class RecipesMixin:
             return {
                 "success": False,
                 "error": "not_connected",
-                "message": "The XBloom is not connected over Bluetooth.",
+                "message": "The xBloom is not connected over Bluetooth.",
             }
 
         # Auto/Easy Mode (cmd 11510/11511/11512) doesn't exist on firmware
@@ -529,7 +529,7 @@ class RecipesMixin:
                 "success": False,
                 "error": "firmware_too_old",
                 "message": (
-                    f"Easy Mode requires XBloom firmware {MIN_FIRMWARE_EASY_MODE} "
+                    f"Easy Mode requires xBloom firmware {MIN_FIRMWARE_EASY_MODE} "
                     f"or newer (current: {self.data.get('version') or 'unknown'})."
                 ),
             }
@@ -675,7 +675,7 @@ class RecipesMixin:
                 "error": "fetch_failed",
                 "message": (
                     "Could not fetch that recipe — check the share URL/id, "
-                    "or the XBloom cloud API may be unreachable."
+                    "or the xBloom cloud API may be unreachable."
                 ),
             }
         try:
@@ -1174,7 +1174,7 @@ class RecipesMixin:
             return {
                 "success": False,
                 "error": "search_failed",
-                "message": "Could not search the XBloom collective recipe hub.",
+                "message": "Could not search the xBloom collective recipe hub.",
             }
         return {"success": True, **result}
 
@@ -1208,7 +1208,7 @@ class RecipesMixin:
             warning = (
                 "This recipe has bypass enabled; the cloud API's bypass-ON "
                 "payload requirements are unverified, so the exported copy "
-                "may be rejected or altered by XBloom's servers."
+                "may be rejected or altered by xBloom's servers."
             )
 
         if not self.cloud_login_configured:
@@ -1245,7 +1245,7 @@ class RecipesMixin:
                 "success": False,
                 "error": "login_failed",
                 "message": (
-                    "Could not log in to the XBloom cloud account — check "
+                    "Could not log in to the xBloom cloud account — check "
                     "the configured email/password."
                 ),
             }
@@ -1270,7 +1270,7 @@ class RecipesMixin:
                         "success": False,
                         "error": "export_failed",
                         "message": (
-                            "Could not update the recipe on the XBloom "
+                            "Could not update the recipe on the xBloom "
                             "cloud account."
                         ),
                     }
@@ -1286,7 +1286,7 @@ class RecipesMixin:
                     "success": False,
                     "error": "export_failed",
                     "message": (
-                        "Could not create the recipe on the XBloom cloud "
+                        "Could not create the recipe on the xBloom cloud "
                         "account."
                     ),
                 }

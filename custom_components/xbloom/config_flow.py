@@ -230,7 +230,7 @@ class XBloomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data[CONF_EMAIL] = email
                     data[CONF_PASSWORD] = password
                 return self.async_create_entry(
-                    title=f"XBloom ({self._mac_step_data[CONF_MAC_ADDRESS]})",
+                    title=f"xBloom ({self._mac_step_data[CONF_MAC_ADDRESS]})",
                     data=data,
                 )
 

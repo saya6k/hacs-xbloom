@@ -30,12 +30,12 @@ class XBloomPourTool(XBloomBaseTool):
     """Start a manual pour with the requested temperature and volume."""
 
     name = "pour_xbloom"
-    title = "Pour XBloom"
+    title = "Pour xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Pour water from the XBloom with a custom temperature and volume. "
+        "Pour water from the xBloom with a custom temperature and volume. "
         "This is a manual pour — it does NOT grind beans. Temperature is in "
         "degrees Celsius (40–95) or set boiling=true for the boiling-point "
         "mode (used for tea or descaling). Volume is in milliliters. "
@@ -128,7 +128,7 @@ class XBloomPourTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

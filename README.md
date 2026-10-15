@@ -1,4 +1,4 @@
-# XBloom Coffee Machine — Home Assistant Integration
+# xBloom Coffee Machine — Home Assistant Integration
 
 > Requires Home Assistant **2026.10.0b0 or later**. LLM tools return `llm.ToolResult`, preserving existing response fields in `data`.
 
@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/saya6k)
 
-Local Bluetooth control of an [XBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
+Local Bluetooth control of an [xBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
 
 Built on the protocol work of two reverse-engineered BLE upstreams. The BLE client here is a **clean-room native implementation** ([`custom_components/xbloom/ble/`](custom_components/xbloom/ble/), see [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md)) — it does not import or copy either upstream. Both were formerly vendored under `custom_components/xbloom/src/` as unmodified reference copies and have since been removed; they are credited by link only:
 
@@ -22,16 +22,16 @@ This integration's own protocol reference now lives in [`docs/en/protocol.md`](d
 
 ## Features
 
-- **Local recipes are the source of truth** — every recipe gets a stable local `uid` and lives in HA; that's what the Recipe dropdown shows and brews. Seeded once at install (from your cloud account if linked, else XBloom's official public recipes), then no background sync — manage it from the HA UI, the recipe services, or `configuration.yaml`.
+- **Local recipes are the source of truth** — every recipe gets a stable local `uid` and lives in HA; that's what the Recipe dropdown shows and brews. Seeded once at install (from your cloud account if linked, else xBloom's official public recipes), then no background sync — manage it from the HA UI, the recipe services, or `configuration.yaml`.
 - **Cross-identifier addressing** — every service/tool takes one `recipe` field: local uid, cloud table id, share URL/id, or exact name.
 - **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
 - **Per-brew overrides** — brew a recipe with adjusted grind, RPM, dose, ratio, cup type, or bypass without editing it (dose/ratio rescales the pours proportionally); selecting a recipe also syncs the Grind Size / RPM sliders to it.
 - **Tea recipes** (`cup_type: tea`) — each steep is a pour with `pausing` = soak seconds; the firmware handles pour → soak → siphon-drain internally.
 - **Easy Mode slot writing** — push any recipe to onboard slot A/B/C via the slot buttons or the `write_recipe_to_easy_slot` service (auto-imports a share URL that isn't local yet); read-only sensor entities show what's stored in each slot.
-- **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse XBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export.
+- **Cloud as an import/export boundary** — pull a shared recipe in (`cloud_import_recipe`, no account needed), push a local one out for a share link (`cloud_export_recipe`), or browse xBloom's public community hub (`cloud_search_collective_recipes`). An account is optional, only needed for export.
 - **Live telemetry** — brewer temperature, scale weight, water-level state, current brew step.
 - **Event entities** — errors (water shortage, no beans, abnormal dose/gear) and notifications (grinding/brewing/pour/bloom/pause/complete/tea soaking).
-- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to voice/chat agents through the opt-in XBloom LLM API (see [Assist / LLM tools](#assist--llm-tools)) with safety confirmations (beans, dripper, filter, cup-on-scale, delete) — skipped entirely for no-grind recipes (e.g. a water-only pour).
+- **LLM API** — status, recipe CRUD, brewing, slot writing, import/export, and hub search exposed to voice/chat agents through the opt-in xBloom LLM API (see [Assist / LLM tools](#assist--llm-tools)) with safety confirmations (beans, dripper, filter, cup-on-scale, delete) — skipped entirely for no-grind recipes (e.g. a water-only pour).
 - **Korean and English** UI translations.
 
 ## Installation (HACS)
@@ -43,10 +43,10 @@ This integration's own protocol reference now lives in [`docs/en/protocol.md`](d
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=saya6k&repository=hacs-xbloom&category=integration)
 
 1. In HACS → Integrations → ⋮ → **Custom repositories**, add this repo URL with category **Integration**.
-2. Install **XBloom Coffee Machine**.
+2. Install **xBloom Coffee Machine**.
 3. Restart Home Assistant.
-4. Settings → Devices & Services → **Add integration** → search "XBloom".
-5. Enter the device's BLE MAC address (`xbloom scan` from a terminal, or check XBloom Studio).
+4. Settings → Devices & Services → **Add integration** → search "xBloom".
+5. Enter the device's BLE MAC address (`xbloom scan` from a terminal, or check xBloom Studio).
 
 ## Manual installation
 
@@ -55,7 +55,7 @@ Copy `custom_components/xbloom/` into your HA config's `custom_components/` fold
 ## Configuration
 
 The config flow handles MAC + telemetry interval + idle disconnect timeout. The
-Settings step (Settings → Devices & Services → XBloom → **Configure** →
+Settings step (Settings → Devices & Services → xBloom → **Configure** →
 **Settings**) also sets the machine's *own* onboard display units — weight
 (g/oz/ml) and temperature (°C/°F) — pushed to the machine on every reconnect.
 This is separate from what HA itself shows for the weight/temperature
@@ -63,13 +63,13 @@ sensors, which already follows your HA profile's unit system automatically.
 
 On first install the recipe store is seeded **once**: a small bundled set is
 written immediately (so the dropdown is never empty), then a background task
-fetches your XBloom cloud account's recipes (if linked) or XBloom's official
+fetches your xBloom cloud account's recipes (if linked) or xBloom's official
 public recipes otherwise, skipping any name that already exists. A failed
 fetch (e.g. no internet at first boot) retries on the next restart. Linking
 an account **later** seeds its recipes once at that point. No background sync
 after that — the local store is yours.
 
-Manage recipes from the HA UI (Settings → Devices & Services → XBloom →
+Manage recipes from the HA UI (Settings → Devices & Services → xBloom →
 **Configure** → Add / Edit / Delete a recipe) or via the services below.
 Deleting is local-only and immediate; a copy on your cloud account is never
 touched.
@@ -110,9 +110,9 @@ For tea recipes, each pour represents one steep cycle: `volume_ml` is the steep 
 
 The LLM tools are **opt-in per conversation agent**: in your agent's settings
 (Settings → Voice assistants → *your assistant* → conversation agent options)
-enable the **"XBloom Coffee Machine (MAC)"** API under the LLM API selection.
+enable the **"xBloom Coffee Machine (MAC)"** API under the LLM API selection.
 The tools never ride along in the plain Assist API — an agent without the
-XBloom API selected sees none of them, and the tool code isn't even loaded
+xBloom API selected sees none of them, and the tool code isn't even loaded
 until the API is first used. One API is registered per machine, so
 multi-machine households pick per agent.
 
@@ -158,8 +158,8 @@ service takes a `recipe`, it accepts the recipe's local **uid**, **cloud table i
 | `execute_recipe` | Brew a recipe, with optional per-brew scalar overrides (see above). |
 | `write_recipe_to_easy_slot` | Store a recipe on onboard Easy Mode slot A/B/C. A share URL that isn't local yet is auto-imported first. |
 | `cloud_import_recipe` | Fetch a recipe from a `share-h5.xbloom.com` link, a `collective.xbloom.com/recipe/{id}` community-hub link, or a share id, and save it locally (with a new uid). No account needed. |
-| `cloud_export_recipe` | Push a local recipe to **your** XBloom cloud account and return its cloud `id`, share `link`, and the recipe. Re-exporting the same recipe updates the same cloud entry (the link stays stable). Without an account configured, nothing is uploaded and only the recipe is returned. |
-| `cloud_search_collective_recipes` | Search XBloom's **public** community recipe hub (collective.xbloom.com) — no account needed. Filter by keyword, coffee/tea, official/user, and multi-select machine / cup type / origin / varietal / process / roast / flavor facets, with sorting. |
+| `cloud_export_recipe` | Push a local recipe to **your** xBloom cloud account and return its cloud `id`, share `link`, and the recipe. Re-exporting the same recipe updates the same cloud entry (the link stays stable). Without an account configured, nothing is uploaded and only the recipe is returned. |
+| `cloud_search_collective_recipes` | Search xBloom's **public** community recipe hub (collective.xbloom.com) — no account needed. Filter by keyword, coffee/tea, official/user, and multi-select machine / cup type / origin / varietal / process / roast / flavor facets, with sorting. |
 
 ```yaml
 service: xbloom.cloud_import_recipe
@@ -168,16 +168,16 @@ data:
 ```
 
 The collective-search facet dropdowns are a snapshot of the hub's category codes.
-If XBloom adds a category the dropdown doesn't know yet, type its numeric code
+If xBloom adds a category the dropdown doesn't know yet, type its numeric code
 directly (the fields accept custom values) — and please [open an
 issue](https://github.com/saya6k/hacs-xbloom/issues) with the code so it can be added
 to the snapshot and translated in the next release.
 
 **Cloud account (optional)** — only `cloud_export_recipe` needs one. Enter your
-XBloom app email/password in the config flow's "XBloom Cloud Account" step during
+xBloom app email/password in the config flow's "xBloom Cloud Account" step during
 initial setup, or add/update/remove it later via Settings → Devices & Services →
-XBloom → **Configure** → **Cloud account**. Signed in with Apple and have no XBloom
-password? Use XBloom's own "forgot password" flow (with the email Apple relays,
+xBloom → **Configure** → **Cloud account**. Signed in with Apple and have no xBloom
+password? Use xBloom's own "forgot password" flow (with the email Apple relays,
 visible in the app's account settings) to set one first.
 
 Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes`,
@@ -201,7 +201,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
   Recipes you delete stay deleted; recipes you edit are yours, with no synced
   original behind them.
 
-## Grind size reference (XBloom Studio scale, 0–80)
+## Grind size reference (xBloom Studio scale, 0–80)
 
 | Brew method            | Range  |
 | ---------------------- | ------ |
@@ -221,7 +221,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 ## Known limitations
 
-- **XBloom Original is not supported**: this integration only talks to XBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
+- **xBloom Original is not supported**: this integration only talks to xBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
 - **MachineInfo on some firmwares**: certain firmware revisions never push `RD_MachineInfo`, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection on those firmwares.
 - **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `execute_xbloom_recipe` tool asks for explicit confirmation when this happens.
 - **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed); recipe execution does not — the firmware runs its own pour sequence internally.

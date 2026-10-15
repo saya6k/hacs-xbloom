@@ -23,12 +23,12 @@ class XBloomGrindTool(XBloomBaseTool):
     """Start a manual grind with the requested grind size and RPM."""
 
     name = "grind_xbloom"
-    title = "Grind XBloom"
+    title = "Grind xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Grind beans on the XBloom with a custom grind size and RPM. This "
+        "Grind beans on the xBloom with a custom grind size and RPM. This "
         "is a manual grind — it does NOT pour water. Two-phase flow: the "
         "first call (without confirmed) ARMS the machine — it opens its "
         "grind page showing the requested settings without starting — and "
@@ -43,7 +43,7 @@ class XBloomGrindTool(XBloomBaseTool):
             vol.Optional(
                 "grind_size",
                 description=(
-                    f"Grind size on the XBloom Studio scale "
+                    f"Grind size on the xBloom Studio scale "
                     f"({GRIND_SIZE_MIN}=finest–{GRIND_SIZE_MAX}=coarsest). "
                     "Defaults to the machine's current setting — see "
                     "execute_xbloom_recipe's GRIND SIZE REFERENCE for "
@@ -91,7 +91,7 @@ class XBloomGrindTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

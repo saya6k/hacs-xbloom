@@ -376,7 +376,7 @@ def validate_pour_volume_consistency(recipe: dict) -> str | None:
         return (
             f"pour volumes ({pour_sum:g} ml) + bypass_volume "
             f"({bypass_volume:g} ml) = {combined:g} ml, but dose_g * ratio "
-            f"= {total_water:g} ml — the XBloom cloud API requires these "
+            f"= {total_water:g} ml — the xBloom cloud API requires these"
             "to match. Adjust the pours, bypass_volume, dose_g, or ratio "
             "so they add up."
         )

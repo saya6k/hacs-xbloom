@@ -17,12 +17,12 @@ class XBloomCancelTool(XBloomBaseTool):
     """Back out of an armed grind/pour/recipe, or stop a running one."""
 
     name = "cancel_xbloom"
-    title = "Cancel XBloom"
+    title = "Cancel xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=True, open_world=True
     )
     description = (
-        "Cancel whatever the XBloom is doing: back out of an armed "
+        "Cancel whatever the xBloom is doing: back out of an armed "
         "(waiting-to-confirm) grind, pour, or recipe — for example when "
         "the user declines a confirmation after grind_xbloom or "
         "pour_xbloom armed the machine — or stop a grind, pour, or brew "

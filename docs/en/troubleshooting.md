@@ -1,6 +1,6 @@
 # Troubleshooting
 
-The official XBloom troubleshooting guidance, mapped to this integration's
+The official xBloom troubleshooting guidance, mapped to this integration's
 error event types. The `event.error` entity fires one of the types below
 when the machine reports an alarm over BLE (cmd `0xFFFE` — see
 [protocol.md](protocol.md)'s command table); each event carries the raw

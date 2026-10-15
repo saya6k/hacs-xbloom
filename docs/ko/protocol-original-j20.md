@@ -1,4 +1,4 @@
-# XBloom Original (J20) 클라우드 프로토콜 레퍼런스
+# xBloom Original (J20) 클라우드 프로토콜 레퍼런스
 
 > 이 페이지는 [`en/protocol-original-j20.md`](../en/protocol-original-j20.md)의
 > 번역본입니다. 영문판이 source of truth이며, 한글본은 뒤늦게 동기화될 수
@@ -6,7 +6,7 @@
 > (`xbloom_coffee_release.apk`, 패키지 `com.chisalsoft.andite`)을 `jadx`로
 > 정적 디컴파일한 결과(zip/dex/소스 덤프로만 확인 — 배포·재배포된 적 없음)를
 > 바탕으로 작성되었습니다. **[`protocol.md`](./protocol.md)(Studio BLE)와 달리,
-> 여기 내용은 실기로 검증된 것이 하나도 없습니다** — 이 통합은 XBloom Original
+> 여기 내용은 실기로 검증된 것이 하나도 없습니다** — 이 통합은 xBloom Original
 > 기기가 없고, Original은 이 통합의 범위 밖이므로
 > Original은 범위 밖입니다. 이 문서는 나중에 Original 하드웨어를 가진
 > 기여자가 출발점으로 쓸 수 있도록 남기는 디컴파일 기반 지도이지, 이 통합이
@@ -33,7 +33,7 @@ brew/grind/pour 명령 경로가 아예 없습니다** — 이 통합의 BLE 스
 
 ## 아키텍처: Wi-Fi + AWS IoT thing shadow
 
-Original은 직접 제어가 아니라 XBloom 클라우드를 통해 제어되는 Wi-Fi
+Original은 직접 제어가 아니라 xBloom 클라우드를 통해 제어되는 Wi-Fi
 가전입니다. 전형적인 AWS IoT **thing shadow**(디바이스 섀도우) 패턴입니다:
 
 1. 앱은 기기에 brew/grind 명령을 직접 보내지 않습니다. **원하는 상태(desired

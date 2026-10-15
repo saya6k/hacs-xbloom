@@ -17,12 +17,12 @@ class XBloomTareScaleTool(XBloomBaseTool):
     """Zero the XBloom scale."""
 
     name = "tare_xbloom_scale"
-    title = "Tare XBloom scale"
+    title = "Tare xBloom scale"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=True, open_world=True
     )
     description = (
-        "Zero (tare) the XBloom built-in scale. Use this when the user asks "
+        "Zero (tare) the xBloom built-in scale. Use this when the user asks "
         "to tare, zero, or reset the scale, or after they've placed a cup or "
         "dripper and want the reading to start at 0 g. The action is instant "
         "and has no parameters."
@@ -48,7 +48,7 @@ class XBloomTareScaleTool(XBloomBaseTool):
                         "success": False,
                         "error": "connect_failed",
                         "instruction": (
-                            "Tell the user the XBloom could not be reached over "
+                            "Tell the user the xBloom could not be reached over "
                             "Bluetooth. Ask them to check the machine is powered "
                             "on and in range."
                         ),

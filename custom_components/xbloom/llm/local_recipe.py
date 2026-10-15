@@ -64,15 +64,15 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
     """Create a new local recipe from scratch."""
 
     name = "create_xbloom_recipe"
-    title = "Create XBloom recipe"
+    title = "Create xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=False, open_world=False
     )
     description = (
-        "Create a new local XBloom recipe from scratch. It appears in the "
+        "Create a new local xBloom recipe from scratch. It appears in the "
         "Recipe dropdown immediately and gets a local uid (returned). "
         "Nothing is uploaded — use export_xbloom_recipe afterwards if the "
-        "user wants it on their XBloom cloud account / a share link."
+        "user wants it on their xBloom cloud account / a share link."
     )
     parameters = vol.Schema(
         {
@@ -113,12 +113,12 @@ class XBloomEditRecipeTool(XBloomBaseTool):
     """Change one or more fields of a local recipe."""
 
     name = "edit_xbloom_recipe"
-    title = "Edit XBloom recipe"
+    title = "Edit xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Change one or more fields of a local XBloom recipe. Only pass the "
+        "Change one or more fields of a local xBloom recipe. Only pass the "
         "fields the user wants changed — every omitted field keeps its "
         "current value. To replace the pours, pass the FULL new pour list. "
         "Cloud recipes are never edited directly: pointing this at a share "
@@ -174,13 +174,13 @@ class XBloomDeleteRecipeTool(XBloomBaseTool):
     """Delete a local recipe (cloud copies are untouched)."""
 
     name = "delete_xbloom_recipe"
-    title = "Delete XBloom recipe"
+    title = "Delete xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=True, open_world=False
     )
     description = (
-        "Delete a local XBloom recipe — it disappears from the Recipe "
-        "dropdown immediately. A copy on the user's XBloom cloud account "
+        "Delete a local xBloom recipe — it disappears from the Recipe "
+        "dropdown immediately. A copy on the user's xBloom cloud account "
         "(if any) is NOT touched; cloud copies are managed from the "
         "official app. SAFETY: before calling this tool with "
         "confirmed=true you MUST ask the user to confirm they want to "
@@ -230,7 +230,7 @@ class XBloomDeleteRecipeTool(XBloomBaseTool):
                 "recipe_name": result["name"],
                 "instruction": (
                     "Confirm to the user that the local recipe was deleted. If "
-                    "it also exists on their XBloom cloud account, mention that "
+                    "it also exists on their xBloom cloud account, mention that "
                     "copy is untouched."
                 ),
             }
