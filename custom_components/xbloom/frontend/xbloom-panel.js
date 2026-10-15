@@ -1761,16 +1761,17 @@ class XBloomPanel extends HTMLElement {
   // The scale reading in the unit the machine's own screen uses (g/oz/ml —
   // its display-unit setting); the sensor itself is grams. For water,
   // 1 g ≈ 1 ml, which is what the machine shows in ml mode. A running
-  // recipe follows the app's brew screen instead (AutoActivity's
-  // weightUnit()): ml mode reads in g there, only oz is converted.
+  // recipe and the grind page follow the app's AutoActivity/GrinderActivity
+  // instead (weightUnit()): ml mode reads in g there, only oz is converted.
   _weightLabel(brewing = false) {
     const st = this._st("sensor.weight");
     const v = Number(st?.state);
     if (!st || !Number.isFinite(v)) return null;
     const grams = v * (GRAMS_PER[st.attributes.unit_of_measurement] ?? 1);
+    const grinding = ["standalone_grind", "grinding"].includes(this._val("sensor.state"));
     switch (this._machine?.weight_unit) {
       case "ml":
-        return `${num(grams, 1)} ${brewing ? "g" : "ml"}`;
+        return `${num(grams, 1)} ${brewing || grinding ? "g" : "ml"}`;
       case "oz":
         return `${(grams / GRAMS_PER.oz).toFixed(2)} oz`;
       default:
