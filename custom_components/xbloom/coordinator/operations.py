@@ -53,7 +53,7 @@ _STOP_TO_QUIT_SETTLE_S = 1.0
 # Settle delay between 8007 ("enter pour page") and the entry push of HA's
 # temperature/pattern (4510/8016) in async_arm_pour — the machine needs to
 # finish its screen transition first (the 8007→4506 no-gap race is exactly
-# what broke manual pour once; see async_pour's docstring). Value borrowed
+# what broke manual pour once, 2026-07-18). Value borrowed
 # from GrinderController.start()'s analogous enter→2.0s→start sequence;
 # tune on hardware if the pushes ever land before the page opens.
 _POUR_ARM_SETTLE_S = 2.0
@@ -69,54 +69,37 @@ class OperationsMixin:
     """Manual pour/grind/tare and pause/resume/cancel, state-aware."""
 
     async def async_pour(self) -> None:
-        """Start a manual pour with current slider values.
+        """Start a manual pour with current slider values, in one call.
 
-        The actual start send is wrapped in ``_async_retry_while_sleeping``
-        (2026-07-18, hardware-reported): a pour started while the machine
-        was asleep silently did nothing, since nothing resent it — see
-        that method's docstring.
+        Runs the two-stage flow back to back — ``async_arm_pour()`` (8007,
+        settle, 4510/8016 entry push), a ``_POUR_ARM_PUSH_GAP_S`` gap, then
+        ``async_confirm_pour()`` (4506) — so a one-shot pour sends the same
+        sequence as the button and the official app, which only ever sends
+        4506 from its pour page (jadx 2026-10-24, ``BrewerActivity``).
 
-        Sends bare 4506 (BREWER_START) only — no 8007 (RD_BREWER_IN)
-        prelude. Hardware-reported 2026-07-18: standalone manual pour left
-        the machine sitting on its own pour-page screen needing a manual
-        tap to actually start, instead of pouring immediately. Root cause:
-        8007 ("enter pour page") and 4506 were being sent back-to-back with
-        no delay between them — unlike GrinderController.start()'s own
-        analogous enter_mode() → 2.0s sleep → GRINDER_START sequence for
-        the identical "enter mode, let the machine transition, then start"
-        shape, 4506 here had nothing giving the machine time to actually
-        finish switching into the pour page before the start command
-        arrived, and it was apparently getting dropped mid-transition. The
-        8007 send was already documented as "not functionally required,
-        4506 alone is hardware-confirmed sufficient" when added purely for
-        app parity — removed rather than given an untested delay value,
-        since the bare-4506 behavior it reverts to was the one actually
-        confirmed working.
+        This used to send a bare 4506 from wherever the machine was. That
+        poured, but whether the firmware's own volume stop applies off the
+        pour page was never verified, and a one-shot pour was reported
+        running past its volume (2026-10-24). The bare send itself dated
+        from 2026-07-18, when 8007 and 4506 went out back to back with no
+        gap and 4506 was dropped mid screen transition; the arm's settle
+        delay and the gap before confirm cover that race. The gap matters
+        because 8016 is the arm's last send, and two sends 1ms apart drop
+        the second one (hardware 2026-07-20).
         """
-        if not await self._async_ensure_connected():
-            return
-        try:
-            self._active_operation = "manual_pour"
-            await self._async_retry_while_sleeping(
-                lambda: self.client.brewer.start(
-                    volume=float(self.volume),
-                    temperature=self._wire_temperature(),
-                    flow_rate=self.flow_rate,
-                    water_source=self.water_source,
-                    pattern=self.pour_pattern,
-                )
-            )
-        except Exception as exc:
-            _LOGGER.error("Pour error: %s", exc)
+        await self.async_arm_pour()
+        if self._armed_operation != "pour":
+            return  # arm already logged why
+        await asyncio.sleep(_POUR_ARM_PUSH_GAP_S)
+        await self.async_confirm_pour()
 
     async def async_arm_pour(self) -> None:
         """First press of the two-stage manual-pour button flow
         (2026-07-18, HA button entity only — see ``_armed_operation``'s
         docstring in ``__init__.py``): sends ``RD_BREWER_IN`` (8007,
-        "enter pour page") without starting the pour. Unlike the old
-        removed 8007 prelude (see ``async_pour``'s docstring), this is
-        safe: the real gap until the user presses confirm replaces the
-        missing delay that caused the original regression.
+        "enter pour page") without starting the pour. The settle delay
+        below and the gap before confirm keep 4506 out of the 8007 screen
+        transition that once dropped it (see ``async_pour``'s docstring).
         ``async_confirm_pour()`` sends the actual start command (with
         current slider values) on a second press of the same button.
 

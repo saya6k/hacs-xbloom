@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A one-shot manual pour (the `pour_xbloom` tool with `confirmed=true` and no prior arm) now opens the machine's pour page before starting, like the pour button and the official app, instead of sending the start command from wherever the machine is.
 - Require Home Assistant 2026.10.0b0 or later.
 - Build the machine's device info without dict-style item assignment, ready for Home Assistant 2026.11's dataclass `DeviceInfo`.
 - Migrate LLM tools to ToolResult with explicit failure flags and tool metadata, preserving existing response payloads.
