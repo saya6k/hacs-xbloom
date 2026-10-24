@@ -368,15 +368,16 @@ class XBloomCoordinator(
         data = self.data or {}
         serial = data.get("serial_number") or self.mac_address
         version = data.get("version") or None
-        info = DeviceInfo(
+        # Pass sw_version only when known: item assignment is the deprecated
+        # dict-style DeviceInfo API, and sw_version=None would clear the field.
+        extra = {"sw_version": version} if version else {}
+        return DeviceInfo(
             identifiers={(DOMAIN, self.entry_id)},
             name="xBloom Coffee Machine",
             manufacturer="xBloom",
             serial_number=serial,
+            **extra,
         )
-        if version:
-            info["sw_version"] = version
-        return info
 
     def _sub_device_info(self, key: str) -> ChildDeviceInfo:
         """Child device info for a logical machine component.
