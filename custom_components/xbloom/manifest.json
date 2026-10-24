@@ -6,6 +6,9 @@
       "service_uuid": "0000e0ff-3c17-d293-8e48-14fe2e4da212"
     }
   ],
+  "categories": [
+    "appliances_cleaning.cooking"
+  ],
   "codeowners": [
     "@saya6k"
   ],
