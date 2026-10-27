@@ -1,4 +1,4 @@
-"""Tool: write_xbloom_easy_slot — push a recipe to onboard slot A/B/C."""
+"""Tool: xbloom__write_easy_slot — push a recipe to onboard slot A/B/C."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
     from the machine without opening Home Assistant or the app.
     """
 
-    name = "write_xbloom_easy_slot"
+    name = "xbloom__write_easy_slot"
     title = "Write xBloom easy slot"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -36,7 +36,7 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
         "Home Assistant. This action does NOT brew anything — it only "
         "stores the recipe on the machine. Existing slot contents are "
         "overwritten. A share URL that isn't a local recipe yet is "
-        "imported first (it also lands in list_xbloom_recipes)."
+        "imported first (it also lands in xbloom__list_recipes)."
     )
     parameters = vol.Schema(
         {
@@ -49,7 +49,7 @@ class XBloomWriteEasySlotTool(XBloomBaseTool):
                 description=(
                     "Which recipe to store — its local uid, cloud table "
                     "id, share URL/id, or exact name (from "
-                    "list_xbloom_recipes)."
+                    "xbloom__list_recipes)."
                 ),
             ): str,
         }

@@ -1,4 +1,4 @@
-"""Tool: get_xbloom_status — read current machine state."""
+"""Tool: xbloom__get_status — read current machine state."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 class XBloomStatusTool(XBloomBaseTool):
     """Return the current state of the XBloom machine."""
 
-    name = "get_xbloom_status"
+    name = "xbloom__get_status"
     title = "Get xBloom status"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=True

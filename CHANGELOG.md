@@ -5,6 +5,7 @@
 - Require Home Assistant 2026.10.0b0 or later.
 - Build the machine's device info without dict-style item assignment, ready for Home Assistant 2026.11's dataclass `DeviceInfo`.
 - Migrate LLM tools to ToolResult with explicit failure flags and tool metadata, preserving existing response payloads.
+- **Breaking:** rename every LLM tool to Home Assistant's `<domain>__` tool name convention, dropping the now-redundant `xbloom` from each name: e.g. `get_xbloom_status` → `xbloom__get_status`, `pour_xbloom` → `xbloom__pour`, `execute_xbloom_recipe` → `xbloom__execute_recipe`. Update any conversation prompt that names the old tools.
 - `pod_detected` now carries the pod / recipe card's bean info and recipes, looked up from XBloom's cloud by the tag id (no account needed).
 - Cloud recipe import no longer carries bypass volume/temperature from a recipe whose bypass is switched off.
 - The state sensor now reports `sleeping` while the machine is asleep (it sleeps ~10 min after the last activity, even while connected), and returns to its real state when a pod insert or a button press wakes it. A sleeping machine no longer counts as activity for the idle disconnect timeout.

@@ -1,4 +1,4 @@
-"""Tool: tare_xbloom_scale — zero the scale (cmd 8500)."""
+"""Tool: xbloom__tare_scale — zero the scale (cmd 8500)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 class XBloomTareScaleTool(XBloomBaseTool):
     """Zero the XBloom scale."""
 
-    name = "tare_xbloom_scale"
+    name = "xbloom__tare_scale"
     title = "Tare xBloom scale"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=True, open_world=True
@@ -59,7 +59,7 @@ class XBloomTareScaleTool(XBloomBaseTool):
         try:
             await self.coordinator.async_tare_scale()
         except Exception as exc:
-            _LOGGER.exception("tare_xbloom_scale failed: %s", exc)
+            _LOGGER.exception("xbloom__tare_scale failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,

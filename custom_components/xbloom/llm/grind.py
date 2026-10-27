@@ -1,4 +1,4 @@
-"""Tool: grind_xbloom — manual grind with custom size and RPM."""
+"""Tool: xbloom__grind — manual grind with custom size and RPM."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ RPM_MAX = 120
 class XBloomGrindTool(XBloomBaseTool):
     """Start a manual grind with the requested grind size and RPM."""
 
-    name = "grind_xbloom"
+    name = "xbloom__grind"
     title = "Grind xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -34,8 +34,8 @@ class XBloomGrindTool(XBloomBaseTool):
         "grind page showing the requested settings without starting — and "
         "you must then ask the user to confirm. Call again with "
         "confirmed=true to start the grind; if the user declines, call "
-        "cancel_xbloom to back out. Use pour_xbloom afterwards for a "
-        "manual pour, or execute_xbloom_recipe to grind and pour a full "
+        "xbloom__cancel to back out. Use xbloom__pour afterwards for a "
+        "manual pour, or xbloom__execute_recipe to grind and pour a full "
         "recipe in one call."
     )
     parameters = vol.Schema(
@@ -46,7 +46,7 @@ class XBloomGrindTool(XBloomBaseTool):
                     f"Grind size on the xBloom Studio scale "
                     f"({GRIND_SIZE_MIN}=finest–{GRIND_SIZE_MAX}=coarsest). "
                     "Defaults to the machine's current setting — see "
-                    "execute_xbloom_recipe's GRIND SIZE REFERENCE for "
+                    "xbloom__execute_recipe's GRIND SIZE REFERENCE for "
                     "recommended ranges per brew method."
                 ),
             ): vol.All(vol.Coerce(int), vol.Range(min=GRIND_SIZE_MIN, max=GRIND_SIZE_MAX)),
@@ -120,7 +120,7 @@ class XBloomGrindTool(XBloomBaseTool):
                 # or the arm was cleared machine-side) — one-shot start.
                 await self.coordinator.async_grind()
         except Exception as exc:
-            _LOGGER.exception("grind_xbloom failed: %s", exc)
+            _LOGGER.exception("xbloom__grind failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,
@@ -142,8 +142,8 @@ class XBloomGrindTool(XBloomBaseTool):
                     "instruction": (
                         "The machine is now showing its grind page with these "
                         "settings. Ask the user to confirm starting the grind; "
-                        "if they agree, call grind_xbloom again with "
-                        "confirmed=true. If they decline, call cancel_xbloom."
+                        "if they agree, call xbloom__grind again with "
+                        "confirmed=true. If they decline, call xbloom__cancel."
                     ),
                 }
             )

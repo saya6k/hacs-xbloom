@@ -5,7 +5,7 @@ The first call (confirmed absent/false) ARMS the machine — it enters the
 standalone page with the requested settings, so it is already showing
 what will happen while the agent asks the user to confirm. The second
 call with confirmed=true starts it. Declining routes to the new
-cancel_xbloom tool, which backs out of armed screens.
+xbloom__cancel tool, which backs out of armed screens.
 
 Source-level pins (the llm modules import Home Assistant, unavailable in
 the pure-logic test env) — the same approach as the llm-platform
@@ -50,7 +50,7 @@ def test_pour_boiling_maps_to_the_bp_slider_endpoint():
 
 def test_cancel_tool_exists_and_is_registered():
     src = _src("llm/cancel.py")
-    assert 'name = "cancel_xbloom"' in src
+    assert 'name = "xbloom__cancel"' in src
     assert "async_cancel" in src
     catalog = _src("llm/catalog.py")
     assert "XBloomCancelTool" in catalog
@@ -60,7 +60,7 @@ def test_tool_descriptions_document_the_flow():
     for rel in ("llm/grind.py", "llm/pour.py"):
         src = _src(rel)
         assert "confirmed=true" in src, rel
-        assert "cancel_xbloom" in src, rel
+        assert "xbloom__cancel" in src, rel
 
 
 def test_prompt_mentions_cancel_and_two_phase():
@@ -74,5 +74,5 @@ def test_prompt_mentions_cancel_and_two_phase():
         ):
             prompt = ast.literal_eval(node.value)
     assert prompt is not None
-    assert "cancel_xbloom" in prompt
+    assert "xbloom__cancel" in prompt
     assert "confirmed=true" in prompt

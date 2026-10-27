@@ -1,4 +1,4 @@
-"""Tools: list_xbloom_recipes and execute_xbloom_recipe."""
+"""Tools: xbloom__list_recipes and xbloom__execute_recipe."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 # sits well above this floor.
 CUP_PRESENCE_WEIGHT_G = 20.0
 
-# int → name, for surfacing pour patterns to the LLM in get_xbloom_recipe.
+# int → name, for surfacing pour patterns to the LLM in xbloom__get_recipe.
 _PATTERN_INT_TO_NAME = {v: k for k, v in POUR_PATTERN_OPTIONS.items()}
 
 
@@ -50,7 +50,7 @@ def _summarize_recipe(raw: dict) -> dict:
 
 _RECIPE_ID_DESCRIPTION = (
     "Which recipe — its local uid, cloud table id, share URL/id, or exact "
-    "name (from list_xbloom_recipes)."
+    "name (from xbloom__list_recipes)."
 )
 
 
@@ -76,7 +76,7 @@ def _detail_recipe(raw: dict) -> dict:
     """Full recipe detail, including every pour, for the get tool.
 
     Pour patterns are surfaced as names (center/circular/spiral) but the
-    pour_index in execute_xbloom_recipe's pour_overrides is 0-based to
+    pour_index in xbloom__execute_recipe's pour_overrides is 0-based to
     match the order returned here.
     """
     pours = []
@@ -112,7 +112,7 @@ def _detail_recipe(raw: dict) -> dict:
 class XBloomGetRecipeTool(XBloomBaseTool):
     """Return the full configuration of one saved recipe."""
 
-    name = "get_xbloom_recipe"
+    name = "xbloom__get_recipe"
     title = "Get xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=False
@@ -121,7 +121,7 @@ class XBloomGetRecipeTool(XBloomBaseTool):
         "Get the full configuration of one saved xBloom recipe: "
         "grind size, RPM, bean weight, total water, and every pour's "
         "volume, temperature, flow rate, and pour pattern (with 0-based "
-        "pour_index). Use this before execute_xbloom_recipe when the user "
+        "pour_index). Use this before xbloom__execute_recipe when the user "
         "wants to tweak the grind, RPM, or any individual pour's volume / "
         "flow rate / pattern, so you know the current values and which "
         "pour_index to target."
@@ -147,7 +147,7 @@ class XBloomGetRecipeTool(XBloomBaseTool):
                 "recipe": _detail_recipe(resolved[1]),
                 "instruction": (
                     "Use these values to decide any grind_size / rpm / "
-                    "pour_overrides you pass to execute_xbloom_recipe. Only "
+                    "pour_overrides you pass to xbloom__execute_recipe. Only "
                     "override what the user asked to change."
                 ),
             }
@@ -157,7 +157,7 @@ class XBloomGetRecipeTool(XBloomBaseTool):
 class XBloomListRecipesTool(XBloomBaseTool):
     """List recipes configured for this machine."""
 
-    name = "list_xbloom_recipes"
+    name = "xbloom__list_recipes"
     title = "List xBloom recipes"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=False
@@ -199,8 +199,8 @@ class XBloomListRecipesTool(XBloomBaseTool):
                     "recipes": [],
                     "instruction": (
                         "Tell the user no recipes matched. They can create one "
-                        "with create_xbloom_recipe or import one from a share "
-                        "link with import_xbloom_cloud_recipe."
+                        "with xbloom__create_recipe or import one from a share "
+                        "link with xbloom__import_cloud_recipe."
                     ),
                 }
             )
@@ -217,7 +217,7 @@ class XBloomListRecipesTool(XBloomBaseTool):
 class XBloomExecuteRecipeTool(XBloomBaseTool):
     """Execute a saved recipe by name, after the user confirms beans are loaded."""
 
-    name = "execute_xbloom_recipe"
+    name = "xbloom__execute_recipe"
     title = "Execute xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -233,7 +233,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         "been installed in the dripper (the machine cannot detect the "
         "filter on its own), and (4) that the cup or dripper is on the "
         "scale. Recipes that don't grind (dose_g or grind_size is 0/absent — "
-        "check get_xbloom_recipe first — e.g. a water-only pour) skip the "
+        "check xbloom__get_recipe first — e.g. a water-only pour) skip the "
         "beans/dripper/filter confirmation entirely, since there are no "
         "grounds to add or catch; you can call this tool directly for those "
         "without asking. The tool can usually detect the cup automatically by its "
@@ -348,7 +348,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 description=(
                     "Optional per-pour tweaks for this brew only. A list of "
                     "objects, each with a 0-based pour_index (from "
-                    "get_xbloom_recipe) and any of: volume (30-500 ml), "
+                    "xbloom__get_recipe) and any of: volume (30-500 ml), "
                     "flow_rate (3.0-3.5 ml/s), pattern (center/circular/"
                     "spiral). Only include the pours and fields you want to "
                     "change."
@@ -510,7 +510,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                         f"that the {items} have been added/installed for the "
                         f"'{recipe_name}' recipe. The machine cannot detect the "
                         f"filter on its own, so the user must verify it manually. "
-                        f"Once they confirm, call execute_xbloom_recipe again "
+                        f"Once they confirm, call xbloom__execute_recipe again "
                         f"with {retry_flags}."
                     ),
                 }
@@ -541,7 +541,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                         "machine OR a cup was placed before power-on (the "
                         "machine tares any weight at boot to 0 g). Ask the "
                         "user to confirm the cup or dripper is on the scale. "
-                        "Once they confirm, call execute_xbloom_recipe again "
+                        "Once they confirm, call xbloom__execute_recipe again "
                         "with cup_confirmed=true."
                     ),
                 },
@@ -594,7 +594,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     bypass_temperature=bypass_temperature,
                 )
         except Exception as exc:
-            _LOGGER.exception("execute_xbloom_recipe failed: %s", exc)
+            _LOGGER.exception("xbloom__execute_recipe failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,

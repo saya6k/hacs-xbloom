@@ -113,7 +113,7 @@ class XBloomFlowRateSensor(_XBloomSensor):
     "the" flow rate. During recipe execution this tracks the active
     pour's own flow_rate (updated on each RD_BLOOM/"bloom" notification —
     see coordinator._dispatch_event); otherwise it reports the manual-pour
-    value (coordinator.flow_rate, settable via the pour_xbloom LLM tool).
+    value (coordinator.flow_rate, settable via the xbloom__pour LLM tool).
     """
 
     _attr_translation_key = "flow_rate"

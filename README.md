@@ -137,7 +137,7 @@ data:
   bypass_temperature: 92
 ```
 
-Through Assist (LLM), `get_xbloom_recipe` returns a recipe's full detail (grind, RPM, bypass, and each pour's volume / flow rate / pattern) and `execute_xbloom_recipe` accepts the same scalar overrides plus per-pour `pour_overrides` (volume / flow rate / pattern keyed by 0-based `pour_index`), so an agent can tune individual pours on request.
+Through Assist (LLM), `xbloom__get_recipe` returns a recipe's full detail (grind, RPM, bypass, and each pour's volume / flow rate / pattern) and `xbloom__execute_recipe` accepts the same scalar overrides plus per-pour `pour_overrides` (volume / flow rate / pattern keyed by 0-based `pour_index`), so an agent can tune individual pours on request.
 
 ## Recipe services
 
@@ -176,11 +176,11 @@ xBloom → **Configure** → **Cloud account**. Signed in with Apple and have no
 password? Use xBloom's own "forgot password" flow (with the email Apple relays,
 visible in the app's account settings) to set one first.
 
-Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes`,
-`get_xbloom_recipe`, `create_xbloom_recipe`, `edit_xbloom_recipe`,
-`delete_xbloom_recipe` (asks for explicit confirmation before deleting),
-`execute_xbloom_recipe`, `write_xbloom_easy_slot`, `import_xbloom_cloud_recipe`,
-`export_xbloom_recipe`, and `search_xbloom_collective_recipes`.
+Through Assist (LLM), the same surface is exposed as tools: `xbloom__list_recipes`,
+`xbloom__get_recipe`, `xbloom__create_recipe`, `xbloom__edit_recipe`,
+`xbloom__delete_recipe` (asks for explicit confirmation before deleting),
+`xbloom__execute_recipe`, `xbloom__write_easy_slot`, `xbloom__import_cloud_recipe`,
+`xbloom__export_recipe`, and `xbloom__search_collective_recipes`.
 
 ### Breaking changes (recipe local source-of-truth release)
 
@@ -219,7 +219,7 @@ Through Assist (LLM), the same surface is exposed as tools: `list_xbloom_recipes
 
 - **xBloom Original is not supported**: this integration only talks to xBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
 - **MachineInfo on some firmwares**: certain firmware revisions never push `RD_MachineInfo`, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection on those firmwares.
-- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `execute_xbloom_recipe` tool asks for explicit confirmation when this happens.
+- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `xbloom__execute_recipe` tool asks for explicit confirmation when this happens.
 - **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed); recipe execution does not — the firmware runs its own pour sequence internally.
 - **Tea soak timing is approximately calibrated**: the wait between steeps is scaled from the recipe's `pausing` seconds using a factor derived from a couple of stopwatch measurements — see [`brewing-notes.md`](docs/en/brewing-notes.md) for details if you need tighter timing.
 

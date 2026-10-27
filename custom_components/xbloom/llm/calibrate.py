@@ -1,4 +1,4 @@
-"""Tool: calibrate_xbloom_grinder — trigger the grinder gear-position
+"""Tool: xbloom__calibrate_grinder — trigger the grinder gear-position
 calibration sweep (cmd 3502, via coordinator.async_calibrate_grinder(),
 the same call button.calibrate_grinder uses)."""
 
@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 class XBloomCalibrateGrinderTool(XBloomBaseTool):
     """Trigger the XBloom's grinder gear-position calibration sweep."""
 
-    name = "calibrate_xbloom_grinder"
+    name = "xbloom__calibrate_grinder"
     title = "Calibrate xBloom grinder"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -62,7 +62,7 @@ class XBloomCalibrateGrinderTool(XBloomBaseTool):
         try:
             await self.coordinator.async_calibrate_grinder()
         except Exception as exc:
-            _LOGGER.exception("calibrate_xbloom_grinder failed: %s", exc)
+            _LOGGER.exception("xbloom__calibrate_grinder failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,
