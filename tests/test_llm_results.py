@@ -77,14 +77,15 @@ def test_grind_arm_does_not_start_grinding():
 def test_catalog_metadata_distinguishes_side_effects():
     tools = {tool.name: tool for tool in build_tools(None, None)}
     for tool in tools.values():
+        assert tool.name.startswith("xbloom__"), tool.name
         assert tool.integration == "xbloom"
         assert tool.title
-    for name in ("grind_xbloom", "pour_xbloom", "execute_xbloom_recipe"):
+    for name in ("xbloom__grind", "xbloom__pour", "xbloom__execute_recipe"):
         assert not tools[name].annotations.read_only
         assert not tools[name].annotations.idempotent
         assert tools[name].annotations.open_world
-    assert tools["delete_xbloom_recipe"].annotations.destructive
-    assert not tools["delete_xbloom_recipe"].annotations.open_world
-    assert tools["list_xbloom_recipes"].annotations.read_only
-    assert not tools["list_xbloom_recipes"].annotations.open_world
-    assert tools["search_xbloom_collective_recipes"].annotations.open_world
+    assert tools["xbloom__delete_recipe"].annotations.destructive
+    assert not tools["xbloom__delete_recipe"].annotations.open_world
+    assert tools["xbloom__list_recipes"].annotations.read_only
+    assert not tools["xbloom__list_recipes"].annotations.open_world
+    assert tools["xbloom__search_collective_recipes"].annotations.open_world

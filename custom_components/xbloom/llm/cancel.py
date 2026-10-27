@@ -1,4 +1,4 @@
-"""Tool: cancel_xbloom — cancel an armed operation or stop a running one."""
+"""Tool: xbloom__cancel — cancel an armed operation or stop a running one."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 class XBloomCancelTool(XBloomBaseTool):
     """Back out of an armed grind/pour/recipe, or stop a running one."""
 
-    name = "cancel_xbloom"
+    name = "xbloom__cancel"
     title = "Cancel xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=True, open_world=True
@@ -24,8 +24,8 @@ class XBloomCancelTool(XBloomBaseTool):
     description = (
         "Cancel whatever the xBloom is doing: back out of an armed "
         "(waiting-to-confirm) grind, pour, or recipe — for example when "
-        "the user declines a confirmation after grind_xbloom or "
-        "pour_xbloom armed the machine — or stop a grind, pour, or brew "
+        "the user declines a confirmation after xbloom__grind or "
+        "xbloom__pour armed the machine — or stop a grind, pour, or brew "
         "that is already running. Safe to call when nothing is active."
     )
     parameters = vol.Schema({})
@@ -39,7 +39,7 @@ class XBloomCancelTool(XBloomBaseTool):
         try:
             await self.coordinator.async_cancel()
         except Exception as exc:
-            _LOGGER.exception("cancel_xbloom failed: %s", exc)
+            _LOGGER.exception("xbloom__cancel failed: %s", exc)
             return llm.ToolResult(
                 data={"success": False, "error": f"Cancel failed: {exc!s}"}, error=True
             )

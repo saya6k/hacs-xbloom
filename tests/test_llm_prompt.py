@@ -13,22 +13,22 @@ import pytest
 from custom_components.xbloom.const import XBLOOM_LLM_PROMPT
 
 REGISTERED_TOOLS = (
-    "get_xbloom_status",
-    "list_xbloom_recipes",
-    "get_xbloom_recipe",
-    "create_xbloom_recipe",
-    "edit_xbloom_recipe",
-    "delete_xbloom_recipe",
-    "pour_xbloom",
-    "grind_xbloom",
-    "cancel_xbloom",
-    "execute_xbloom_recipe",
-    "write_xbloom_easy_slot",
-    "tare_xbloom_scale",
-    "calibrate_xbloom_grinder",
-    "import_xbloom_cloud_recipe",
-    "search_xbloom_collective_recipes",
-    "export_xbloom_recipe",
+    "xbloom__get_status",
+    "xbloom__list_recipes",
+    "xbloom__get_recipe",
+    "xbloom__create_recipe",
+    "xbloom__edit_recipe",
+    "xbloom__delete_recipe",
+    "xbloom__pour",
+    "xbloom__grind",
+    "xbloom__cancel",
+    "xbloom__execute_recipe",
+    "xbloom__write_easy_slot",
+    "xbloom__tare_scale",
+    "xbloom__calibrate_grinder",
+    "xbloom__import_cloud_recipe",
+    "xbloom__search_collective_recipes",
+    "xbloom__export_recipe",
 )
 
 REMOVED_TOOLS = (

@@ -1,4 +1,4 @@
-"""execute_xbloom_recipe pre-arms before asking for confirmation (T13).
+"""xbloom__execute_recipe pre-arms before asking for confirmation (T13).
 
 When confirmation gates (beans/dripper/filter/cup) are not yet satisfied
 — and the connection/water checks pass — the tool arms the recipe so the

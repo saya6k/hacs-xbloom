@@ -1,4 +1,4 @@
-"""Tool: pour_xbloom — manual pour with custom temperature and volume."""
+"""Tool: xbloom__pour — manual pour with custom temperature and volume."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ FLOW_RATE_MAX = 3.5
 class XBloomPourTool(XBloomBaseTool):
     """Start a manual pour with the requested temperature and volume."""
 
-    name = "pour_xbloom"
+    name = "xbloom__pour"
     title = "Pour xBloom"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -44,7 +44,7 @@ class XBloomPourTool(XBloomBaseTool):
         "temperature and pattern without pouring — and you must then ask "
         "the user to confirm (and to place a cup). Call again with "
         "confirmed=true to start the pour; if the user declines, call "
-        "cancel_xbloom to back out."
+        "xbloom__cancel to back out."
     )
     parameters = vol.Schema(
         {
@@ -156,7 +156,7 @@ class XBloomPourTool(XBloomBaseTool):
                 # confirmed=true without a live arm — one-shot start.
                 await self.coordinator.async_pour()
         except Exception as exc:
-            _LOGGER.exception("pour_xbloom failed: %s", exc)
+            _LOGGER.exception("xbloom__pour failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,
@@ -180,8 +180,8 @@ class XBloomPourTool(XBloomBaseTool):
                         "The machine is now showing its pour page with these "
                         "settings. Ask the user to confirm starting the pour "
                         "and to place a cup under the dispenser; if they "
-                        "agree, call pour_xbloom again with confirmed=true "
-                        "(same arguments). If they decline, call cancel_xbloom."
+                        "agree, call xbloom__pour again with confirmed=true "
+                        "(same arguments). If they decline, call xbloom__cancel."
                     ),
                 }
             )

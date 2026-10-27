@@ -105,7 +105,7 @@ def _cloud_failure(result: dict, action: str) -> llm.ToolResult:
 class XBloomImportCloudRecipeTool(XBloomBaseTool):
     """Import a recipe from an XBloom cloud share URL/id as a local recipe."""
 
-    name = "import_xbloom_cloud_recipe"
+    name = "xbloom__import_cloud_recipe"
     title = "Import xBloom cloud recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=False, open_world=True
@@ -114,8 +114,8 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
         "Import a recipe from an xBloom cloud share URL or share id (e.g. "
         "from the official app's Share button), or from a "
         "collective.xbloom.com/recipe/{id} community-hub link, and save it "
-        "as a local recipe, so it shows up in list_xbloom_recipes / "
-        "execute_xbloom_recipe. No xBloom account login is required for "
+        "as a local recipe, so it shows up in xbloom__list_recipes / "
+        "xbloom__execute_recipe. No xBloom account login is required for "
         "this — both source endpoints are public."
     )
     parameters = vol.Schema(
@@ -150,7 +150,7 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
                 "instruction": (
                     f"Tell the user the recipe {result['name']!r} was "
                     "imported and is now available to run via "
-                    "execute_xbloom_recipe."
+                    "xbloom__execute_recipe."
                 ),
             }
         )
@@ -159,7 +159,7 @@ class XBloomImportCloudRecipeTool(XBloomBaseTool):
 class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     """Search XBloom's public collective.xbloom.com community recipe hub."""
 
-    name = "search_xbloom_collective_recipes"
+    name = "xbloom__search_collective_recipes"
     title = "Search xBloom collective recipes"
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True, open_world=True
@@ -167,9 +167,9 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
     description = (
         "Search xBloom's public community recipe hub (collective.xbloom.com) "
         "— recipes shared by xBloom and other users, entirely separate from "
-        "the user's local recipes (use list_xbloom_recipes for those). No "
+        "the user's local recipes (use xbloom__list_recipes for those). No "
         "xBloom account is required. Results include a share_url that can be passed "
-        "straight to import_xbloom_cloud_recipe to save one locally. "
+        "straight to xbloom__import_cloud_recipe to save one locally. "
         "The bean-profile filters (origin/varietal/process/roast/flavor) "
         "accept free-text names (e.g. 'Ethiopia', 'Washed', 'Dark Roast') "
         "matched case-insensitively against the hub's current filter "
@@ -232,7 +232,7 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
         instruction = (
             "Read out the recipe names, official/user source, and likes "
             "count (and share_url if the user wants to import one via "
-            "import_xbloom_cloud_recipe). Mention other details only if "
+            "xbloom__import_cloud_recipe). Mention other details only if "
             "asked."
         )
         unmatched = result.get("unmatched")
@@ -254,7 +254,7 @@ class XBloomSearchCollectiveRecipesTool(XBloomBaseTool):
 class XBloomExportRecipeTool(XBloomBaseTool):
     """Export a local recipe to the XBloom cloud account (share link)."""
 
-    name = "export_xbloom_recipe"
+    name = "xbloom__export_recipe"
     title = "Export xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -274,7 +274,7 @@ class XBloomExportRecipeTool(XBloomBaseTool):
                 description=(
                     "Which recipe to export — its local uid, cloud table "
                     "id, share URL/id, or exact name (from "
-                    "list_xbloom_recipes)."
+                    "xbloom__list_recipes)."
                 ),
             ): str,
         }

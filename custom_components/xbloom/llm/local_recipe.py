@@ -2,8 +2,8 @@
 
 The local store is the source of truth (what the Recipe dropdown shows).
 These tools never touch the cloud — publishing a local recipe is
-``export_xbloom_recipe``; pulling a shared one in is
-``import_xbloom_cloud_recipe``. Each delegates to the coordinator's
+``xbloom__export_recipe``; pulling a shared one in is
+``xbloom__import_cloud_recipe``. Each delegates to the coordinator's
 local-store methods, sharing the pour/scalar argument schemas with the
 cloud tools so the two surfaces can't drift apart.
 """
@@ -63,7 +63,7 @@ _RECIPE_SCALAR_ARGS = {
 class XBloomCreateRecipeTool(XBloomBaseTool):
     """Create a new local recipe from scratch."""
 
-    name = "create_xbloom_recipe"
+    name = "xbloom__create_recipe"
     title = "Create xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=False, idempotent=False, open_world=False
@@ -71,7 +71,7 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
     description = (
         "Create a new local xBloom recipe from scratch. It appears in the "
         "Recipe dropdown immediately and gets a local uid (returned). "
-        "Nothing is uploaded — use export_xbloom_recipe afterwards if the "
+        "Nothing is uploaded — use xbloom__export_recipe afterwards if the "
         "user wants it on their xBloom cloud account / a share link."
     )
     parameters = vol.Schema(
@@ -103,7 +103,7 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
                 "instruction": (
                     f"Tell the user the recipe {result['name']!r} was created "
                     "and is available in the Recipe dropdown and via "
-                    "execute_xbloom_recipe."
+                    "xbloom__execute_recipe."
                 ),
             }
         )
@@ -112,7 +112,7 @@ class XBloomCreateRecipeTool(XBloomBaseTool):
 class XBloomEditRecipeTool(XBloomBaseTool):
     """Change one or more fields of a local recipe."""
 
-    name = "edit_xbloom_recipe"
+    name = "xbloom__edit_recipe"
     title = "Edit xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=False, open_world=True
@@ -152,7 +152,7 @@ class XBloomEditRecipeTool(XBloomBaseTool):
                     "error": "no_fields",
                     "instruction": (
                         "Ask the user which field(s) of the recipe they want "
-                        "to change before calling edit_xbloom_recipe again."
+                        "to change before calling xbloom__edit_recipe again."
                     ),
                 },
                 error=True,
@@ -173,7 +173,7 @@ class XBloomEditRecipeTool(XBloomBaseTool):
 class XBloomDeleteRecipeTool(XBloomBaseTool):
     """Delete a local recipe (cloud copies are untouched)."""
 
-    name = "delete_xbloom_recipe"
+    name = "xbloom__delete_recipe"
     title = "Delete xBloom recipe"
     annotations = llm.ToolAnnotations(
         read_only=False, destructive=True, idempotent=True, open_world=False
@@ -215,7 +215,7 @@ class XBloomDeleteRecipeTool(XBloomBaseTool):
                     "instruction": (
                         f"Do NOT delete yet. Ask the user to confirm they want "
                         f"to delete the recipe {identifier!r}. Once they "
-                        "confirm, call delete_xbloom_recipe again with "
+                        "confirm, call xbloom__delete_recipe again with "
                         "confirmed=true."
                     ),
                 }
