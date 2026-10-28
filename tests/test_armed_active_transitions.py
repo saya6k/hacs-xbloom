@@ -35,7 +35,6 @@ class _Coordinator(StateMixin):
         self._armed_recipe_tea_payload = None
         self._pod_prompt_active = False
         self._water_shortage = False
-        self._no_beans = False
         self._event_listeners: list = []
 
 

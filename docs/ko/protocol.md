@@ -156,7 +156,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 40511 | `RD_Brewer_Stop` | — | Active, 자연 완료 전용 | 추출 종료 — **4507 정지 후에는 오지 않음** (하드웨어 2026-07-20: 4507 ACK, 물 정지, 머신 추출 페이지 복귀까지 됐는데 40511은 끝내 안 옴; 클라이언트는 대신 페이지 보고에서 실행 플래그를 클리어) |
 | 40512 / 40513 | `RD_ENJOY` / `RD_ENJOY2` | — | Active | 레시피 완료 |
 | 40515 | `RD_TEA_RECIP_PAUSE` | — | Active | 스팀 사이 일시정지/종료 |
-| 40517 | `RD_ErrorIdling` | — | Active | `"no_beans"` 에러에 매핑 |
+| 40517 | `RD_ErrorIdling` | — | Active | `"no_beans"` 에러에 매핑. 앱의 토스트처럼 한 번만 알림: 상태 센서는 기계 자체의 `0x0F` 화면 코드를 따르고(2026-10-28 실기기 확인), 기계가 그 화면을 벗어나면 풀림 |
 | 40520 | `RD_BYPASS` | — | Present, 페이로드 없음 확인 | 디컴파일로 확인된 페이로드 없는 UI 펄스, 노출할 상태 없음 |
 | 40521 | `RD_MachineInfo` | 고정 오프셋 구조체 | Active | 연결 시점 스냅샷: 시리얼, 펌웨어, 모드, 급수 정상 비트, 굵기/전압; 일부 펌웨어에서는 아예 오지 않을 수 있음 — coordinator가 재시도 후 폴백 |
 | 40522 | `RD_ErrorLackOfWater` | LE u32 (0=비어있음, 1=보충됨) | Active | 양방향 — 일회성 에러가 아님, "water-level" 처리 참고 |

@@ -18,7 +18,6 @@ from custom_components.xbloom.coordinator.state import StateMixin
 class _Coordinator(StateMixin):
     def __init__(self) -> None:
         self._armed_operation = None
-        self._no_beans = False
         self._water_shortage = False
         self._calibrating = False
         self._sleeping = False
@@ -105,9 +104,15 @@ def test_errors_beat_the_page():
     coordinator = _Coordinator()
     coordinator._water_shortage = True
     assert coordinator._derive_state_string(_status(screen="pour")) == "water_shortage"
+
+
+def test_no_beans_follows_the_machine_screen():
+    """No-beans is the machine's own 0x0F screen, not a latch: once the
+    machine leaves it (a cancel back to home, live 2026-10-28) the state
+    follows."""
     coordinator = _Coordinator()
-    coordinator._no_beans = True
-    assert coordinator._derive_state_string(_status(screen="grind")) == "no_beans"
+    assert coordinator._derive_state_string(_status(raw_state_label="no_beans")) == "no_beans"
+    assert coordinator._derive_state_string(_status(screen="home")) == "idle"
 
 
 def test_unknown_still_coerces_to_idle():

@@ -14,6 +14,9 @@ value (jadx 2026-08-24).
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from custom_components.xbloom.ble.models import DeviceState
 from custom_components.xbloom.coordinator.constants import (
     WATER_SOURCE_DIRECT,
     WATER_SOURCE_TANK,
@@ -68,5 +71,22 @@ def test_switching_to_direct_water_unsticks_a_latched_shortage():
 def test_other_errors_are_unaffected_on_direct_water():
     coordinator, log = _make_coordinator(WATER_SOURCE_DIRECT)
     coordinator._dispatch_event("error", "no_beans", {})
-    assert coordinator._no_beans is True
     assert ("error", "no_beans", {}) in log
+
+
+def test_no_beans_does_not_latch_the_state():
+    # The official app treats 40517 as a one-shot (jadx 2026-10-28). Live
+    # 2026-10-28: after a cancel the machine went home, but a latch kept
+    # the state sensor at no_beans until the next successful brew.
+    coordinator, _log = _make_coordinator(WATER_SOURCE_TANK)
+    coordinator.client.is_calibrating_grinder = lambda: False
+    coordinator.client.is_sleeping = lambda: False
+    coordinator._dispatch_event("error", "no_beans", {})
+    home = SimpleNamespace(
+        screen="home",
+        raw_state_label=None,
+        state=DeviceState.IDLE,
+        grinder=SimpleNamespace(is_running=False),
+        brewer=SimpleNamespace(is_running=False),
+    )
+    assert coordinator._derive_state_string(home) == "idle"

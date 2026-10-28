@@ -199,7 +199,6 @@ class _AsleepClient(_FakeClient):
 
 def _full_path_coordinator(client) -> _Coordinator:
     coordinator = _Coordinator(client, session_timeout=60)
-    coordinator._no_beans = False
     coordinator._water_shortage = False
     coordinator._mode = None
     coordinator._executing_recipe = False
