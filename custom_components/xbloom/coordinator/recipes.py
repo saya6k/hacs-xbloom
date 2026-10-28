@@ -242,8 +242,10 @@ class RecipesMixin:
                 f"(current: {self.data.get('version') or 'unknown'})."
             )
         raw = self.recipes[self.selected_recipe]
+        # Not a recipe field: applied to every pour once the recipe is built.
+        temperature = (overrides or {}).get("temperature_c")
         if overrides:
-            raw = {**raw, **overrides}
+            raw = {**raw, **{k: v for k, v in overrides.items() if k != "temperature_c"}}
             if "dose_g" in overrides or "ratio" in overrides:
                 dose = float(raw.get("dose_g", 0) or 0)
                 ratio = raw.get("ratio")
@@ -257,6 +259,9 @@ class RecipesMixin:
                         dose * float(ratio) - effective_bypass,
                     )
         recipe = _build_recipe_from_yaml(raw)
+        if temperature is not None:
+            for pour in recipe.pours:
+                pour.temperature = int(temperature)
         is_tea = brewing.is_tea_recipe(recipe)
         if not is_tea and recipe.grind_size > 0:
             recipe.grind_size = int(self.grind_size)
@@ -307,7 +312,8 @@ class RecipesMixin:
 
         ``overrides`` replaces top-level recipe scalars (``dose_g`` /
         ``ratio`` / ``cup_type``) for this brew only — the stored recipe
-        is untouched. Changing ``dose_g``/``ratio`` changes the total
+        is untouched. ``temperature_c`` (LLM-only) sets every pour's
+        water temperature. Changing ``dose_g``/``ratio`` changes the total
         brew water, so the pours are proportionally rescaled to keep
         ``sum(pours) + bypass == dose_g * ratio`` (the machine's own
         invariant). Grind/RPM overrides go through the number-entity

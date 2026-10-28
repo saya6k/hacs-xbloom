@@ -231,7 +231,8 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         "they decline, call xbloom__cancel. confirmed=true only starts a "
         "recipe that is still armed — otherwise it arms again and you must "
         "ask again. Any top-level scalar (grind_size, rpm, dose_g, ratio, "
-        "cup_type, bypass) can be overridden for this brew only — the "
+        "temperature_c, cup_type, bypass) can be overridden for this brew "
+        "only — the "
         "stored recipe is unchanged, and a dose/ratio override rescales the "
         "pour volumes proportionally. Overrides are applied when arming: "
         "pass them on the first call; to change them, call again without "
@@ -283,6 +284,15 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     "to match. Coffee recipes only."
                 ),
             ): vol.All(vol.Coerce(float), vol.Range(min=1, max=50)),
+            vol.Optional(
+                "temperature_c",
+                description=(
+                    "Optional water temperature in °C (40-100) for every "
+                    "pour of this brew only, e.g. when the user asks for "
+                    "the recipe at 93 °C. Use this instead of creating a "
+                    "new recipe."
+                ),
+            ): vol.All(int, vol.Range(min=40, max=100)),
             vol.Optional(
                 "cup_type",
                 description=("Optional cup/brewer type override for this brew only."),
@@ -444,7 +454,11 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 bypass_volume = float(args["bypass_volume"])
             if "bypass_temperature" in args:
                 bypass_temperature = float(args["bypass_temperature"])
-        overrides = {key: args[key] for key in ("dose_g", "ratio", "cup_type") if key in args}
+        overrides = {
+            key: args[key]
+            for key in ("dose_g", "ratio", "temperature_c", "cup_type")
+            if key in args
+        }
 
         pour_overrides = []
         for ov in args.get("pour_overrides") or []:
