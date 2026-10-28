@@ -128,7 +128,7 @@ from the name alone.
 
 | id | name | payload | status | notes |
 | ---: | --- | --- | --- | --- |
-| 8009 | `RD_MachineSleeping` | — | Active | sets sleep flag; gates mode-switch retry |
+| 8009 | `RD_MachineSleeping` | — | Active | sets sleep flag; gates the wake-retry of every user action and settings push. While it is set, 20501 carries a fixed 50.0 (see 20501) |
 | 8011 | `RD_MachineNotSleeping` | — | Active | clears sleep flag |
 | 8015 | `RD_UNIT_CHANGE` | 3× LE u32 (weight/temp/water-source unit) | Active | pushed when units are changed on the machine's own touchscreen; same codes as 8005/8010/4508 (the app stores them as-is in `DeviceUnitBleModel`). Not sent back after an app-side 8005/8010 SET (hardware 2026-10-15) |
 | 8023 | `RD_MachineActivity` | LE u32 `index` | Active | clears sleep flag unconditionally. `index` mirrors the raw status-heartbeat state code (live-confirmed 2026-07-19: `0x01` home, `0x1F` recipe loaded, `0x1E` awaiting confirm, `0x22` starting arrived in lock-step on both channels) — but not always as a strict pair: opening the grind page in Easy Mode produced 8023 `index=0x02` with **no** matching raw heartbeat frame, so 8023 is the more complete page-change channel. This integration reads state from the heartbeat frames and leaves `index` unused. App-side consumption (jadx): `index == 1` (home) is re-posted as a bus event that `AppJ15AutoManager` treats as end-of-session for its auto-brew tracking; `TeaAutoFragment` refreshes its pour list on `index == 35` |
@@ -151,7 +151,7 @@ from the name alone.
 | 10507 | `RD_CURRENT_WEIGHT` | float32 | Telemetry | same layout as 20501 |
 | 11512 (see outbound) | | | | |
 | 11518 | `RD_EASYMODE_RECIPE_STATE` | — | Present, unconfirmed | decompile-confirmed to be a redundant mode-display echo, not slot/progress-related despite the name |
-| 20501 | `RD_CURRENT_WEIGHT2` | float32 | Telemetry | scale weight, primary channel |
+| 20501 | `RD_CURRENT_WEIGHT2` | float32 | Telemetry | scale weight, primary channel. Always grams, whatever the machine's display unit: the app converts for display only (`weightChangeValue`: oz = g × 0.035274, ml = g). Keeps streaming while the machine sleeps, but then carries a fixed **50.0** with nothing on the scale (live 2026-10-28, in g and oz mode alike), so this integration reports the weight as unknown while asleep |
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC pod detected; app hex-decodes 12 hex chars = 6 bytes, not 12 raw bytes |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | alternate "brewing started" signal |
 | 40505 | `RD_GearReport` | LE u32 gear position | Active | streams the live gear position during a grinder-calibration sweep (hardware 2026-07-20: counted `0x40` down to `0x02` then back up at ~5 Hz through the whole sweep). No handler |
@@ -267,3 +267,16 @@ command id.
   `waterFeed != 0`. The official app never hits this because its `sendMessage` queue
   is ACK-gated (~370–380ms measured); leave ≥0.5s (or ACK-gate) between
   consecutive sends in one flow.
+- **The scale reports a fixed 50.0 while the machine sleeps** (live
+  2026-10-28). Over 8 hours of history the weight jumped to exactly 50.0 in
+  the same second `8009` arrived, every time, and back to 0.0 on wake, with
+  nothing on the scale. The value is the same in oz mode (the wire is always
+  grams). The official app never shows it: its home screen drops weight
+  events, and the scale/grinder/brewer pages that show them are only open
+  while the machine is awake. This integration reports the weight as
+  unknown while asleep, and while the link is down.
+- **A settings SET sent to a sleeping machine wakes it but is not applied**
+  (live 2026-10-28): an `8005` sent while asleep woke the machine, but the
+  send and an immediate resend both went unacknowledged. A settings command
+  sent while asleep now gets the same wake-retry as every other action: up
+  to 3 sends, 1.5 s apart (`_async_send_unit_command`).

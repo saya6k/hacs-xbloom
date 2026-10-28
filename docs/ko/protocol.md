@@ -124,7 +124,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 
 | id | 이름 | 페이로드 | 상태 | 비고 |
 | ---: | --- | --- | --- | --- |
-| 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모드 전환 재시도를 게이팅 |
+| 8009 | `RD_MachineSleeping` | — | Active | sleep 플래그 설정; 모든 사용자 동작과 설정 푸시의 wake-retry를 게이팅. 이 플래그가 켜져 있는 동안 20501은 고정값 50.0을 보냄(20501 참고) |
 | 8011 | `RD_MachineNotSleeping` | — | Active | sleep 플래그 해제 |
 | 8015 | `RD_UNIT_CHANGE` | LE u32 3개 (무게/온도/급수원 단위) | Active | 머신 자체 터치스크린에서 단위가 바뀌면 push됨; 코드는 8005/8010/4508과 동일 (앱은 `DeviceUnitBleModel`에 그대로 저장). 앱 쪽 8005/8010 SET 후에는 돌아오지 않음 (하드웨어 2026-10-15) |
 | 8023 | `RD_MachineActivity` | LE u32 `index` | Active | sleep 플래그를 무조건 해제. `index`는 raw 상태 하트비트의 상태 코드와 바이트 단위로 동일 (2026-07-19 라이브 확인: `0x01` 홈, `0x1F` 레시피 로드, `0x1E` 확인 대기, `0x22` 시작이 두 채널에서 동시 도착) — 단, 항상 엄격한 짝은 아님: Easy 모드에서 분쇄 페이지를 열면 8023 `index=0x02`만 오고 대응하는 raw 하트비트 프레임은 **없었음** — 8023이 더 완전한 페이지 전환 채널. 이 통합은 상태를 하트비트 프레임에서 읽으며 `index`는 미사용. 앱 쪽 소비(jadx): `index == 1`(홈)은 버스 이벤트로 재게시되어 `AppJ15AutoManager`가 자동 추출 트래킹의 세션 종료로 처리; `TeaAutoFragment`는 `index == 35`에서 푸어 리스트를 갱신 |
@@ -146,7 +146,7 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
 | 9012 | `RD_TEA_RECIP_SOAK` | — | Active | `"tea_soaking"`에 매핑 |
 | 10507 | `RD_CURRENT_WEIGHT` | float32 | Telemetry | 20501과 동일한 레이아웃 |
 | 11518 | `RD_EASYMODE_RECIPE_STATE` | — | Present, unconfirmed | 디컴파일로 확인 — 이름과 달리 슬롯/진행 상황과 무관한 중복 모드 표시 echo |
-| 20501 | `RD_CURRENT_WEIGHT2` | float32 | Telemetry | 저울 무게, 주 채널 |
+| 20501 | `RD_CURRENT_WEIGHT2` | float32 | Telemetry | 저울 무게, 주 채널. 머신의 표시 단위와 상관없이 항상 그램: 앱은 표시할 때만 변환(`weightChangeValue`: oz = g × 0.035274, ml = g). 머신이 절전 중이어도 계속 오지만, 저울이 비어 있어도 고정값 **50.0**을 보냄(라이브 2026-10-28, g·oz 모드 모두) — 그래서 이 통합은 절전 중 무게를 unknown으로 표시 |
 | 40501 | `RD_Pods` | 6 raw bytes → ASCII | Active | NFC 포드 감지; 앱은 12 hex 문자(=6바이트)를 디코딩, 12 raw bytes가 아님 |
 | 40502 | `RD_BREWER_COFFEE_START` | — | Active | 대체 "추출 시작" 신호 |
 | 40505 | `RD_GearReport` | LE u32 기어 위치 | Active | 그라인더 캘리브레이션 스윕 중 실시간 기어 위치를 스트리밍 (하드웨어 2026-07-20: 스윕 내내 약 5Hz로 `0x40`에서 `0x02`까지 내려간 뒤 다시 올라감). 핸들러 없음 |
@@ -255,3 +255,15 @@ header(0x58 0x02) | dev_id | type | cmd(2, LE) | len(4, LE) | const(0x01) | payl
   같은 캡처의 부수 관찰: 탱크가 비어 있으면 `4508` 약 90ms 뒤에 `40522`
   (`RD_ErrorLackOfWater`) 값 0이 따라옵니다 — TAP 사용 시 정상이며, 앱은
   `waterFeed != 0`인 동안 이 경고를 아예 표시하지 않습니다.
+- **머신이 절전 중이면 저울이 고정값 50.0을 보냅니다** (라이브 2026-10-28).
+  8시간 기록에서 `8009`가 온 바로 그 초에 무게가 정확히 50.0이 됐고, 깨어나면
+  0.0으로 돌아왔습니다. 매번 같았고 저울은 비어 있었습니다. oz 모드에서도
+  값이 같습니다(전송 값은 항상 그램). 공식 앱에서는 보이지 않습니다. 홈 화면은
+  무게 이벤트를 버리고, 무게를 보여 주는 저울/그라인더/추출 페이지는 머신이
+  깨어 있을 때만 열리기 때문입니다. 이 통합은 절전 중과 연결이 없을 때 무게를
+  unknown으로 표시합니다.
+- **절전 중인 머신에 보낸 설정 SET은 머신을 깨우지만 적용되지 않습니다**
+  (라이브 2026-10-28): 절전 중에 보낸 `8005`가 머신을 깨웠지만, 그 전송과
+  곧바로 이어진 재전송 모두 ACK를 받지 못했습니다. 이제 절전 중에 보내는 설정
+  명령도 다른 동작과 같은 wake-retry를 받습니다: 최대 3회, 1.5초 간격
+  (`_async_send_unit_command`).
