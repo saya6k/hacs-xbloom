@@ -1034,10 +1034,30 @@ class ConnectionMixin:
         ``async_confirm_recipe`` can re-send those exact bytes for 4512).
         Every pre-existing caller ignores the return value, so this is
         backward compatible.
+
+        An ACK-gated action (``send_and_wait``) raises ``AckTimeout``
+        instead of returning when the sleeping machine drops its first
+        command, so a timeout is retried too when the machine was asleep
+        at the start or still is. Live 2026-10-28: a recipe arm's first
+        8022 to the sleeping machine went unacknowledged and the arm
+        failed outright; the identical 8022 sent again was ACKed in 86 ms.
         """
+        asleep = bool(self.client and self.client.is_sleeping())
         result: _T = None  # type: ignore[assignment]
         for attempt in range(1, _WAKE_RETRY_MAX_ATTEMPTS + 1):
-            result = await action()
+            try:
+                result = await action()
+            except AckTimeout:
+                if attempt == _WAKE_RETRY_MAX_ATTEMPTS or not (
+                    asleep or (self.client and self.client.is_sleeping())
+                ):
+                    raise
+                _LOGGER.info(
+                    "No ACK while machine was asleep — retrying "
+                    "(attempt %d/%d)", attempt, _WAKE_RETRY_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_WAKE_RETRY_DELAY_S)
+                continue
             if not (self.client and self.client.is_sleeping()):
                 return result
             if attempt < _WAKE_RETRY_MAX_ATTEMPTS:
