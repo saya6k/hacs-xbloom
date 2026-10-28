@@ -109,7 +109,7 @@ class OperationsMixin:
         except Exception as exc:
             _LOGGER.error("Pour error: %s", exc)
 
-    async def async_arm_pour(self) -> None:
+    async def async_arm_pour(self) -> bool:
         """First press of the two-stage manual-pour button flow
         (2026-07-18, HA button entity only — see ``_armed_operation``'s
         docstring in ``__init__.py``): sends ``RD_BREWER_IN`` (8007,
@@ -125,9 +125,12 @@ class OperationsMixin:
         the entities say instead of its own remembered defaults —
         best-effort, like the app's own ``sendMessageNoShowFail`` senders,
         after a ``_POUR_ARM_SETTLE_S`` screen-transition delay.
+
+        Returns whether the arm landed (the best-effort push does not
+        count), like the other arm/confirm methods, for the LLM tools.
         """
         if not await self._async_ensure_connected():
-            return
+            return False
         try:
             # The lambda is not redundant: _async_retry_while_sleeping calls
             # it again per retry, and a reconnect in between replaces
@@ -139,7 +142,7 @@ class OperationsMixin:
             self._armed_operation = "pour"
         except Exception as exc:
             _LOGGER.error("Pour arm error: %s", exc)
-            return
+            return False
         await asyncio.sleep(_POUR_ARM_SETTLE_S)
         try:
             await self.client.brewer.set_temperature(self._wire_temperature())
@@ -147,14 +150,15 @@ class OperationsMixin:
             await self.client.brewer.set_pattern(self.pour_pattern)
         except Exception as exc:
             _LOGGER.warning("Pour-page entry setpoint push failed (best-effort): %s", exc)
+        return True
 
-    async def async_confirm_pour(self) -> None:
+    async def async_confirm_pour(self) -> bool:
         """Second press of the two-stage manual-pour button flow: send
         the pour-start command (4506) queued by ``async_arm_pour()``,
-        with the current slider values.
+        with the current slider values. Returns whether it was sent.
         """
         if not await self._async_ensure_connected():
-            return
+            return False
         try:
             self._active_operation = "manual_pour"
             await self._async_retry_while_sleeping(
@@ -168,8 +172,10 @@ class OperationsMixin:
             )
         except Exception as exc:
             _LOGGER.error("Pour confirm error: %s", exc)
+            return False
         finally:
             self._armed_operation = None
+        return True
 
     async def async_grind(self) -> None:
         """Start grinding with current slider values.
@@ -186,15 +192,16 @@ class OperationsMixin:
         except Exception as exc:
             _LOGGER.error("Grind error: %s", exc)
 
-    async def async_arm_grind(self) -> None:
+    async def async_arm_grind(self) -> bool:
         """First press of the two-stage manual-grind button flow
         (2026-07-18, HA button entity only — see ``_armed_operation``'s
         docstring in ``__init__.py``): sends ``GRINDER_IN`` (size/speed,
         burr adjust) without starting. ``async_confirm_grind()`` sends
         the actual start command on a second press of the same button.
+        Returns whether the arm landed.
         """
         if not await self._async_ensure_connected():
-            return
+            return False
         try:
             await self._async_retry_while_sleeping(
                 lambda: self.client.grinder.enter_mode(size=self.grind_size, speed=self.rpm)
@@ -202,13 +209,16 @@ class OperationsMixin:
             self._armed_operation = "grind"
         except Exception as exc:
             _LOGGER.error("Grind arm error: %s", exc)
+            return False
+        return True
 
-    async def async_confirm_grind(self) -> None:
+    async def async_confirm_grind(self) -> bool:
         """Second press of the two-stage manual-grind button flow: send
         the bare grinder-start command queued by ``async_arm_grind()``.
+        Returns whether it was sent.
         """
         if not await self._async_ensure_connected():
-            return
+            return False
         try:
             self._active_operation = "manual_grind"
             # Deferred per-retry lookup — see async_arm_pour's note.
@@ -217,8 +227,10 @@ class OperationsMixin:
             )
         except Exception as exc:
             _LOGGER.error("Grind confirm error: %s", exc)
+            return False
         finally:
             self._armed_operation = None
+        return True
 
     async def async_pause_resume(self) -> None:
         """Toggle between pause and resume based on machine state.

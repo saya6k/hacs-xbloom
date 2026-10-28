@@ -403,13 +403,17 @@ class RecipesMixin:
             _LOGGER.error("Recipe arm error: %s", exc, exc_info=True)
             self._active_recipe_pours = None
 
-    async def async_confirm_recipe(self) -> None:
+    async def async_confirm_recipe(self) -> bool:
         """Second press of the two-stage manual execute-recipe button
         flow: send the go command (8002 coffee, 4512 tea) for the recipe
         queued by :meth:`async_arm_recipe`.
+
+        Returns whether the brew started. Failures are logged, not
+        raised, so the LLM tool reads this to avoid telling the user a
+        refused brew has started.
         """
         if not await self._async_ensure_connected():
-            return
+            return False
         try:
             self._executing_recipe = True
             self._active_operation = "recipe"
@@ -426,10 +430,12 @@ class RecipesMixin:
             self._executing_recipe = False
             self._active_recipe_pours = None
             self._active_operation = None
+            return False
         finally:
             self._armed_operation = None
             self._armed_recipe_is_tea = False
             self._armed_recipe_tea_payload = None
+        return True
 
     async def async_write_easy_slot(
         self, slot_letter: str, identifier: str | None = None

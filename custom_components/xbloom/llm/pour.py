@@ -151,12 +151,12 @@ class XBloomPourTool(XBloomBaseTool):
         start = confirmed and self.coordinator._armed_operation == "pour"
         try:
             if start:
-                await self.coordinator.async_confirm_pour()
+                ok = await self.coordinator.async_confirm_pour()
             else:
                 # Phase 1: arm — 8007 plus the entry push of the mirrored
                 # temperature/pattern, so the machine display shows what
                 # will happen while the user is being asked.
-                await self.coordinator.async_arm_pour()
+                ok = await self.coordinator.async_arm_pour()
         except Exception as exc:
             _LOGGER.exception("xbloom__pour failed: %s", exc)
             return llm.ToolResult(
@@ -169,6 +169,20 @@ class XBloomPourTool(XBloomBaseTool):
 
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
+
+        if not ok:
+            # The coordinator logs and swallows BLE failures.
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "start_failed" if start else "arm_failed",
+                    "instruction": (
+                        "Tell the user the xBloom did not respond, so nothing "
+                        "was started."
+                    ),
+                },
+                error=True,
+            )
 
         if not start:
             return llm.ToolResult(
