@@ -244,8 +244,6 @@ class StateMixin:
             # async_calibrate_grinder()) we know is actually running, not
             # inferred from ambiguous telemetry.
             return "calibrating_grinder"
-        if self._no_beans:
-            return "no_beans"
         if self._water_shortage:
             return "water_shortage"
         if self.client.is_sleeping():
@@ -353,9 +351,9 @@ class StateMixin:
                 # actual water_shortage/water_refilled notification.
                 water_ok = not self._water_shortage
                 # Layer the richer states our own event/status tracking can
-                # see on top of the vendored DeviceState value: no_beans /
+                # see on top of the vendored DeviceState value:
                 # water_shortage (the machine WAITS rather than refusing),
-                # and starting/brewing/ready from the raw status-heartbeat
+                # and no_beans/starting/brewing/ready from the raw status-heartbeat
                 # stream. The cmd-tagged path alone is unreliable here —
                 # hardware-confirmed 2026-07-15: RD_GRINDER_BEGIN never
                 # fired during ~11s of real grinding, RD_BREWER_BEGIN fires
@@ -363,8 +361,8 @@ class StateMixin:
                 # starts), and RD_Grinder_Stop flips vendored state to IDLE
                 # right as grinding *ends*, moments before pouring begins.
                 # See ble/client.py's _scan_for_status_frame /
-                # _RAW_STATE_LABEL_MAP and coordinator._no_beans /
-                # _water_shortage for provenance.
+                # _RAW_STATE_LABEL_MAP and coordinator._water_shortage for
+                # provenance.
                 self._reconcile_armed_with_screen(s)
                 self._reconcile_manual_operation(s)
                 state_str = self._derive_state_string(s)
@@ -514,9 +512,14 @@ class StateMixin:
                 )
             return
 
-        # Drive the water-shortage / no-beans flags from the BLE event stream.
+        # Drive the water-shortage flag from the BLE event stream. No-beans
+        # (40517) is deliberately not latched: the official app treats it
+        # as a one-shot (a toast plus ending the brew page, jadx
+        # 2026-10-28), and the state sensor follows the machine's own 0x0F
+        # screen code instead, so it clears when the machine leaves that
+        # screen. A latch stuck at no_beans after a cancel (live
+        # 2026-10-28).
         prev_shortage = self._water_shortage
-        prev_no_beans = self._no_beans
         # Suppresses the outbound event only — the flag bookkeeping below
         # (and the synthesized "cleared" event) still runs.
         suppress_event = False
@@ -538,8 +541,6 @@ class StateMixin:
                 # latched while the machine was still on tank water.
                 self._water_shortage = False
                 suppress_event = True
-        elif category == "error" and event_type == "no_beans":
-            self._no_beans = True
         elif category == "notification" and event_type == "water_refilled":
             # The firmware's own "tank refilled" notification (cmd 40522
             # with value=1 — see ble/client.py). Without this, the only clear
@@ -550,9 +551,8 @@ class StateMixin:
         elif category == "notification" and event_type in (
             "brewing_started", "pour_complete", "recipe_complete",
         ):
-            # A successful brew implies water and beans were both available.
+            # A successful brew implies water was available.
             self._water_shortage = False
-            self._no_beans = False
         # Synthesize "water_shortage_cleared" when the latched shortage
         # resolves, dispatched to the event entities after the real event
         # below. Deliberately the only "_cleared" event — water shortage is
@@ -561,10 +561,7 @@ class StateMixin:
         _cleared_events: list[str] = []
         if prev_shortage and not self._water_shortage:
             _cleared_events.append("water_shortage_cleared")
-        if (
-            (prev_shortage != self._water_shortage or prev_no_beans != self._no_beans)
-            and self.hass and self.hass.loop
-        ):
+        if prev_shortage != self._water_shortage and self.hass and self.hass.loop:
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.hass.async_create_task(self.async_refresh())
             )

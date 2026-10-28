@@ -34,7 +34,6 @@ class _Coordinator(StateMixin, OperationsMixin):
         self._armed_operation = None
         self._pod_prompt_active = False
         self._water_shortage = False
-        self._no_beans = False
         # Tank water: a shortage is only a shortage on the built-in tank
         # (see StateMixin._dispatch_event / test_tap_water_shortage.py).
         self.water_source = WATER_SOURCE_TANK

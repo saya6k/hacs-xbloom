@@ -161,7 +161,7 @@ from the name alone.
 | 40511 | `RD_Brewer_Stop` | — | Active, completion-only | pour end — **not sent after a 4507 stop** (hardware 2026-07-20: 4507 ACKed, water stopped, machine returned to the pour page, no 40511 ever came; the client clears its run flags from the page-report instead) |
 | 40512 / 40513 | `RD_ENJOY` / `RD_ENJOY2` | — | Active | recipe complete |
 | 40515 | `RD_TEA_RECIP_PAUSE` | — | Active | steep paused/ended between-steep |
-| 40517 | `RD_ErrorIdling` | — | Active | mapped to `"no_beans"` error |
+| 40517 | `RD_ErrorIdling` | — | Active | mapped to `"no_beans"` error. A one-shot, like the app's toast: the state sensor follows the machine's own `0x0F` screen code (live-confirmed 2026-10-28) and clears when the machine leaves it |
 | 40520 | `RD_BYPASS` | — | Present, confirmed payload-less | decompile-confirmed a payload-less UI pulse, no state to expose |
 | 40521 | `RD_MachineInfo` | fixed-offset struct | Active | connect-time snapshot: serial, firmware, mode, water-level-ok bit, grind-size/voltage; may never arrive on some firmwares — the coordinator retries and falls back |
 | 40522 | `RD_ErrorLackOfWater` | LE u32 (0=empty, 1=refilled) | Active | bidirectional — not a one-shot error, see `water-level` handling |

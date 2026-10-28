@@ -225,12 +225,6 @@ class XBloomCoordinator(
         # successful brew/pour notification.
         self._water_shortage: bool = False
 
-        # Same idea as _water_shortage, driven by RD_ErrorIdling ("no_beans")
-        # instead of RD_ErrorLackOfWater — the machine WAITS in this state
-        # rather than refusing outright, so it's worth surfacing as a
-        # distinct sensor.state value instead of leaving it generic.
-        self._no_beans: bool = False
-
         # Whether the machine is currently showing its own local "start
         # this pod?" prompt (RD_Pods/pod_detected, cmd 40501) — nothing has
         # been armed/executed yet. async_cancel() branches on this to send

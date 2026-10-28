@@ -76,7 +76,6 @@ def test_calibration_complete_screen_stays_unmapped():
 class _Coordinator(StateMixin):
     def __init__(self) -> None:
         self._armed_operation = None
-        self._no_beans = False
         self._water_shortage = False
         self.client = SimpleNamespace(
             is_calibrating_grinder=lambda: False, is_sleeping=lambda: False
