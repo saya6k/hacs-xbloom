@@ -86,8 +86,8 @@ class XBloomWeightSensor(_XBloomSensor):
         return self.coordinator.scale_device_info
 
     @property
-    def native_value(self) -> float:
-        return self.coordinator.data.get("weight", 0.0)
+    def native_value(self) -> float | None:
+        return self.coordinator.data.get("weight")
 
 
 class XBloomBrewerTempSensor(_XBloomSensor):

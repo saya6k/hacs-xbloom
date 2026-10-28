@@ -116,7 +116,9 @@ _DI_SOFTWARE_UUID = "00002a28-0000-1000-8000-00805f9b34fb"
 
 DEFAULT_STATE: dict[str, Any] = {
     "connected": False,
-    "weight": 0.0,
+    # None (unknown), not 0.0 -- without a link there is no reading, and 0.0
+    # would look like a real empty scale.
+    "weight": None,
     "temperature": None,
     "state": "unknown",
     "operation": None,
