@@ -409,7 +409,7 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
             and self.coordinator.selected_recipe == recipe_name
         ):
             try:
-                await self.coordinator.async_confirm_recipe()
+                started = await self.coordinator.async_confirm_recipe()
             except Exception as exc:
                 _LOGGER.exception("xbloom__execute_recipe failed: %s", exc)
                 return llm.ToolResult(
@@ -420,6 +420,20 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                     error=True,
                 )
             self.coordinator.async_update_listeners()
+            if not started:
+                # async_confirm_recipe logs and swallows BLE failures.
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": "start_failed",
+                        "instruction": (
+                            "Tell the user the xBloom did not confirm that the "
+                            "recipe started. Ask them to check the machine's "
+                            "screen."
+                        ),
+                    },
+                    error=True,
+                )
             return llm.ToolResult(
                 data={
                     "success": True,

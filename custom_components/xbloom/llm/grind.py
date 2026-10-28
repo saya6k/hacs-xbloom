@@ -116,11 +116,11 @@ class XBloomGrindTool(XBloomBaseTool):
         try:
             if start:
                 # Phase 2: the arm is still standing — bare start.
-                await self.coordinator.async_confirm_grind()
+                ok = await self.coordinator.async_confirm_grind()
             else:
                 # Phase 1: arm — the machine opens its grind page showing
                 # the requested settings while the user is being asked.
-                await self.coordinator.async_arm_grind()
+                ok = await self.coordinator.async_arm_grind()
         except Exception as exc:
             _LOGGER.exception("xbloom__grind failed: %s", exc)
             return llm.ToolResult(
@@ -133,6 +133,20 @@ class XBloomGrindTool(XBloomBaseTool):
 
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
+
+        if not ok:
+            # The coordinator logs and swallows BLE failures.
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "start_failed" if start else "arm_failed",
+                    "instruction": (
+                        "Tell the user the xBloom did not respond, so nothing "
+                        "was started."
+                    ),
+                },
+                error=True,
+            )
 
         if not start:
             return llm.ToolResult(
