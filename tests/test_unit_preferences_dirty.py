@@ -175,9 +175,15 @@ class _RecordingClient:
 
     is_connected = True
 
-    def __init__(self, timeout_commands: tuple[int, ...] = ()) -> None:
+    def __init__(
+        self, timeout_commands: tuple[int, ...] = (), *, sleeping: bool = False
+    ) -> None:
         self.sent: list[tuple[int, object]] = []
         self._timeout_commands = timeout_commands
+        self._sleeping = sleeping
+
+    def is_sleeping(self) -> bool:
+        return self._sleeping
 
     async def send_and_wait(self, command, data=None, *, raw=None, **kwargs):
         self.sent.append((command, raw if raw is not None else data))
@@ -229,6 +235,41 @@ def test_a_timed_out_send_is_retried_once_then_given_up_on():
     assert coordinator._pending_unit_pushes == set()
 
 
+def test_a_send_to_a_sleeping_machine_waits_for_it_to_wake(monkeypatch):
+    """Live 2026-10-28: an 8005 sent to a sleeping machine woke it, but the
+    send and its immediate resend both went unacknowledged, so the unit
+    change was dropped. Asleep, it gets the app's wake-retry instead:
+    up to 3 sends, 1.5 s apart."""
+
+    class _WakingClient(_RecordingClient):
+        async def send_and_wait(self, command, data=None, *, raw=None, **kwargs):
+            self.sent.append((command, raw if raw is not None else data))
+            if command == 8005 and len(self.sent) < 3:
+                self._sleeping = False  # the first send wakes it
+                raise AckTimeout(f"No ACK for {command}")
+            return b""
+
+    delays: list[float] = []
+
+    async def _fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr(connection_module.asyncio, "sleep", _fake_sleep)
+    client = _WakingClient(sleeping=True)
+    coordinator = _Coordinator(client=client, hass=_FakeHass())
+    coordinator._weight_unit = "oz"
+    coordinator._pending_unit_pushes = {"weight_unit"}
+
+    asyncio.run(coordinator._apply_unit_preferences())
+
+    assert client.sent == [(8005, [2]), (8005, [2]), (8005, [2]), (8022, None)]
+    assert delays[:2] == [
+        connection_module._WAKE_RETRY_DELAY_S,
+        connection_module._WAKE_RETRY_DELAY_S,
+    ]
+    assert coordinator._pending_unit_pushes == set()
+
+
 def test_nothing_pending_sends_nothing_at_all():
     """No settings command means no page was opened, so no back-to-home
     either — 8022 on its own would yank the machine off whatever screen
@@ -244,6 +285,9 @@ def test_nothing_pending_sends_nothing_at_all():
 def test_a_send_that_could_not_be_attempted_stays_pending():
     class _DeadClient:
         is_connected = False
+
+        def is_sleeping(self) -> bool:
+            return False
 
         async def send_and_wait(self, *args, **kwargs):
             raise ConnectionError("Not connected to device")
