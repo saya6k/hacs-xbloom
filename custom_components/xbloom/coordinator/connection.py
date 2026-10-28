@@ -44,6 +44,7 @@ from .constants import (
     _RECONNECT_BACKOFF_MAX_S,
     _WAKE_RETRY_DELAY_S,
     _WAKE_RETRY_MAX_ATTEMPTS,
+    _WAKE_WAIT_S,
     TEMP_UNIT_OPTIONS,
     WATER_SOURCE_DIRECT,
     WATER_SOURCE_TANK,
@@ -1041,8 +1042,14 @@ class ConnectionMixin:
         at the start or still is. Live 2026-10-28: a recipe arm's first
         8022 to the sleeping machine went unacknowledged and the arm
         failed outright; the identical 8022 sent again was ACKed in 86 ms.
+
+        Resending alone does not wake it, though (live 2026-10-28, rc.3:
+        three 8022s went unacknowledged), so a machine asleep at the start
+        is woken first — see :meth:`_async_wake_machine`.
         """
         asleep = bool(self.client and self.client.is_sleeping())
+        if asleep:
+            await self._async_wake_machine()
         result: _T = None  # type: ignore[assignment]
         for attempt in range(1, _WAKE_RETRY_MAX_ATTEMPTS + 1):
             try:
@@ -1067,3 +1074,50 @@ class ConnectionMixin:
                 )
                 await asyncio.sleep(_WAKE_RETRY_DELAY_S)
         return result
+
+    async def _async_wake_machine(self) -> None:
+        """Wake a sleeping machine before a user action.
+
+        Live 2026-10-28 (rc.3): with the link held, the sleeping machine
+        kept streaming 20501 but ignored every command, and a reconnect
+        woke it — the connect handshake (8100) was followed by 8011. The
+        official app sends 8100 only right after connecting
+        (``AppBleManager.mtuSuccess``), so it has no wake path for a held
+        link either.
+
+        First the handshake alone on the held link: cheap, but whether it
+        wakes the machine there is unverified, hence the log line. Then a
+        reconnect, which is verified. Never the reconnect while something
+        is armed: connecting sends the cleanup commands (40519/8013/8012,
+        ``XBloomClient._reset_state``), which would clear the arm the
+        caller is about to confirm.
+        """
+        if self.client is not None:
+            await self.client.async_send_handshake()
+            if await self._async_wait_awake():
+                _LOGGER.info("Machine woke on the handshake")
+                return
+        if self._armed_operation:
+            _LOGGER.info(
+                "Machine still asleep after the handshake; not reconnecting "
+                "while %s is armed", self._armed_operation,
+            )
+            return
+        _LOGGER.info("Machine still asleep after the handshake — reconnecting")
+        await self.async_disconnect()
+        # Our own drop, not a user-requested disconnect (same as
+        # _async_drop_stale_link).
+        self._manual_disconnect = False
+        # No wait-for-awake after this: the reconnect builds a fresh client,
+        # whose sleep flag starts clear whatever the machine is doing.
+        if not await self.async_connect():
+            _LOGGER.warning("Reconnect to wake the machine failed")
+
+    async def _async_wait_awake(self) -> bool:
+        """Wait up to ``_WAKE_WAIT_S`` for the machine to stop reporting
+        itself asleep (8011/8023 clear the flag)."""
+        for _ in range(int(_WAKE_WAIT_S / 0.1)):
+            if not (self.client and self.client.is_sleeping()):
+                return True
+            await asyncio.sleep(0.1)
+        return not (self.client and self.client.is_sleeping())
