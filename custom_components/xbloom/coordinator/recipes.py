@@ -314,9 +314,9 @@ class RecipesMixin:
         values above instead.
 
         Always brews in one call — the execute_recipe / execute_tea_recipe
-        services and every LLM tool call this directly. See
+        services call this directly. See
         :meth:`async_arm_recipe`/:meth:`async_confirm_recipe` for the
-        two-stage manual-button form (HA button entity only).
+        two-stage form (HA button entity and the LLM tool).
         """
         if not await self._async_ensure_connected():
             return
@@ -356,22 +356,29 @@ class RecipesMixin:
             self._active_recipe_pours = None
             self._active_operation = None
 
-    async def async_arm_recipe(self) -> None:
-        """First press of the two-stage manual execute-recipe button flow
-        (2026-07-18, HA button entity only — see ``_armed_operation``'s
-        docstring in ``__init__.py``): runs every check
-        :meth:`async_execute_recipe` does and queues the currently
-        selected recipe on the machine (through 8001/8004 for coffee, or
-        4513 for tea) without starting it. ``async_confirm_recipe()``
-        sends the actual go command on a second press of the same button.
-        Always uses the recipe's own stored settings — no overrides,
-        matching the button's no-argument single-shot counterpart.
+    async def async_arm_recipe(
+        self,
+        *,
+        overrides: dict | None = None,
+        pour_overrides: list[dict] | None = None,
+        bypass_volume: float | None = None,
+        bypass_temperature: float | None = None,
+    ) -> None:
+        """Arm half of the two-stage execute-recipe flow (the HA button's
+        first press, and the xbloom__execute_recipe LLM tool's first
+        call — see ``_armed_operation``'s docstring in ``__init__.py``):
+        runs every check :meth:`async_execute_recipe` does and queues the
+        currently selected recipe on the machine (through 8001/8004 for
+        coffee, or 4513 for tea) without starting it.
+        ``async_confirm_recipe()`` sends the actual go command. Takes the
+        same per-brew overrides as :meth:`async_execute_recipe`; they are
+        baked into the queued payload, so the confirm needs none.
         """
         if not await self._async_ensure_connected():
             return
         prepared = self._prepare_recipe_execution(
-            overrides=None, pour_overrides=None,
-            bypass_volume=None, bypass_temperature=None,
+            overrides=overrides, pour_overrides=pour_overrides,
+            bypass_volume=bypass_volume, bypass_temperature=bypass_temperature,
         )
         if prepared is None:
             return

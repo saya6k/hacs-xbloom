@@ -34,7 +34,9 @@ class XBloomGrindTool(XBloomBaseTool):
         "grind page showing the requested settings without starting — and "
         "you must then ask the user to confirm. Call again with "
         "confirmed=true to start the grind; if the user declines, call "
-        "xbloom__cancel to back out. Use xbloom__pour afterwards for a "
+        "xbloom__cancel to back out. confirmed=true only starts a grind "
+        "that is still armed — otherwise it arms again and you must ask "
+        "again. Use xbloom__pour afterwards for a "
         "manual pour, or xbloom__execute_recipe to grind and pour a full "
         "recipe in one call."
     )
@@ -107,18 +109,18 @@ class XBloomGrindTool(XBloomBaseTool):
             self.coordinator.rpm = int(rpm)
 
         confirmed = bool(args.get("confirmed", False))
+        # Only a standing arm can be started. confirmed=true without one
+        # (fresh conversation, or the arm was cleared machine-side) arms
+        # again and asks again — never a one-shot start.
+        start = confirmed and self.coordinator._armed_operation == "grind"
         try:
-            if not confirmed:
-                # Phase 1: arm — the machine opens its grind page showing
-                # the requested settings while the user is being asked.
-                await self.coordinator.async_arm_grind()
-            elif self.coordinator._armed_operation == "grind":
+            if start:
                 # Phase 2: the arm is still standing — bare start.
                 await self.coordinator.async_confirm_grind()
             else:
-                # confirmed=true without a live arm (fresh conversation,
-                # or the arm was cleared machine-side) — one-shot start.
-                await self.coordinator.async_grind()
+                # Phase 1: arm — the machine opens its grind page showing
+                # the requested settings while the user is being asked.
+                await self.coordinator.async_arm_grind()
         except Exception as exc:
             _LOGGER.exception("xbloom__grind failed: %s", exc)
             return llm.ToolResult(
@@ -132,7 +134,7 @@ class XBloomGrindTool(XBloomBaseTool):
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
 
-        if not confirmed:
+        if not start:
             return llm.ToolResult(
                 data={
                     "success": True,
@@ -140,7 +142,13 @@ class XBloomGrindTool(XBloomBaseTool):
                     "grind_size": self.coordinator.grind_size,
                     "rpm": self.coordinator.rpm,
                     "instruction": (
-                        "The machine is now showing its grind page with these "
+                        (
+                            "Grinding has NOT started: there was no standing arm "
+                            "to confirm, so the machine was armed again. "
+                            if confirmed
+                            else ""
+                        )
+                        + "The machine is now showing its grind page with these "
                         "settings. Ask the user to confirm starting the grind; "
                         "if they agree, call xbloom__grind again with "
                         "confirmed=true. If they decline, call xbloom__cancel."

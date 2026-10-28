@@ -165,3 +165,15 @@ def test_arm_with_no_recipe_selected_is_a_noop():
 
     assert coordinator._armed_operation is None
     assert coordinator.client.raw_calls == []
+
+
+def test_arm_bakes_overrides_into_the_queued_payload(monkeypatch):
+    """The LLM tool arms with per-brew overrides, so the armed recipe
+    (what confirm starts) must carry them — not the stored settings."""
+    _no_sleep(monkeypatch)
+    coordinator = _Coordinator({"V60": _COFFEE_RECIPE}, "V60")
+    asyncio.run(coordinator.async_arm_recipe(overrides={"dose_g": 20.0}))
+
+    assert coordinator._armed_operation == "recipe"
+    # 20 g × 15 = 300 ml total, rescaled from the stored 270 ml.
+    assert sum(p.volume for p in coordinator._active_recipe_pours) == 300

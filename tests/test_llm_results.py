@@ -74,6 +74,25 @@ def test_grind_arm_does_not_start_grinding():
     coord.async_confirm_grind.assert_not_awaited()
 
 
+def test_grind_confirmed_without_arm_rearms_instead_of_starting():
+    coord = SimpleNamespace(
+        client=SimpleNamespace(is_connected=True),
+        grind_size=50,
+        rpm=80,
+        _armed_operation=None,
+        async_arm_grind=AsyncMock(),
+        async_grind=AsyncMock(),
+        async_confirm_grind=AsyncMock(),
+        async_update_listeners=Mock(),
+    )
+    result = call(XBloomGrindTool(coord, None), {"confirmed": True})
+    assert result.data["armed"]
+    assert "NOT started" in result.data["instruction"]
+    coord.async_arm_grind.assert_awaited_once()
+    coord.async_grind.assert_not_awaited()
+    coord.async_confirm_grind.assert_not_awaited()
+
+
 def test_catalog_metadata_distinguishes_side_effects():
     tools = {tool.name: tool for tool in build_tools(None, None)}
     for tool in tools.values():
