@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/saya6k)
 
-Local Bluetooth control of an [xBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes, expose the brewer to Assist (LLM) — all without the cloud.
+Local Bluetooth control of an [xBloom Studio](https://xbloom.com/) coffee machine from Home Assistant. Pour, grind, run saved recipes from an app-style sidebar dashboard, expose the brewer to Assist (LLM) — all without the cloud.
 
 Built on the protocol work of two reverse-engineered BLE upstreams. The BLE client here is a **clean-room native implementation** ([`custom_components/xbloom/ble/`](custom_components/xbloom/ble/), see [ADR-001](adr/001-clean-room-reimplementation-of-xbloom-ble.md)) — it does not import or copy either upstream. Both were formerly vendored under `custom_components/xbloom/src/` as unmodified reference copies and have since been removed; they are credited by link only:
 
@@ -20,8 +20,27 @@ Built on the protocol work of two reverse-engineered BLE upstreams. The BLE clie
 
 This integration's own protocol reference now lives in [`docs/en/protocol.md`](docs/en/protocol.md), written from its own captures and APK decompilation. Huge thanks to Frederic, the PyBloom contributors, and Bruno Azzinnari for the protocol work that makes this integration possible.
 
+## Dashboard
+
+The integration adds an **xBloom** page to the Home Assistant sidebar (coffee-maker icon), laid out like the official app and visible to all users:
+
+- **Brew** — live weight ring, water temperature and flow, the selected recipe with its pour timeline, and load / start / pause / cancel.
+- **Recipes** — a searchable coffee and tea library, recipe detail, an editor for dose, ratio, grind, RPM, bypass and every pour step, duplicate / delete, and writing to an Easy slot. The **Cloud** sub-tab searches xBloom's public recipe hub and imports a result, a share link or a recipe id into your recipes, no account needed.
+- **Manual** — grinder, pour and scale controls.
+- **Settings** — connection, PRO / Easy mode, Easy slots, pour radius, vibration, brightness, grinder calibration and device info.
+
+It drives the same entities and services as everything else, so nothing it does is out of reach of automations.
+
+<p align="center">
+  <img src="docs/images/panel-brew.png" alt="Brew tab: the selected recipe with dose, ratio, water, grind, temperature and its pour timeline" width="420">
+</p>
+<p align="center">
+  <img src="docs/images/panel-manual.png" alt="Manual tab: grinder, pour and scale controls" width="720">
+</p>
+
 ## Features
 
+- **Sidebar dashboard** — an app-style page for brewing, recipes, manual control and machine settings (see [Dashboard](#dashboard)).
 - **Local recipes are the source of truth** — every recipe gets a stable local `uid` and lives in HA; that's what the Recipe dropdown shows and brews. Seeded once at install (from your cloud account if linked, else xBloom's official public recipes), then no background sync — manage it from the HA UI, the recipe services, or `configuration.yaml`.
 - **Cross-identifier addressing** — every service/tool takes one `recipe` field: local uid, cloud table id, share URL/id, or exact name.
 - **Manual control** — pour with custom temperature/volume/flow rate/pour pattern, grind with custom size/RPM, **tare** the scale, vibrate the tray.
