@@ -123,6 +123,13 @@ def test_water_only_recipe_with_cup_has_empty_checklist():
     assert result.data["checklist"] == []
 
 
+def test_unknown_weight_asks_about_the_cup():
+    coord = _coordinator(weight=None)
+    result = _call(coord, {"recipe": "Hot water"})
+    assert result.data["armed"]
+    assert any("cup" in item for item in result.data["checklist"])
+
+
 def test_failed_arm_is_a_tool_error():
     coord = _coordinator()
     coord.async_arm_recipe = AsyncMock()  # swallows, never sets the arm
