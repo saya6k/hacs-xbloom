@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
-    EntityCategory,
     SensorDeviceClass,
     SensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EntityCategory,
     UnitOfElectricPotential,
     UnitOfMass,
     UnitOfTemperature,
