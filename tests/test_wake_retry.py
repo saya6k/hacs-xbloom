@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
+from custom_components.xbloom.ble.client import AckTimeout
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
 from custom_components.xbloom.coordinator.constants import (
     _WAKE_RETRY_DELAY_S,
@@ -60,13 +63,15 @@ def test_single_success_when_never_sleeping(monkeypatch):
 
     asyncio.run(coordinator._async_retry_while_sleeping(action))
     assert len(calls) == 1
-    assert client.is_sleeping_call_count == 1
+    # One up-front check (asleep at start?) plus one after the action.
+    assert client.is_sleeping_call_count == 2
 
 
 def test_retries_while_sleeping_then_stops_once_awake(monkeypatch):
     _no_sleep(monkeypatch)
-    # Reports asleep for the first 2 checks, awake on the 3rd.
-    client = _FakeClient(sleeping_for_n_checks=2)
+    # Reports asleep for the up-front check and after the first 2 sends,
+    # awake after the 3rd.
+    client = _FakeClient(sleeping_for_n_checks=3)
     coordinator = _Coordinator(client)
     calls = []
 
@@ -96,7 +101,7 @@ def test_action_called_fresh_each_retry_not_reused_coroutine(monkeypatch):
     # (e.g. `client.foo()` instead of `client.foo`) would raise
     # "cannot reuse already awaited coroutine" on the second attempt.
     _no_sleep(monkeypatch)
-    client = _FakeClient(sleeping_for_n_checks=1)
+    client = _FakeClient(sleeping_for_n_checks=2)
     coordinator = _Coordinator(client)
     seen = []
 
@@ -124,7 +129,7 @@ def test_returns_the_action_result(monkeypatch):
 
 def test_returns_the_last_result_even_after_retries(monkeypatch):
     _no_sleep(monkeypatch)
-    client = _FakeClient(sleeping_for_n_checks=2)
+    client = _FakeClient(sleeping_for_n_checks=3)
     coordinator = _Coordinator(client)
     calls = []
 
@@ -143,7 +148,7 @@ def test_waits_the_expected_delay_between_retries(monkeypatch):
         sleeps.append(seconds)
 
     monkeypatch.setattr(asyncio, "sleep", _record_sleep)
-    client = _FakeClient(sleeping_for_n_checks=1)
+    client = _FakeClient(sleeping_for_n_checks=2)
     coordinator = _Coordinator(client)
 
     async def action():
@@ -151,3 +156,53 @@ def test_waits_the_expected_delay_between_retries(monkeypatch):
 
     asyncio.run(coordinator._async_retry_while_sleeping(action))
     assert sleeps == [_WAKE_RETRY_DELAY_S]
+
+
+def test_ack_timeout_while_asleep_is_retried(monkeypatch):
+    # Live 2026-10-28: a recipe arm's first 8022 to the sleeping machine
+    # went unacknowledged and the arm failed outright; the same 8022 sent
+    # again was ACKed in 86 ms.
+    _no_sleep(monkeypatch)
+    client = _FakeClient(sleeping_for_n_checks=1)
+    coordinator = _Coordinator(client)
+    calls = []
+
+    async def action():
+        calls.append(1)
+        if len(calls) == 1:
+            raise AckTimeout("No ACK for 8022")
+        return "armed"
+
+    result = asyncio.run(coordinator._async_retry_while_sleeping(action))
+    assert result == "armed"
+    assert len(calls) == 2
+
+
+def test_ack_timeout_while_awake_is_not_retried(monkeypatch):
+    _no_sleep(monkeypatch)
+    client = _FakeClient(sleeping_for_n_checks=0)
+    coordinator = _Coordinator(client)
+    calls = []
+
+    async def action():
+        calls.append(1)
+        raise AckTimeout("No ACK for 8022")
+
+    with pytest.raises(AckTimeout):
+        asyncio.run(coordinator._async_retry_while_sleeping(action))
+    assert len(calls) == 1
+
+
+def test_ack_timeout_gives_up_after_max_attempts(monkeypatch):
+    _no_sleep(monkeypatch)
+    client = _FakeClient(sleeping_for_n_checks=_WAKE_RETRY_MAX_ATTEMPTS + 10)
+    coordinator = _Coordinator(client)
+    calls = []
+
+    async def action():
+        calls.append(1)
+        raise AckTimeout("No ACK for 8022")
+
+    with pytest.raises(AckTimeout):
+        asyncio.run(coordinator._async_retry_while_sleeping(action))
+    assert len(calls) == _WAKE_RETRY_MAX_ATTEMPTS
