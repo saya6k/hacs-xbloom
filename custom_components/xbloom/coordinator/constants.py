@@ -248,6 +248,10 @@ _WAKE_RETRY_DELAY_S = 1.5
 # re-read (2026-07-19): its timeout path resends only while
 # retryCount < 3 with retryCount starting at 1, i.e. initial + 2 retries.
 _WAKE_RETRY_MAX_ATTEMPTS = 3
+# How long _async_wake_machine waits for 8011 after each wake attempt. On
+# the 2026-10-28 reconnect, 8011 came 0.9 s after the 8100 was sent; on
+# the 2026-10-14 Mac capture the 8100 ACK alone took 3.1 s.
+_WAKE_WAIT_S = 3.0
 
 # Pour pattern names ↔ ints, shared by the manual-pour select entity and
 # the per-pour LLM override. Mirrors schema.py's _PATTERN_NAME_TO_INT and

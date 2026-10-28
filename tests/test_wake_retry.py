@@ -42,6 +42,11 @@ class _Coordinator(ConnectionMixin):
     def __init__(self, client) -> None:
         self.client = client
 
+    async def _async_wake_machine(self) -> None:
+        # The wake step has its own tests (test_wake_before_action.py);
+        # these cover the resend loop on its own.
+        pass
+
 
 def _no_sleep(monkeypatch):
     """Skip the real asyncio.sleep delay between retries so tests run fast."""

@@ -280,3 +280,13 @@ command id.
   send and an immediate resend both went unacknowledged. A settings command
   sent while asleep now gets the same wake-retry as every other action: up
   to 3 sends, 1.5 s apart (`_async_send_unit_command`).
+- **Resending does not reliably wake a sleeping machine over a held link**
+  (live 2026-10-28): three `8022`s 1.5 s apart all went unacknowledged while
+  20501 kept streaming; a reconnect woke it (`8100`, then `8011` 0.9 s
+  later). The official app sends `8100` only right after connecting
+  (`AppBleManager.mtuSuccess`). Before a user action on a sleeping machine,
+  this integration now sends `8100` on the held link, and reconnects if the
+  machine is still asleep 3 s later, except while something is armed, since
+  connecting sends the cleanup commands that would clear it
+  (`_async_wake_machine`). Whether `8100` alone wakes it over a held link is
+  not yet confirmed.
