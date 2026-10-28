@@ -215,7 +215,7 @@ class XBloomListRecipesTool(XBloomBaseTool):
 
 
 class XBloomExecuteRecipeTool(XBloomBaseTool):
-    """Execute a saved recipe by name, after the user confirms beans are loaded."""
+    """Arm a saved recipe on the machine, then start it once the user confirms."""
 
     name = "xbloom__execute_recipe"
     title = "Execute xBloom recipe"
@@ -223,71 +223,32 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         read_only=False, destructive=True, idempotent=False, open_world=True
     )
     description = (
-        "Execute a saved xBloom recipe. Any top-level scalar (grind_size, "
-        "rpm, dose_g, ratio, cup_type, bypass) can be overridden for this "
-        "brew only — the stored recipe is unchanged, and a dose/ratio "
-        "override rescales the pour volumes proportionally. SAFETY: before calling this "
-        "tool you MUST ask the user to confirm: (1) that beans (or tea "
-        "leaves, for tea recipes) have been added, (2) that the dripper is "
-        "attached, (3) for coffee only, that the paper coffee filter has "
-        "been installed in the dripper (the machine cannot detect the "
-        "filter on its own), and (4) that the cup or dripper is on the "
-        "scale. Recipes that don't grind (dose_g or grind_size is 0/absent — "
-        "check xbloom__get_recipe first — e.g. a water-only pour) skip the "
-        "beans/dripper/filter confirmation entirely, since there are no "
-        "grounds to add or catch; you can call this tool directly for those "
-        "without asking. The tool can usually detect the cup automatically by its "
-        "weight; however, if a cup was placed before the machine powered "
-        "on, the scale reads it as 0 g — in that case the tool will ask "
-        "the user to verify the cup and you should pass cup_confirmed=true "
-        "after the user confirms. Water level is checked automatically "
-        "(no user confirmation needed) — the tool refuses to start and "
-        "returns error='water_low' if the tank needs a refill. This check "
-        "is skipped when the Water Source select is set to 'direct' (hose "
-        "feed), since the low-water sensor only tracks the internal tank."
+        "Execute a saved xBloom recipe. Two-phase flow: the first call "
+        "(without confirmed) ARMS the machine — it loads the recipe and "
+        "shows its start prompt without brewing — and returns a checklist "
+        "(beans or tea leaves, dripper, paper filter, cup) to ask the user "
+        "about. Call again with confirmed=true once the user confirms; if "
+        "they decline, call xbloom__cancel. confirmed=true only starts a "
+        "recipe that is still armed — otherwise it arms again and you must "
+        "ask again. Any top-level scalar (grind_size, rpm, dose_g, ratio, "
+        "cup_type, bypass) can be overridden for this brew only — the "
+        "stored recipe is unchanged, and a dose/ratio override rescales the "
+        "pour volumes proportionally. Overrides are applied when arming: "
+        "pass them on the first call; to change them, call again without "
+        "confirmed. Water level is checked automatically — the tool refuses "
+        "to arm and returns error='water_low' if the tank needs a refill "
+        "(skipped when the Water Source select is 'direct', a hose feed)."
     )
     parameters = vol.Schema(
         {
             vol.Required("recipe", description=_RECIPE_ID_DESCRIPTION): str,
-            vol.Required(
-                "beans_confirmed",
+            vol.Optional(
+                "confirmed",
+                default=False,
                 description=(
-                    "Set to true ONLY after the user has explicitly confirmed "
-                    "that beans (or tea leaves) have been loaded. If you have "
-                    "not yet asked the user, set this to false."
-                ),
-            ): bool,
-            vol.Required(
-                "dripper_confirmed",
-                description=(
-                    "Set to true ONLY after the user has explicitly confirmed "
-                    "that the dripper is attached (coffee and tea recipes "
-                    "both use it). Not needed for a no-grind recipe (see "
-                    "tool description)."
-                ),
-            ): bool,
-            vol.Required(
-                "filter_confirmed",
-                description=(
-                    "Set to true ONLY after the user has explicitly confirmed "
-                    "that the paper coffee filter is installed. The machine "
-                    "cannot detect this on its own, so you must ask the user. "
-                    "For tea recipes the filter is not needed and you may "
-                    "still pass true once the user has confirmed they are "
-                    "ready."
-                ),
-            ): bool,
-            vol.Required(
-                "cup_confirmed",
-                description=(
-                    "Set to true ONLY after the user has explicitly confirmed "
-                    "that the cup or dripper is on the scale. If the scale "
-                    "already shows weight from the cup, the tool will accept "
-                    "the call without asking, even if you pass false. You "
-                    "only need to pass true when the previous call returned "
-                    "cup_unverified, meaning the scale was tared at 0 g with "
-                    "the cup on it (this happens when the cup was placed "
-                    "before the machine powered on)."
+                    "Set to true ONLY after the user has confirmed every "
+                    "item of the checklist the first (arming) call returned "
+                    "and wants to start the brew."
                 ),
             ): bool,
             vol.Optional(
@@ -368,39 +329,20 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         }
     )
 
-    async def _async_try_prearm(self, recipe_name: str, has_overrides: bool) -> bool:
-        """Best-effort pre-arm before a confirmation ask (T13): load the
-        recipe on the machine so its start prompt is showing while the
-        user is asked. Skipped for override-carrying calls (the armed
-        payload uses stored settings only) and when an arm is already
-        standing. Returns whether an arm is in place afterwards."""
-        if has_overrides:
-            return False
-        if self.coordinator._armed_operation == "recipe":
-            return True
-        try:
-            self.coordinator.select_recipe(recipe_name)
-            await self.coordinator.async_arm_recipe()
-        except Exception as exc:
-            _LOGGER.debug("recipe pre-arm failed (best-effort): %s", exc)
-        return self.coordinator._armed_operation == "recipe"
-
     async def async_call(
         self,
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> llm.ToolResult:
-        beans_confirmed = bool(tool_input.tool_args["beans_confirmed"])
-        dripper_confirmed = bool(tool_input.tool_args["dripper_confirmed"])
-        filter_confirmed = bool(tool_input.tool_args["filter_confirmed"])
-        cup_confirmed = bool(tool_input.tool_args["cup_confirmed"])
+        args = tool_input.tool_args
+        confirmed = bool(args.get("confirmed", False))
 
-        resolved, err = _resolve_or_error(self.coordinator, tool_input.tool_args["recipe"])
+        resolved, err = _resolve_or_error(self.coordinator, args["recipe"])
         if err:
             return llm.ToolResult(data=err, error=True)
         recipe_name, recipe = resolved
-        cup_type = (recipe.get("cup_type") or "omni_dripper").lower()
+        cup_type = (args.get("cup_type") or recipe.get("cup_type") or "omni_dripper").lower()
         is_tea = cup_type == "tea"
         ingredient = "tea leaves" if is_tea else "beans"
 
@@ -410,34 +352,8 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         # brewing.py use to decide whether to send the grind command at all.
         needs_grind = (
             not is_tea
-            and float(recipe.get("dose_g", 0) or 0) > 0
+            and float(args.get("dose_g", recipe.get("dose_g", 0)) or 0) > 0
             and int(recipe.get("grind_size", 0) or 0) > 0
-        )
-
-        missing: list[str] = []
-        if is_tea or needs_grind:
-            if not beans_confirmed:
-                missing.append(ingredient)
-            if not dripper_confirmed:
-                missing.append("dripper")
-            if needs_grind and not filter_confirmed:
-                missing.append("paper coffee filter")
-
-        # Per-call overrides make the arm/confirm path unusable: the armed
-        # payload always carries the recipe's STORED settings, so a
-        # confirm would silently ignore them (T13).
-        has_overrides = bool(
-            {
-                "grind_size",
-                "rpm",
-                "bypass_volume",
-                "bypass_temperature",
-                "dose_g",
-                "ratio",
-                "cup_type",
-            }
-            & tool_input.tool_args.keys()
-            or tool_input.tool_args.get("pour_overrides")
         )
 
         client = self.coordinator.client
@@ -484,75 +400,39 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
                 error=True,
             )
 
-        if missing:
-            items = " and ".join(missing)
-            confirmed_flags = {
-                ingredient: "beans_confirmed",
-                "dripper": "dripper_confirmed",
-                "paper coffee filter": "filter_confirmed",
-            }
-            retry_flags = " and ".join(f"{confirmed_flags[item]}=true" for item in missing)
-            armed = await self._async_try_prearm(recipe_name, has_overrides)
+        # Phase 2: only a standing arm of THIS recipe can be started. The
+        # overrides were baked into the armed payload, so any repeated on
+        # this call are ignored.
+        if (
+            confirmed
+            and self.coordinator._armed_operation == "recipe"
+            and self.coordinator.selected_recipe == recipe_name
+        ):
+            try:
+                await self.coordinator.async_confirm_recipe()
+            except Exception as exc:
+                _LOGGER.exception("xbloom__execute_recipe failed: %s", exc)
+                return llm.ToolResult(
+                    data={
+                        "success": False,
+                        "error": f"Execution failed: {exc!s}",
+                    },
+                    error=True,
+                )
+            self.coordinator.async_update_listeners()
             return llm.ToolResult(
                 data={
-                    "success": False,
-                    "confirmation_required": True,
-                    "missing_confirmations": missing,
+                    "success": True,
                     "recipe": _summarize_recipe(recipe),
-                    "instruction": (
-                        "Do NOT start the recipe yet. "
-                        + (
-                            "The machine has loaded the recipe and is showing its start prompt. "
-                            if armed
-                            else ""
-                        )
-                        + f"Ask the user to confirm "
-                        f"that the {items} have been added/installed for the "
-                        f"'{recipe_name}' recipe. The machine cannot detect the "
-                        f"filter on its own, so the user must verify it manually. "
-                        f"Once they confirm, call xbloom__execute_recipe again "
-                        f"with {retry_flags}."
-                    ),
+                    "instruction": ("Briefly confirm to the user that the recipe has started."),
                 }
             )
 
-        # Cup presence: weight > threshold proves a cup is there. A reading
-        # near 0 g is ambiguous because the machine auto-tares any weight
-        # present at power-on, so a cup placed before boot reads as 0 g.
-        # When ambiguous, fall back to a manual user confirmation.
-        weight = float((self.coordinator.data or {}).get("weight", 0.0) or 0.0)
-        cup_on_scale = weight >= CUP_PRESENCE_WEIGHT_G
-        if not cup_on_scale and not cup_confirmed:
-            armed = await self._async_try_prearm(recipe_name, has_overrides)
-            return llm.ToolResult(
-                data={
-                    "success": False,
-                    "error": "cup_unverified",
-                    "scale_weight_g": weight,
-                    "instruction": (
-                        "Do NOT start the recipe yet. "
-                        + (
-                            "The machine has loaded the recipe and is showing its start prompt. "
-                            if armed
-                            else ""
-                        )
-                        + "The scale reads "
-                        f"{weight:.1f} g, which means either no cup is on the "
-                        "machine OR a cup was placed before power-on (the "
-                        "machine tares any weight at boot to 0 g). Ask the "
-                        "user to confirm the cup or dripper is on the scale. "
-                        "Once they confirm, call xbloom__execute_recipe again "
-                        "with cup_confirmed=true."
-                    ),
-                },
-                error=True,
-            )
-
-        # Select the recipe (also syncs the grind/RPM sliders to it for
-        # coffee grinding recipes), then layer any explicit overrides on top.
+        # Phase 1: arm. Select the recipe (also syncs the grind/RPM sliders
+        # to it for coffee grinding recipes), then layer any explicit
+        # overrides on top.
         self.coordinator.select_recipe(recipe_name)
 
-        args = tool_input.tool_args
         bypass_volume = None
         bypass_temperature = None
         if not is_tea:
@@ -578,27 +458,22 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
             pour_overrides.append(entry)
 
         try:
-            if self.coordinator._armed_operation == "recipe" and not has_overrides:
-                # A standing pre-arm from the confirmation ask (T13) —
-                # confirm it instead of re-executing the whole chain.
-                await self.coordinator.async_confirm_recipe()
-            else:
-                if self.coordinator._armed_operation == "recipe":
-                    # Overrides arrived after a pre-arm: the armed payload
-                    # carries stored settings only — back out first.
-                    await self.coordinator.async_cancel()
-                await self.coordinator.async_execute_recipe(
-                    overrides=overrides or None,
-                    pour_overrides=pour_overrides or None,
-                    bypass_volume=bypass_volume,
-                    bypass_temperature=bypass_temperature,
-                )
+            if self.coordinator._armed_operation:
+                # A standing arm (another recipe, stale overrides, or a
+                # grind/pour) — back out of its screen before re-arming.
+                await self.coordinator.async_cancel()
+            await self.coordinator.async_arm_recipe(
+                overrides=overrides or None,
+                pour_overrides=pour_overrides or None,
+                bypass_volume=bypass_volume,
+                bypass_temperature=bypass_temperature,
+            )
         except Exception as exc:
-            _LOGGER.exception("xbloom__execute_recipe failed: %s", exc)
+            _LOGGER.exception("xbloom__execute_recipe arm failed: %s", exc)
             return llm.ToolResult(
                 data={
                     "success": False,
-                    "error": f"Execution failed: {exc!s}",
+                    "error": f"Arming failed: {exc!s}",
                 },
                 error=True,
             )
@@ -606,10 +481,59 @@ class XBloomExecuteRecipeTool(XBloomBaseTool):
         # Reflect the selection on the select entity.
         self.coordinator.async_update_listeners()
 
+        if self.coordinator._armed_operation != "recipe":
+            # async_arm_recipe logs and swallows BLE failures.
+            return llm.ToolResult(
+                data={
+                    "success": False,
+                    "error": "arm_failed",
+                    "instruction": (
+                        "Tell the user the recipe could not be loaded on the "
+                        "xBloom. Nothing was started."
+                    ),
+                },
+                error=True,
+            )
+
+        # The checklist for the user. Cup presence: weight above the
+        # threshold proves a cup is there; a reading near 0 g is ambiguous
+        # because the machine auto-tares any weight present at power-on, so
+        # a cup placed before boot reads as 0 g.
+        checklist: list[str] = []
+        if is_tea or needs_grind:
+            checklist.append(f"{ingredient} added")
+            checklist.append("dripper attached")
+        if needs_grind:
+            checklist.append(
+                "paper coffee filter installed (the machine cannot detect it)"
+            )
+        weight = float((self.coordinator.data or {}).get("weight", 0.0) or 0.0)
+        if weight < CUP_PRESENCE_WEIGHT_G:
+            checklist.append(
+                f"cup or dripper on the scale (the scale reads {weight:.1f} g — "
+                "either nothing is on it, or it was placed before power-on "
+                "and tared to 0 g)"
+            )
         return llm.ToolResult(
             data={
                 "success": True,
+                "armed": True,
+                "confirmation_required": True,
+                "checklist": checklist,
                 "recipe": _summarize_recipe(recipe),
-                "instruction": ("Briefly confirm to the user that the recipe has started."),
+                "instruction": (
+                    (
+                        "The recipe has NOT started: there was no standing arm "
+                        "of it to confirm, so the machine was armed again. "
+                        if confirmed
+                        else ""
+                    )
+                    + "The machine has loaded the recipe and is showing its "
+                    "start prompt. Ask the user to confirm "
+                    + (": " + "; ".join(checklist) + ". " if checklist else "starting it. ")
+                    + "If they confirm, call xbloom__execute_recipe again with "
+                    "the same recipe and confirmed=true. If they decline, call "
+                    "xbloom__cancel."
+                ),
             }
         )

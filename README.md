@@ -219,7 +219,7 @@ Through Assist (LLM), the same surface is exposed as tools: `xbloom__list_recipe
 
 - **xBloom Original is not supported**: this integration only talks to xBloom **Studio** over Bluetooth LE (see `manifest.json`'s `bluetooth` matcher) — Original uses an entirely different Wi-Fi protocol, and the maintainer has no Original unit to test. The cloud API also hardcodes `adaptedModel: 1` (Studio), so the account recipe seed and `cloud_export_recipe` are unverified for an Original-only account.
 - **MachineInfo on some firmwares**: certain firmware revisions never push `RD_MachineInfo`, so the Model / Serial / Firmware sensors may stay `unknown`. The water-level binary sensor falls back to event-driven detection on those firmwares.
-- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — the LLM `xbloom__execute_recipe` tool asks for explicit confirmation when this happens.
+- **Manual cup detection**: the scale auto-tares any weight present at power-on, so a cup placed before boot reads as 0 g — when this happens the LLM `xbloom__execute_recipe` tool adds the cup to the checklist it returns when it arms the recipe.
 - **Recipe water source**: the manual pour entity respects the water-source select (tank vs. direct plumbed); recipe execution does not — the firmware runs its own pour sequence internally.
 - **Tea soak timing is approximately calibrated**: the wait between steeps is scaled from the recipe's `pausing` seconds using a factor derived from a couple of stopwatch measurements — see [`brewing-notes.md`](docs/en/brewing-notes.md) for details if you need tighter timing.
 

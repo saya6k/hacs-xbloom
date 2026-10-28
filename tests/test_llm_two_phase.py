@@ -28,9 +28,8 @@ def test_grind_tool_is_two_phase():
     assert '"confirmed"' in src
     assert "async_arm_grind" in src
     assert "async_confirm_grind" in src
-    # One-shot fallback when confirmed=true arrives without a prior arm
-    # (fresh conversation): the full start command still works.
-    assert "async_grind" in src
+    # No one-shot start: confirmed=true without a standing arm re-arms.
+    assert "async_grind()" not in src
 
 
 def test_pour_tool_is_two_phase():
@@ -38,7 +37,7 @@ def test_pour_tool_is_two_phase():
     assert '"confirmed"' in src
     assert "async_arm_pour" in src
     assert "async_confirm_pour" in src
-    assert "async_pour" in src
+    assert "async_pour()" not in src
 
 
 def test_pour_boiling_maps_to_the_bp_slider_endpoint():

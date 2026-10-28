@@ -256,9 +256,11 @@ class XBloomCoordinator(
         # pour mode, or queue a recipe) without starting anything
         # irreversible, giving the user time to place a cup etc.; a second
         # press on the SAME button sends the actual go/start command.
-        # HA-button-only by design (button.py) — the execute_recipe /
-        # execute_tea_recipe services, async_grind()/async_pour(), and
-        # every LLM tool still act in one call, unchanged. One of "grind" /
+        # Used by the HA buttons (button.py) and the grind/pour/
+        # execute_recipe LLM tools, whose first call arms and whose
+        # confirmed=true call starts — the execute_recipe /
+        # execute_tea_recipe services and async_grind()/async_pour() still
+        # act in one call. One of "grind" /
         # "pour" / "recipe" / None. No timeout: stays armed until confirmed
         # or cancelled (async_cancel() sends the per-operation quit command
         # matching whichever machine screen the arm press opened).

@@ -503,9 +503,9 @@ async def _async_brew_coffee(
     Single-shot form: ``_async_arm_coffee`` followed by the same 1.0s
     spacing and the 8002 execute, unchanged from before the arm/confirm
     split (2026-07-18) — used by ``async_execute_recipe`` (the
-    execute_recipe service and every LLM tool), which always brews in
-    one call. See ``async_arm_recipe``/``async_confirm_recipe`` for the
-    two-stage manual-button form.
+    execute_recipe service), which always brews in one call. See
+    ``async_arm_recipe``/``async_confirm_recipe`` for the two-stage form
+    (HA button and LLM tool).
     """
     await _async_arm_coffee(
         client, recipe,
@@ -628,10 +628,10 @@ async def async_arm_recipe(
     bypass_temperature: float = 0.0,
 ) -> bytes | None:
     """Queue a recipe (coffee or tea) on the machine without starting it —
-    the "arm" half of the two-stage manual execute-recipe button flow
-    (2026-07-18, HA button entity only; the execute_recipe /
-    execute_tea_recipe services and every LLM tool call
-    ``async_execute_recipe`` directly and always brew in one call).
+    the "arm" half of the two-stage execute-recipe flow (the HA button
+    and the xbloom__execute_recipe LLM tool; the execute_recipe /
+    execute_tea_recipe services call ``async_execute_recipe`` directly
+    and always brew in one call).
 
     Returns whatever ``async_confirm_recipe`` needs to send the matching
     "go" command: ``None`` for coffee (confirm sends a bare 8002) or the

@@ -44,7 +44,9 @@ class XBloomPourTool(XBloomBaseTool):
         "temperature and pattern without pouring — and you must then ask "
         "the user to confirm (and to place a cup). Call again with "
         "confirmed=true to start the pour; if the user declines, call "
-        "xbloom__cancel to back out."
+        "xbloom__cancel to back out. confirmed=true only starts a pour "
+        "that is still armed — otherwise it arms again and you must ask "
+        "again."
     )
     parameters = vol.Schema(
         {
@@ -144,17 +146,17 @@ class XBloomPourTool(XBloomBaseTool):
             self.coordinator.flow_rate = float(flow_rate)
 
         confirmed = bool(args.get("confirmed", False))
+        # Only a standing arm can be started; confirmed=true without one
+        # arms again and asks again — never a one-shot start.
+        start = confirmed and self.coordinator._armed_operation == "pour"
         try:
-            if not confirmed:
+            if start:
+                await self.coordinator.async_confirm_pour()
+            else:
                 # Phase 1: arm — 8007 plus the entry push of the mirrored
                 # temperature/pattern, so the machine display shows what
                 # will happen while the user is being asked.
                 await self.coordinator.async_arm_pour()
-            elif self.coordinator._armed_operation == "pour":
-                await self.coordinator.async_confirm_pour()
-            else:
-                # confirmed=true without a live arm — one-shot start.
-                await self.coordinator.async_pour()
         except Exception as exc:
             _LOGGER.exception("xbloom__pour failed: %s", exc)
             return llm.ToolResult(
@@ -168,7 +170,7 @@ class XBloomPourTool(XBloomBaseTool):
         # Notify entities that slider state changed.
         self.coordinator.async_update_listeners()
 
-        if not confirmed:
+        if not start:
             return llm.ToolResult(
                 data={
                     "success": True,
@@ -177,7 +179,13 @@ class XBloomPourTool(XBloomBaseTool):
                     "boiling": boiling,
                     "volume_ml": volume,
                     "instruction": (
-                        "The machine is now showing its pour page with these "
+                        (
+                            "The pour has NOT started: there was no standing arm "
+                            "to confirm, so the machine was armed again. "
+                            if confirmed
+                            else ""
+                        )
+                        + "The machine is now showing its pour page with these "
                         "settings. Ask the user to confirm starting the pour "
                         "and to place a cup under the dispenser; if they "
                         "agree, call xbloom__pour again with confirmed=true "
