@@ -733,10 +733,12 @@ class XBloomClient:
         # successful manual extract beats a bogus parse warning.
         if not self._status.serial_number:
             self._scan_for_machine_info(raw)
-        self._scan_for_status_frame(raw)
         self._scan_for_advanced_settings(raw)
         self._scan_for_alarm_frame(raw)
         for frame in iter_frames(raw):
+            # Per frame, not per notification: an 8023 behind another
+            # frame was missed (live 2026-10-28, 0x22 lost after confirm).
+            self._scan_for_status_frame(frame)
             self._parse_response(frame)
 
     def _scan_for_status_frame(self, raw: bytes) -> None:
