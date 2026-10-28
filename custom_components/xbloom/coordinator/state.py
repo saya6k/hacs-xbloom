@@ -370,7 +370,10 @@ class StateMixin:
                 state_str = self._derive_state_string(s)
                 data = {
                     "connected": True,
-                    "weight": round(s.scale.weight, 1),
+                    # None while asleep: 20501 keeps streaming through
+                    # sleep but carries a fixed 50.0 with nothing on the
+                    # scale (live 2026-10-28), not a reading.
+                    "weight": None if self.client.is_sleeping() else round(s.scale.weight, 1),
                     # None (not 0.0) when no real reading has ever arrived --
                     # RD_BREWER_TEMPERATURE (8108) rarely fires on some units
                     # (hardware-confirmed 2026-07-15: zero signal across 4

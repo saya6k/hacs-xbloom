@@ -203,6 +203,7 @@ xBloom 클라우드에서 조회해(계정 불필요) 찾은 정보를 덧붙입
 - **xBloom Original 미지원**: 이 통합은 xBloom **Studio**와만 블루투스 LE로 통신합니다(`manifest.json`의 `bluetooth` 매처 참조) — Original은 완전히 다른 Wi-Fi + 클라우드 IoT 프로토콜을 쓰며([`protocol-original-j20.md`](./protocol-original-j20.md)에 정리), 유지보수자가 Original 기기를 보유하고 있지 않아 테스트할 수 없습니다. 클라우드 API 역시 `adaptedModel: 1`(Studio)이 하드코딩되어 있어, Original 전용 계정에서는 계정 레시피 시드와 `cloud_export_recipe`가 검증되지 않았습니다.
 - **일부 펌웨어의 MachineInfo**: 특정 펌웨어 리비전은 `RD_MachineInfo`를 아예 푸시하지 않아 Model / Serial / Firmware 센서가 `unknown`으로 남을 수 있음. 이런 펌웨어에서 수위 binary sensor는 이벤트 기반 감지로 fallback.
 - **수동 컵 감지**: 저울은 전원 인가 시 존재하는 모든 무게를 자동 영점화하므로, 부팅 전에 놓인 컵은 0 g으로 읽힘 — 이 경우 LLM `xbloom__execute_recipe` 도구가 레시피를 예약할 때 반환하는 체크리스트에 컵 확인을 추가.
+- **절전 중이거나 연결이 없을 때 무게는 unknown**: 절전 중인 머신은 저울이 비어 있어도 고정값 50 g을 보내므로, 무게 센서는 지어낸 값 대신 unknown을 표시함. 블루투스 연결이 없을 때(유휴 대기, 범위 밖)도 마찬가지. 실제 무게를 보려면 버튼을 누르거나 포드를 넣어 머신을 깨울 것.
 - **레시피 물 출처**: 수동 pour 엔티티는 설정 → 기기 및 서비스 → xBloom → 구성 → 설정에서 지정한 급수 방식(탱크 vs. 직수)을 따르지만, 레시피 실행은 그렇지 않음 — 펌웨어가 자체 추출 시퀀스를 내부적으로 제어.
 - **차 소크 타이밍은 근사 보정값**: steep 사이 대기 시간은 레시피의 `pausing` 초에서 몇 번의 스톱워치 측정으로 도출한 계수로 스케일링됩니다 — 더 정밀한 타이밍이 필요하면 [`brewing-notes.md`](./brewing-notes.md) 참고.
 

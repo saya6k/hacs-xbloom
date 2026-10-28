@@ -739,17 +739,32 @@ class ConnectionMixin:
     async def _async_send_unit_command(
         self, client: XBloomClient, command: int, payload: bytes | list
     ) -> None:
-        """ACK-gated send of one settings command, resent once on timeout."""
+        """ACK-gated send of one settings command, resent on timeout.
+
+        Awake, it is resent once. Asleep at the first send, it gets the
+        app's wake-retry instead (see ``_async_retry_while_sleeping``): up
+        to ``_WAKE_RETRY_MAX_ATTEMPTS`` sends, ``_WAKE_RETRY_DELAY_S``
+        apart. Live 2026-10-28: an 8005 sent to a sleeping machine woke it,
+        but the send and its immediate resend both went unacknowledged.
+        """
         kwargs: dict[str, Any] = (
             {"raw": payload} if isinstance(payload, bytes) else {"data": payload}
         )
-        try:
-            await client.send_and_wait(command, type_code=1, **kwargs)
-        except AckTimeout:
-            _LOGGER.info(
-                "No ACK for settings command %s — resending once", command,
-            )
-            await client.send_and_wait(command, type_code=1, **kwargs)
+        asleep = client.is_sleeping()
+        attempts = _WAKE_RETRY_MAX_ATTEMPTS if asleep else 2
+        for attempt in range(1, attempts + 1):
+            try:
+                await client.send_and_wait(command, type_code=1, **kwargs)
+                return
+            except AckTimeout:
+                if attempt == attempts:
+                    raise
+                _LOGGER.info(
+                    "No ACK for settings command %s — resending (attempt %d/%d)",
+                    command, attempt, attempts,
+                )
+                if asleep:
+                    await asyncio.sleep(_WAKE_RETRY_DELAY_S)
 
     def _persist_unit_options(self) -> None:
         """Persist the current unit/water-source values to entry.options.
