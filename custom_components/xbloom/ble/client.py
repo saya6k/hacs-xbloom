@@ -88,6 +88,11 @@ _RAW_STATE_LABEL_MAP = {
     0x10: "brewing",
     0x23: "brewing",
     0x3B: "brewing",
+    # Tea steep (soak) screen: sent with each 9012 (TEA_RECIPE_SOAK) and
+    # replaced by 0x23 when the steep drains, twice in one two-steep brew
+    # (live 2026-10-28). The app keys its soak display off 9012 and has no
+    # mapping for this code, so the meaning rests on that capture alone.
+    0x45: "brewing",
     0x24: "ready",
     # Knob-triple-press maintenance screens (T2 capture 2026-07-20).
     # 0x26/0x27 are the grinder-calibration sweep phases — machine-entered
