@@ -31,12 +31,16 @@ The integration adds an **xBloom** page to the Home Assistant sidebar (coffee-ma
 
 It drives the same entities and services as everything else, so nothing it does is out of reach of automations.
 
-<p align="center">
-  <img src="docs/images/panel-brew.png" alt="Brew tab: the selected recipe with dose, ratio, water, grind, temperature and its pour timeline" width="420">
-</p>
-<p align="center">
-  <img src="docs/images/panel-manual.png" alt="Manual tab: grinder, pour and scale controls" width="720">
-</p>
+<table>
+  <tr>
+    <th>Brew</th>
+    <th>Manual</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/panel-brew.png" alt="Brew tab: the selected recipe with dose, ratio, water, grind, temperature and its pour timeline"></td>
+    <td width="50%"><img src="docs/images/panel-manual.png" alt="Manual tab: grinder, pour and scale controls"></td>
+  </tr>
+</table>
 
 ## Features
 
