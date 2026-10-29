@@ -2100,7 +2100,8 @@ const STYLE = `
     background: var(--xb-hero); overflow: hidden; }
   .device-img { height: 200px; width: 200px; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
   .machine-img.cut, .device-img.cut { mask-image: linear-gradient(#000 55%, transparent);
-    -webkit-mask-image: linear-gradient(#000 55%, transparent); }  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    -webkit-mask-image: linear-gradient(#000 55%, transparent); }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 3; }
   .ring .track { stroke: rgba(255,255,255,.1); }
   .ring .bar { stroke: #c5af77; stroke-linecap: round; transition: stroke-dashoffset .5s ease;
