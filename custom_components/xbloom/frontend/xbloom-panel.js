@@ -334,6 +334,21 @@ const POD_COLOR = /^#[0-9a-fA-F]{6}$/;
 // hidden if HA has none yet.
 const machineImage = (m) => m?.photo_url || "";
 
+// XBloom's server covers (tuMachineCover) are close-ups cut off at the
+// bottom edge; the app hides the cut by pinning the photo to the bottom of
+// its home screen. Here the photo floats, so a cut-off one fades out.
+const cutAtBottom = (img) => {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 32;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, 32, 32);
+    const row = ctx.getImageData(0, 31, 32, 1).data;
+    for (let i = 3; i < row.length; i += 4) if (row[i] > 200) return true;
+  } catch (_err) { /* not decodable here: leave it as is */ }
+  return false;
+};
+
 // A stable hue per recipe name, kept inside a warm (coffee) or green
 // (tea) band, so generated card art is varied but consistent.
 const nameHue = (name, tea) => {
@@ -389,6 +404,7 @@ class XBloomPanel extends HTMLElement {
     // Pod library (see pods.py): list, the open pod, its selected recipe.
     this._pods = { list: null, open: null, recipe: 0, bean: false };
     this._podEventSig = "";
+    this._photoCut = {}; // photo url -> cutAtBottom, so re-renders don't flash
   }
 
   set hass(hass) {
@@ -435,6 +451,13 @@ class XBloomPanel extends HTMLElement {
       if (ev.target.classList?.contains("machine-img") || ev.target.classList?.contains("device-img")) {
         ev.target.remove();
       }
+    }, true);
+    root.addEventListener("load", (ev) => {
+      const img = ev.target;
+      if (!img.classList?.contains("machine-img") && !img.classList?.contains("device-img")) return;
+      const src = img.getAttribute("src");
+      if (!(src in this._photoCut)) this._photoCut[src] = cutAtBottom(img);
+      img.classList.toggle("cut", this._photoCut[src]);
     }, true);
     root.addEventListener("focusout", () => {
       setTimeout(() => {
@@ -1198,7 +1221,7 @@ class XBloomPanel extends HTMLElement {
           ${stage === undefined
             // Idle: the machine itself, like the app's home screen.
             ? `<div class="machine">
-                <img class="machine-img" src="${esc(machineImage(m))}" alt="xBloom Studio">
+                <img class="machine-img${this._photoCut[machineImage(m)] ? " cut" : ""}" src="${esc(machineImage(m))}" alt="xBloom Studio">
                 <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
                 <div class="sub">${esc(this._fmt("sensor.state"))}</div>
               </div>`
@@ -1899,7 +1922,7 @@ class XBloomPanel extends HTMLElement {
       </section>
 
       <section class="card device-card">
-        <div class="device-stage"><img class="device-img" src="${esc(machineImage(m))}" alt="xBloom Studio"></div>
+        <div class="device-stage"><img class="device-img${this._photoCut[machineImage(m)] ? " cut" : ""}" src="${esc(machineImage(m))}" alt="xBloom Studio"></div>
         <h2>${this._t("device")}</h2>
         <div class="kv"><span>${this._t("color")}</span>
           <span>${esc(this._t(m.detected_color ? `color_${m.detected_color}` : "color_unknown"))}</span></div>
@@ -2076,6 +2099,11 @@ const STYLE = `
   .device-stage { margin: -20px -20px 0; height: 220px; display: flex; align-items: center; justify-content: center;
     background: var(--xb-hero); overflow: hidden; }
   .device-img { height: 200px; width: 200px; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
+  .machine-img.cut, .device-img.cut { mask-image: linear-gradient(#000 55%, transparent);
+    -webkit-mask-image: linear-gradient(#000 55%, transparent); }
+  /* Like the app's home screen, a cut-off photo rises from below its readout. */
+  .machine:has(> .machine-img.cut) > :not(.machine-img) { order: -1; }
+  .machine:has(> .machine-img.cut) > .machine-img { margin: 8px 0 -20px; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 3; }
   .ring .track { stroke: rgba(255,255,255,.1); }
