@@ -27,6 +27,7 @@ from custom_components.xbloom.const import (
     DOMAIN,
 )
 from custom_components.xbloom.machine_color import color_code, color_from_serial
+from custom_components.xbloom.machine_photo import async_cache_cover, async_cache_store_photo
 
 from .constants import (
     _BLE_SILENCE_TIMEOUT_S,
@@ -213,7 +214,7 @@ class ConnectionMixin:
 
         if serial:
             self._sync_machine_color_issue(serial)
-            self.hass.async_create_task(self._async_refresh_machine_cover(serial))
+            self.hass.async_create_task(self._async_refresh_machine_photos(serial))
 
         try:
             registry = dr.async_get(self.hass)
@@ -233,17 +234,21 @@ class ConnectionMixin:
             _LOGGER.debug("Device registry update failed: %s", exc)
 
     @property
-    def machine_cover_url(self) -> str | None:
-        """The server-assigned machine photo, if one has been fetched."""
+    def machine_cover_version(self) -> int | None:
+        """Version of the server-assigned cover cached this run, if any."""
         return self._machine_cover[1] if self._machine_cover else None
 
-    async def _async_refresh_machine_cover(self, serial: str) -> None:
-        """Fetch the photo xBloom's server assigns to this serial
-        (``tuMachineCover``, app 2.2.5), like the app does: once per
-        colour code, refreshed after 3 days. Needs a cloud login; without
-        one, or on any failure, the panel keeps the per-colour photo."""
+    async def _async_refresh_machine_photos(self, serial: str) -> None:
+        """Cache this machine's photos for the panel (machine_photo.py):
+        the store photo for its colour, and — with a cloud login — the
+        cover xBloom's server assigns to the serial (``tuMachineCover``,
+        app 2.2.5), checked like the app does: once per colour code,
+        again after 3 days. Any failure keeps what is already cached."""
         code = color_code(serial)
-        if code is None or not self.cloud_login_configured:
+        if code is None:
+            return
+        await async_cache_store_photo(self.hass, color_from_serial(serial))
+        if not self.cloud_login_configured:
             return
         cached = self._machine_cover
         if (
@@ -255,8 +260,11 @@ class ConnectionMixin:
         if not await self.async_ensure_cloud_login():
             return
         cover = await self.cloud_client.get_machine_cover(serial)
-        if cover:
-            self._machine_cover = (code, cover["image_url"], time.monotonic())
+        if not cover:
+            return
+        version = int(cover.get("version") or 0)
+        if await async_cache_cover(self.hass, code, cover["image_url"], version):
+            self._machine_cover = (code, version, time.monotonic())
 
     def _sync_machine_color_issue(self, serial: str) -> None:
         """Raise a Repairs issue when the serial's colour code is unmapped.

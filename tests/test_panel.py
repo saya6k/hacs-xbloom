@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from custom_components.xbloom import machine_color, panel
+from custom_components.xbloom import machine_color, machine_photo, panel
 
 PKG = Path(__file__).resolve().parent.parent / "custom_components" / "xbloom"
 JS = (PKG / "frontend" / "xbloom-panel.js").read_text()
@@ -49,7 +49,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
         selected_recipe="Daily",
         mac_address="AA:BB",
         cloud_login_configured=False,
-        machine_cover_url=None,
+        machine_cover_version=None,
         easy_slot_contents=lambda s: {"uid": "u1", "name": "Daily"} if s == "A" else None,
         data={"serial_number": "J15A02B4CV030"},
     )
@@ -76,7 +76,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["mac"] == "AA:BB"
     # Serial "J15A02…" → the app's white-machine code; nothing picked yet.
     assert payload["detected_color"] == "moonlight_white"
-    assert payload["cover_url"] is None
+    assert payload["photo_url"] == "/api/xbloom/machine_photo/entry1?v=02-None"
 
 
 def test_color_from_serial_follows_the_official_app():
@@ -107,10 +107,15 @@ def test_unmapped_colours_are_placeholders_never_matched():
         assert panel.color_from_serial(f"J15A{code}B4CV030") is None
 
 
-def test_panel_photo_keys_match_machine_colors():
-    block = JS.split("const MACHINE_IMAGES = {", 1)[1].split("};", 1)[0]
-    keys = re.findall(r"^\s*([a-z_]+):", block, re.M)
-    assert tuple(keys) == machine_color.MACHINE_COLORS
+def test_store_photo_keys_match_machine_colors():
+    assert tuple(machine_photo.STORE_PHOTOS) == machine_color.MACHINE_COLORS
+
+
+def test_panel_loads_the_machine_photo_from_ha_only():
+    """Offline use: the panel never points an <img> at the internet; HA
+    serves the cached photo (machine_photo.py)."""
+    assert "cdn.shopify.com" not in JS
+    assert "const machineImage = (m) => m?.photo_url" in JS
 
 
 def _run_cloud_search(coordinator, msg):

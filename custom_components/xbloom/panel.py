@@ -19,14 +19,17 @@ from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
+from aiohttp import web
 from homeassistant.components import panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 
 from .const import CONF_MAC_ADDRESS, CONF_STORE_REGION, DATA_COORDINATOR, DOMAIN
-from .machine_color import color_from_serial
+from .machine_color import color_code, color_from_serial
+from .machine_photo import async_read_photo
 from .schema import find_recipe
 from .stores import STORE_REGIONS, STORES, effective_region, region_for_country
 
@@ -48,6 +51,40 @@ def _machine_serial(hass: HomeAssistant, coordinator: Any) -> str | None:
     device_id = getattr(coordinator, "parent_device_id", None)
     device = dr.async_get(hass).async_get(device_id) if device_id else None
     return device.serial_number if device else None
+
+
+class MachinePhotoView(HomeAssistantView):
+    """The machine photo the panel shows, served from HA's own cache
+    (machine_photo.py) so it loads without internet access."""
+
+    url = "/api/xbloom/machine_photo/{entry_id}"
+    name = "api:xbloom:machine_photo"
+    # An <img> can't send a bearer token; this only serves XBloom's public
+    # product shots, picked by an unguessable entry id.
+    requires_auth = False
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        hass: HomeAssistant = request.app[KEY_HASS]
+        coordinator = _coordinator(hass, entry_id)
+        if coordinator is None:
+            return web.Response(status=404)
+        serial = _machine_serial(hass, coordinator)
+        photo = await async_read_photo(hass, color_code(serial), color_from_serial(serial))
+        if photo is None:
+            return web.Response(status=404)
+        data, content_type = photo
+        # The URL carries a version key (_photo_url), so a day is safe.
+        return web.Response(
+            body=data, content_type=content_type,
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+
+
+def _photo_url(entry_id: str, coordinator: Any, serial: str | None) -> str:
+    """The panel's photo URL; the query changes when a newer server cover
+    is cached, so the browser doesn't keep showing the older one."""
+    version = coordinator.machine_cover_version
+    return f"{MachinePhotoView.url.format(entry_id=entry_id)}?v={color_code(serial)}-{version}"
 
 
 def _file_hash(path: Path) -> str:
@@ -75,6 +112,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         module_url=f"{_STATIC_URL}/{_PANEL_FILE}?v={version}",
         require_admin=False,
     )
+    hass.http.register_view(MachinePhotoView())
     websocket_api.async_register_command(hass, ws_machines)
     websocket_api.async_register_command(hass, ws_cloud_search)
     websocket_api.async_register_command(hass, ws_cloud_detail)
@@ -87,6 +125,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
 
 def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> dict:
     entry = hass.config_entries.async_get_entry(entry_id)
+    serial = _machine_serial(hass, coordinator)
     # "<domain>.<translation_key>" -> entity_id, so the panel never has to
     # guess (or hardcode) entity ids the user may have renamed.
     entities = {
@@ -111,10 +150,10 @@ def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> di
         },
         "cloud_login": coordinator.cloud_login_configured,
         # None when the code is unknown — the panel falls back to black.
-        "detected_color": color_from_serial(_machine_serial(hass, coordinator)),
-        # xBloom's own photo for this serial (cloud login only) — preferred
-        # over the per-colour store photo, as in the official app.
-        "cover_url": coordinator.machine_cover_url,
+        "detected_color": color_from_serial(serial),
+        # Served by HA from its own cache — the server cover for the serial
+        # when one is cached, else the store photo for its colour.
+        "photo_url": _photo_url(entry_id, coordinator, serial),
         # The machine's own display unit (g/oz/ml) — the scale sensor is
         # always grams, so the panel converts to match the machine screen.
         "weight_unit": getattr(coordinator, "_weight_unit", "g"),
