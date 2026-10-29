@@ -8,11 +8,8 @@ Both are encrypted ``tuhtml`` posts that need a login.
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.xbloom._cloud_client import XBloomCloudClient
-from custom_components.xbloom.coordinator.connection import ConnectionMixin
 
 SERIAL = "J15A04B4CV030"
 
@@ -78,42 +75,3 @@ def test_machine_cover_needs_login():
     client, calls = _client({"result": "success"}, logged_in=False)
     assert asyncio.run(client.get_machine_cover(SERIAL)) is None
     assert calls == []
-
-
-def _coordinator(cover, configured=True):
-    cloud = MagicMock()
-    cloud.get_machine_cover = AsyncMock(return_value=cover)
-    return SimpleNamespace(
-        cloud_client=cloud,
-        cloud_login_configured=configured,
-        async_ensure_cloud_login=AsyncMock(return_value=True),
-        _machine_cover=None,
-    )
-
-
-def _refresh(coordinator, serial=SERIAL):
-    asyncio.run(ConnectionMixin._async_refresh_machine_cover(coordinator, serial))
-
-
-def test_cover_refresh_caches_per_colour_code():
-    coordinator = _coordinator({"image_url": "https://cdn.example/a.png", "version": 1})
-    _refresh(coordinator)
-    assert coordinator._machine_cover[:2] == ("04", "https://cdn.example/a.png")
-    assert ConnectionMixin.machine_cover_url.fget(coordinator) == "https://cdn.example/a.png"
-    _refresh(coordinator)  # fresh cache for the same code — no second call
-    assert coordinator.cloud_client.get_machine_cover.await_count == 1
-    _refresh(coordinator, "J15A02B4CV030")  # another colour code refetches
-    assert coordinator.cloud_client.get_machine_cover.await_count == 2
-
-
-def test_cover_refresh_skips_without_a_cloud_account():
-    coordinator = _coordinator({"image_url": "https://cdn.example/a.png"}, configured=False)
-    _refresh(coordinator)
-    coordinator.cloud_client.get_machine_cover.assert_not_awaited()
-    assert ConnectionMixin.machine_cover_url.fget(coordinator) is None
-
-
-def test_cover_refresh_failure_keeps_the_colour_photo():
-    coordinator = _coordinator(None)
-    _refresh(coordinator)
-    assert coordinator._machine_cover is None

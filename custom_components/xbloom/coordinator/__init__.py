@@ -119,10 +119,9 @@ class XBloomCoordinator(
         self._cloud_email = cloud_email
         self._cloud_password = cloud_password
         self.cloud_client = XBloomCloudClient(async_get_clientsession(hass))
-        # Server-assigned machine photo (tuMachineCover), shown by the panel
-        # in place of the per-colour store photo — see
-        # _async_refresh_machine_cover. (colour code, url, fetched at).
-        self._machine_cover: tuple[str, str, float] | None = None
+        # Server-assigned machine photo (tuMachineCover) cached this run —
+        # see _async_refresh_machine_photos. (colour code, version, fetched at).
+        self._machine_cover: tuple[str, int, float] | None = None
         # Scanned pods (panel data, not recipes) — loaded in async_setup_entry.
         self.pod_library = PodLibrary(hass, entry_id)
 

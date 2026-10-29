@@ -291,26 +291,10 @@ const SAFE_STORE_LINK = /^https:\/\/xbloom\.com\/products\/[a-z0-9-]+$/;
 // A pod's own colour (PodsModel.theColor) — only plain hex goes into a style.
 const POD_COLOR = /^#[0-9a-fA-F]{6}$/;
 
-// XBloom's own product shots, one per Studio colour, loaded from their
-// store CDN at view time — referenced, not bundled (the photos are
-// XBloom's copyright). Same three-quarter view for every colour; hidden if
-// one fails to load. Keys match panel.py's MACHINE_COLORS.
-const SHOP_CDN = "https://cdn.shopify.com/s/files/1/0611/5704/8544/files/";
-const MACHINE_IMAGES = {
-  midnight_black: "xbloom_Studio_Midnight_Black_03.webp",
-  moonlight_white: "Frame_34597300_2dd2d49b-c4db-4846-82c6-58bb66c24332.png",
-  sage_green_green: "Frame_34598241.png",
-  sage_green_gold: "Frame_34598234.png",
-  twilight: "Frame_34598248.png",
-  offline_blue: "xbloomofflinebluestudioproductimage-3.webp",
-};
-// The colour comes from the serial number only (panel.py's
-// MACHINE_COLOR_CODES); an unknown code shows the black machine. With a
-// cloud login, xBloom's own photo for the serial (cover_url) wins, as in
-// the official app.
-const machineColor = (m) => m?.detected_color || "midnight_black";
-const machineImage = (m) => m?.cover_url
-  || `${SHOP_CDN}${MACHINE_IMAGES[machineColor(m)] || MACHINE_IMAGES.midnight_black}?width=720`;
+// The machine photo comes from HA itself (machine_photo.py caches XBloom's
+// server cover or store photo for the serial), so it loads offline too;
+// hidden if HA has none yet.
+const machineImage = (m) => m?.photo_url || "";
 
 // A stable hue per recipe name, kept inside a warm (coffee) or green
 // (tea) band, so generated card art is varied but consistent.
