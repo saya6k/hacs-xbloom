@@ -248,7 +248,8 @@ class ConnectionMixin:
                 title=quote(f"Machine colour code {code}"),
                 body=quote(
                     f"Serial colour code: `{code}`\n"
-                    "Machine colour: (e.g. Offline Blue)\n"
+                    "Machine colour: (the name on the box or store page, "
+                    "e.g. Offline Blue or a newer colour)\n"
                 ),
             )
             ir.async_create_issue(

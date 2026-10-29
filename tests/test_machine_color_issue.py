@@ -42,6 +42,15 @@ def test_report_link_carries_only_the_code_not_the_serial():
     assert "B4CV030" not in unquote(url)
 
 
+def test_report_link_does_not_presume_a_mapped_colour():
+    """Any unknown code may be a colour newer than the store list, so the
+    pre-filled body never suggests one that already has a code."""
+    create, _ = _sync("J15A06B4CV030")
+    body = unquote(create.call_args.kwargs["translation_placeholders"]["report_url"])
+    for name in ("Sage Green", "Twilight", "Midnight", "Moonlight"):
+        assert name not in body
+
+
 def test_known_codes_clear_the_issue():
     for code in ("01", "02", "03", "04", "05"):
         serial = f"J15A{code}B4CV030"
