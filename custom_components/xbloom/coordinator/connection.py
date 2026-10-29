@@ -232,7 +232,7 @@ class ConnectionMixin:
     def _sync_machine_color_issue(self, serial: str) -> None:
         """Raise a Repairs issue when the serial's colour code is unmapped.
 
-        Only 01 (black) and 02 (white) are known — see machine_color.py.
+        Only 01-05 are known — see machine_color.py.
         For any other code the panel falls back to the black photo, and
         this asks the owner to report which colour their machine is, via a
         pre-filled GitHub issue carrying only the two-character code (not
@@ -248,8 +248,7 @@ class ConnectionMixin:
                 title=quote(f"Machine colour code {code}"),
                 body=quote(
                     f"Serial colour code: `{code}`\n"
-                    "Machine colour: (e.g. Sage Green · Green Knob, Sage Green · "
-                    "Gold Knob, Twilight, Offline Blue)\n"
+                    "Machine colour: (e.g. Offline Blue)\n"
                 ),
             )
             ir.async_create_issue(

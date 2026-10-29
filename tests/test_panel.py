@@ -78,21 +78,30 @@ def test_machine_payload_maps_entities_and_full_recipes():
 
 
 def test_color_from_serial_follows_the_official_app():
-    """Device.getHomeImageRes: serialNumber[4:6] "02" = white, else black.
-    The app knows no other codes, so neither do we."""
+    """Device.getHomeImageRes (app 2.2.5): serialNumber[4:6] 02 white,
+    03 green, 04 gold, 05 twilight, anything else black."""
     assert panel.color_from_serial("J15A01B4CV030") == "midnight_black"
     assert panel.color_from_serial("J15A02B4CV030") == "moonlight_white"
+    assert panel.color_from_serial("J15A03B4CV030") == "sage_green_green"
+    assert panel.color_from_serial("J15A04B4CV030") == "sage_green_gold"
+    assert panel.color_from_serial("J15A05B4CV030") == "twilight"
     assert panel.color_from_serial("J15A07B4CV030") is None
     assert panel.color_from_serial("J15") is None
     assert panel.color_from_serial(None) is None
 
 
 def test_unmapped_colours_are_placeholders_never_matched():
-    """Only 01/02 are known (from the app); the other colours carry no
-    code yet, so no serial can resolve to them by accident."""
+    """Offline Blue has no code in the app yet, so no serial can resolve
+    to it by accident."""
     known = {c: code for c, code in machine_color.MACHINE_COLOR_CODES.items() if code}
-    assert known == {"midnight_black": "01", "moonlight_white": "02"}
-    for code in ("00", "03", "04", "05", "06", "99"):
+    assert known == {
+        "midnight_black": "01",
+        "moonlight_white": "02",
+        "sage_green_green": "03",
+        "sage_green_gold": "04",
+        "twilight": "05",
+    }
+    for code in ("00", "06", "99"):
         assert panel.color_from_serial(f"J15A{code}B4CV030") is None
 
 
