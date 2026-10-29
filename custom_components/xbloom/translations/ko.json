@@ -226,7 +226,7 @@
         "name": "추출 온도"
       },
       "flow_rate": {
-        "name": "유량"
+        "name": "유속"
       },
       "serial_number": {
         "name": "일련 번호"
@@ -402,7 +402,7 @@
     },
     "advanced_settings": {
       "name": "고급 설정",
-      "description": "추출 반경, 진동 진폭, 그라인더 보정 — 공식 앱의 Advanced Features 화면과 동일하게 묶었습니다. 최소 한 개 필드는 입력해야 합니다.",
+      "description": "추출 반경, 진동 진폭, 그라인더 캘리브레이션 — 공식 앱의 Advanced Features 화면과 동일하게 묶었습니다. 최소 한 개 필드는 입력해야 합니다.",
       "fields": {
         "pour_radius_level": {
           "name": "추출 반경 단계",
