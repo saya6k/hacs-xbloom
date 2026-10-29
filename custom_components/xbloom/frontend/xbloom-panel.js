@@ -2101,6 +2101,9 @@ const STYLE = `
   .device-img { height: 200px; width: 200px; object-fit: contain; filter: drop-shadow(0 18px 24px rgba(0,0,0,.5)); }
   .machine-img.cut, .device-img.cut { mask-image: linear-gradient(#000 55%, transparent);
     -webkit-mask-image: linear-gradient(#000 55%, transparent); }
+  /* Like the app's home screen, a cut-off photo rises from below its readout. */
+  .machine:has(> .machine-img.cut) > :not(.machine-img) { order: -1; }
+  .machine:has(> .machine-img.cut) > .machine-img { margin: 8px 0 -20px; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 3; }
   .ring .track { stroke: rgba(255,255,255,.1); }
