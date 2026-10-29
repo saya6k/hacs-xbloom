@@ -168,3 +168,14 @@ def test_collective_summary_carries_cover_image():
            "imageUrl": "https://tbdprodpic.s3.us-east-1.amazonaws.com/x.png"}
     assert _collective_result_to_summary(row, {})["image_url"] == row["imageUrl"]
     assert _collective_result_to_summary({}, {})["image_url"] is None
+
+
+def test_maintenance_guides_have_the_same_steps_in_every_language():
+    """Scale calibration and descaling have no BLE command, so the panel
+    shows their steps; each locale must list the same number of them."""
+    for key in ("scale_cal_steps", "descale_steps"):
+        blocks = re.findall(rf"{key}: \[(.*?)\n    \],", JS, re.S)
+        counts = {len(re.findall(r'^\s*"', b, re.M)) for b in blocks}
+        assert len(blocks) == 2 and counts == {6}, (key, len(blocks), counts)
+    assert '_maintGuideRow("calibrate_scale", "calibrating_scale", "scale_cal_steps")' in JS
+    assert '_maintGuideRow("descale", "descaling", "descale_steps")' in JS
