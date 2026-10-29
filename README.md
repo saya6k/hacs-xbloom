@@ -1,6 +1,6 @@
 # xBloom Coffee Machine — Home Assistant Integration
 
-> Requires Home Assistant **2026.10.0b0** or later.
+> Requires Home Assistant **2026.11.0b0** or later.
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with%20Claude%20Code-D97757?style=for-the-badge&logo=claude&logoColor=white)](https://claude.ai/code)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
@@ -249,7 +249,7 @@ Through Assist (LLM), the same surface is exposed as tools: `xbloom__list_recipe
 
 ## Development
 
-A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA image pinned to **2026.10.0b0** (in `.devcontainer/devcontainer.json`, matching `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
+A devcontainer is provided for testing the integration against a real Home Assistant install. Its base image is the official HA image pinned to **2026.11.0b0** (in `.devcontainer/devcontainer.json`, matching `hacs.json`'s floor), so HA core and every runtime dependency come baked in — `scripts/setup` only installs dev tools. Open the folder in VS Code with the Dev Containers extension and run:
 
 ```bash
 scripts/develop

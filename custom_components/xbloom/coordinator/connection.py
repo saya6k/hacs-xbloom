@@ -293,6 +293,8 @@ class ConnectionMixin:
                 self.hass,
                 DOMAIN,
                 issue_id,
+                # Linked so HA drops the issue when the machine is removed.
+                config_entry_id=self.entry_id,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="unknown_machine_color",
