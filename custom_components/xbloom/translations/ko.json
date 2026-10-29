@@ -136,7 +136,7 @@
     },
     "button": {
       "grind": {
-        "name": "그라인딩"
+        "name": "분쇄"
       },
       "pour": {
         "name": "추출"
@@ -171,7 +171,7 @@
     },
     "number": {
       "grind_size": {
-        "name": "분쇄도"
+        "name": "분쇄 굵기"
       },
       "rpm": {
         "name": "그라인더 RPM"
@@ -180,7 +180,7 @@
         "name": "온도"
       },
       "volume": {
-        "name": "추출량"
+        "name": "토출량"
       }
     },
     "sensor": {
@@ -189,7 +189,7 @@
         "state": {
           "unknown": "알 수 없음",
           "idle": "대기",
-          "grinding": "그라인딩",
+          "grinding": "분쇄 중",
           "brewing": "추출 중",
           "paused": "일시 정지",
           "error": "오류",
@@ -213,7 +213,7 @@
             "name": "작업",
             "state": {
               "recipe": "레시피",
-              "manual_pour": "수동 푸어",
+              "manual_pour": "수동 추출",
               "manual_grind": "수동 분쇄"
             }
           }
@@ -226,10 +226,10 @@
         "name": "추출 온도"
       },
       "flow_rate": {
-        "name": "유량"
+        "name": "유속"
       },
       "serial_number": {
-        "name": "시리얼 번호"
+        "name": "일련 번호"
       },
       "easy_slot_a": {
         "name": "이지 슬롯 A"
@@ -241,7 +241,7 @@
         "name": "이지 슬롯 C"
       },
       "live_grind_size": {
-        "name": "분쇄도 (실시간)"
+        "name": "분쇄 굵기 (실시간)"
       },
       "live_grind_speed": {
         "name": "그라인더 RPM (실시간)"
@@ -250,10 +250,10 @@
         "name": "전압"
       },
       "pour_radius": {
-        "name": "물줄기 회전반경"
+        "name": "추출 반경"
       },
       "vibration_amplitude": {
-        "name": "진동 강도"
+        "name": "진동 진폭"
       }
     },
     "select": {
@@ -315,8 +315,8 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "grinding_started": "그라인딩 시작",
-              "grinding_complete": "그라인딩 완료",
+              "grinding_started": "분쇄 시작",
+              "grinding_complete": "분쇄 완료",
               "brewing_started": "추출 시작",
               "pour_complete": "추출 완료",
               "bloom": "블룸 시작",
@@ -340,7 +340,7 @@
   "services": {
     "execute_recipe": {
       "name": "레시피 실행",
-      "description": "저장된 xBloom 레시피를 실행합니다. 이번 추출에 한해 최상위 스칼라(분쇄도, RPM, 원두량, 비율, 컵 타입, 바이패스)를 재정의할 수 있으며 저장된 레시피는 변경되지 않습니다. 원두량/비율을 재정의하면 새 총수량에 맞게 푸어 볼륨이 비례 조정됩니다.",
+      "description": "저장된 xBloom 레시피를 실행합니다. 이번 추출에 한해 최상위 스칼라(분쇄 굵기, RPM, 원두량, 비율, 컵 타입, 바이패스)를 재정의할 수 있으며 저장된 레시피는 변경되지 않습니다. 원두량/비율을 재정의하면 새 총수량에 맞게 각 추출의 물량이 비례 조정됩니다.",
       "fields": {
         "recipe": {
           "name": "레시피",
@@ -348,19 +348,19 @@
         },
         "dose_g": {
           "name": "원두량",
-          "description": "이번 추출에만 원두량(g)을 재정의합니다. 총수량 = 원두량 × 비율이 유지되도록 푸어 볼륨이 비례 조정됩니다."
+          "description": "이번 추출에만 원두량(g)을 재정의합니다. 총수량 = 원두량 × 비율이 유지되도록 각 추출의 물량이 비례 조정됩니다."
         },
         "ratio": {
           "name": "물 비율",
-          "description": "이번 추출에만 물 비율(총수량 = 원두량 × 비율)을 재정의합니다. 푸어 볼륨이 비례 조정됩니다."
+          "description": "이번 추출에만 물 비율(총수량 = 원두량 × 비율)을 재정의합니다. 각 추출의 물량이 비례 조정됩니다."
         },
         "cup_type": {
           "name": "컵 타입",
           "description": "이번 추출에만 컵/브루어 타입을 재정의합니다."
         },
         "grind_size": {
-          "name": "분쇄도",
-          "description": "이번 추출에 한해 분쇄도(0=가장 곱게, 80=가장 굵게)를 덮어씁니다."
+          "name": "분쇄 굵기",
+          "description": "이번 추출에 한해 분쇄 굵기(0=가장 곱게, 80=가장 굵게)를 덮어씁니다."
         },
         "rpm": {
           "name": "그라인더 RPM",
@@ -378,7 +378,7 @@
     },
     "execute_tea_recipe": {
       "name": "티 레시피 실행",
-      "description": "저장된 xBloom 티 레시피를 실행합니다. 티는 커피와 다른 BLE 시퀀스를 사용하며 원두량/비율/분쇄도/바이패스 재정의를 지원하지 않습니다 — 커피 레시피는 레시피 실행 서비스를 사용하세요.",
+      "description": "저장된 xBloom 티 레시피를 실행합니다. 티는 커피와 다른 BLE 시퀀스를 사용하며 원두량/비율/분쇄 굵기/바이패스 재정의를 지원하지 않습니다 — 커피 레시피는 레시피 실행 서비스를 사용하세요.",
       "fields": {
         "recipe": {
           "name": "레시피",
@@ -402,14 +402,14 @@
     },
     "advanced_settings": {
       "name": "고급 설정",
-      "description": "물줄기 회전반경, 진동 강도, 그라인더 보정 — 공식 앱의 Advanced Features 화면과 동일하게 묶었습니다. 최소 한 개 필드는 입력해야 합니다.",
+      "description": "추출 반경, 진동 진폭, 그라인더 캘리브레이션 — 공식 앱의 Advanced Features 화면과 동일하게 묶었습니다. 최소 한 개 필드는 입력해야 합니다.",
       "fields": {
         "pour_radius_level": {
-          "name": "물줄기 회전반경 단계",
+          "name": "추출 반경 단계",
           "description": "L1(가장 좁음)~L5(가장 넓음), 공식 앱 선택 UI와 동일. L3은 xBloom 클라우드 계정에서 가져온 진짜 공장 기본값입니다 — 옵션 → 계정에서 로그인이 필요합니다."
         },
         "vibration_amplitude_level": {
-          "name": "진동 강도 단계",
+          "name": "진동 진폭 단계",
           "description": "L1(최소)~L6(최대), 공식 앱 선택 UI와 동일."
         },
         "display_brightness_level": {
@@ -564,7 +564,7 @@
     "collective_cup_type": {
       "options": {
         "1": "xPod",
-        "2": "옴니",
+        "2": "옴니 드리퍼",
         "3": "기타",
         "4": "옴니 브루어"
       }
@@ -775,7 +775,7 @@
     },
     "water_source": {
       "options": {
-        "tank": "물탱크",
+        "tank": "물통",
         "direct": "직수 연결"
       }
     }
@@ -783,7 +783,7 @@
   "issues": {
     "unknown_machine_color": {
       "title": "xBloom 기기 색상을 알 수 없음",
-      "description": "이 기기의 시리얼 번호에 들어 있는 색상 코드 **{code}**를 통합 구성요소가 아직 모릅니다. 그래서 패널에는 미드나이트 블랙 사진이 표시됩니다.\n\n등록을 도와주세요: [미리 채워진 GitHub 이슈 열기]({report_url})에서 기기 색상을 적어 주시면 됩니다. 전체 시리얼 번호가 아니라 두 글자 코드만 포함됩니다."
+      "description": "이 기기의 일련 번호에 들어 있는 색상 코드 **{code}**를 통합 구성요소가 아직 모릅니다. 그래서 패널에는 미드나이트 블랙 사진이 표시됩니다.\n\n등록을 도와주세요: [미리 채워진 GitHub 이슈 열기]({report_url})에서 기기 색상을 적어 주시면 됩니다. 전체 일련 번호가 아니라 두 글자 코드만 포함됩니다."
     }
   }
 }

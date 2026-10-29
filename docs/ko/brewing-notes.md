@@ -14,7 +14,7 @@
 
 ```
 ─ Prelude ─
-8022  RD_BackToHome   (티 brew 이후 푸어 패턴 해석 복원)
+8022  RD_BackToHome   (티 brew 이후 추출 패턴 해석 복원)
 ─ 표준 brew ─
 8102  APP_SET_BYPASS  [bypass_volume_f32, bypass_temperature*10_f32, dose_i32]
 8104  APP_SET_CUP     [cup_max_f32, cup_min_f32]
@@ -43,9 +43,9 @@ brAzzi64 HCI 캡처는 omni_dripper에 대해 (110, 90)을 실측했으나, vend
 
 `_build_tea_payload`는 각 스팁의 wire 볼륨을 `_TEA_SIPHON_CAP`(90ml, 펌웨어가 소크 후 자동 탑업해 배수하도록)으로 캡하고, substep pattern=1(circular — 커피와 동일)을 쓰며, 소크 시간을 timing 블록의 byte[1]에 기록함. 이 구조가 어떻게 발견됐는지는 [해결됨 — 티 다중 스팁 flatten](#해결됨--티-다중-스팁-flatten) 참고 — 과거 pattern=3 hack(AML225 cloud-API JSON 차용)은 동작하지 않아 교체됨.
 
-## 해결됨 — 티 brew 이후 그라인딩 (2026-05-29)
+## 해결됨 — 티 brew 이후 분쇄 (2026-05-29)
 
-**상태: 수정됨.** 이전에는 티 레시피(4513/4512) 직후 첫 커피 brew에서 그라인더 단계를 건너뛰었음 — 푸어는 정상이지만 원두를 갈지 않아 빈 필터로 뜨거운 물만 통과, 복구는 전원 재시작뿐이었음.
+**상태: 수정됨.** 이전에는 티 레시피(4513/4512) 직후 첫 커피 brew에서 그라인더 단계를 건너뛰었음 — 추출은 정상이지만 원두를 갈지 않아 빈 필터로 뜨거운 물만 통과, 복구는 전원 재시작뿐이었음.
 
 ### 근본 원인
 
@@ -55,13 +55,13 @@ brAzzi64 HCI 캡처는 omni_dripper에 대해 (110, 90)을 실측했으나, vend
 
 ### 수정
 
-`_async_brew_coffee`에서 QUIT 4개를 제거하고 `8022 RD_BackToHome`만 유지(8022는 푸어 패턴 해석을 독립적으로 복원 — 없으면 커피 푸어가 레시피의 spiral 대신 center로 떨어짐). 2026-05-29 실기 확인: 티 → 커피가 그라인딩 + spiral 푸어 + 온도 + 진동 모두 정상. 전원 재시작 워크어라운드는 더 이상 필요 없음.
+`_async_brew_coffee`에서 QUIT 4개를 제거하고 `8022 RD_BackToHome`만 유지(8022는 추출 패턴 해석을 독립적으로 복원 — 없으면 커피 추출이 레시피의 spiral 대신 center로 떨어짐). 2026-05-29 실기 확인: 티 → 커피가 분쇄 + spiral 추출 + 온도 + 진동 모두 정상. 전원 재시작 워크어라운드는 더 이상 필요 없음.
 
 > 참고: 이 문서는 과거 QUIT 프렐류드가 "티 다중 스팁 분리를 복원했다"고 적었으나, 그건 우연한 상관관계였음 — 공식 캡처상 티 스팁 분리는 커피 측 프렐류드가 아니라 **티 레시피 페이로드(pattern 바이트 + 스팁별 timing)**로만 결정됨. 아래 참고.
 
 ## 해결됨 — 티 다중 스팁 flatten
 
-**상태: 수정됨 (2026-05-29, 실기 확정).** 다중 스팁 티 레시피(예: 홍차 — 120ml @95°C 소크 180s + 120ml @95°C 소크 120s)가 2개 스팁이 아니라 **단일 ~316ml 푸어**로 추출되던 문제. 공식 앱 캡처로 4513 페이로드를 바이트 비교해 원인을 특정함:
+**상태: 수정됨 (2026-05-29, 실기 확정).** 다중 스팁 티 레시피(예: 홍차 — 120ml @95°C 소크 180s + 120ml @95°C 소크 120s)가 2개 스팁이 아니라 **단일 ~316ml 추출**로 추출되던 문제. 공식 앱 캡처로 4513 페이로드를 바이트 비교해 원인을 특정함:
 
 ```
 hacs-xbloom: 10 | 78 5f 03 00 | 4c 00 00 1e | 78 5f 03 00 | 88 00 00 1e | 00 60
@@ -116,21 +116,21 @@ official:  10 | 5a 63 01 00 | 00 60 00 23 | 46 63 01 00 | ce 20 00 23 | 32 00
 ## 2026-05-29 세션 변경 이력
 
 1. 공식 iOS 앱의 PacketLogger HCI 캡처(티→커피→커피) 디코드. 레시피 패킷 4개 전부 CRC 검증. 프레이밍 + 청크 재조립 규칙(len 필드까지 raw 연결) 확립.
-2. **티 이후 그라인딩 수정:** `_async_brew_coffee`에서 QUIT 프렐류드(RECIPE_STOP + BREWER_QUIT + GRINDER_QUIT + RECIPE_START_QUIT) 제거 — 원인이 그것이었음. 8022만 유지. 실기 확인: 티 → 커피 그라인딩 + spiral/온도/진동 정상. 전원 재시작 워크어라운드 삭제.
+2. **티 이후 분쇄 수정:** `_async_brew_coffee`에서 QUIT 프렐류드(RECIPE_STOP + BREWER_QUIT + GRINDER_QUIT + RECIPE_START_QUIT) 제거 — 원인이 그것이었음. 8022만 유지. 실기 확인: 티 → 커피 분쇄 + spiral/온도/진동 정상. 전원 재시작 워크어라운드 삭제.
 3. 이제 안 쓰는 `_CMD_BREWER_QUIT` / `_CMD_GRINDER_QUIT` / `_CMD_RECIPE_START_QUIT` 상수 제거.
 4. 위 2026-05-28 변경 #3("QUIT 프렐류드가 티 분리 복원")은 우연이었음을 무효화 — 분리는 페이로드로 결정됨.
 5. **티 flatten 수정:** 원인은 pattern=3(펌웨어 오파싱 → 316ml = 120 + 76 + 120). `_build_tea_payload`가 이제 pattern=1, `[grind, ratio]` footer, 소크를 timing 바이트[1]에 사용. 실기로 2 스팁 분리 확인.
 6. **티 소크 수정:** byte[1] = `round(pausing × 0.6)`(펌웨어가 대기를 ~1.67배로 돌림; 실기 소크가 레시피 초와 일치). 처음 negate했더니 스팁 순서가 뒤집혀 양수로 정정.
 7. **티 진짜 소크/사이펀 수정:** `_TEA_SIPHON_CAP = 90` 추가 — wire pour를 사이펀 임계 이하로 캡해서 펌웨어가 소크 후 자동 탑업으로 배수(레시피는 authored 볼륨 유지). 실기 확인: 90ml → 3분 머금은 소크 → +38ml → 배수, 스팁별. "flash steep만 가능 / long-soak 불가" 서술 반증.
 8. 공식 앱이 authored 티 볼륨을 **자동 변환**함을 확인(프리셋 120/120 → wire 90/70, 160ml 용량에 맞춤). hacs-xbloom은 변환기를 복제하지 않지만 임계 이하 캡 + 펌웨어 탑업으로 동일한 진짜-소크 결과 달성.
-9. BP 온도 관찰: 사용자가 BP로 지정한 티 푸어가 바이트 99로 인코딩됨(upstream 추측인 98/100이 아님) — 고정 sentinel이 아니라 계산된 끓는점 근사값으로 추정.
+9. BP 온도 관찰: 사용자가 BP로 지정한 티 추출이 바이트 99로 인코딩됨(upstream 추측인 98/100이 아님) — 고정 sentinel이 아니라 계산된 끓는점 근사값으로 추정.
 
 ## 2026-05-28 세션 변경 이력
 
 1. `_async_brew_coffee` 신설 — vendored `XBloomClient.brew()` 우회, 인라인 시퀀스로 처리
-2. 커피 prelude에 8022 추가 → 푸어 패턴 정상화 (이전엔 spiral이 center로 깨졌음)
-3. 커피 prelude에 RECIPE_STOP + BREWER_QUIT + GRINDER_QUIT 추가 → 티 다단 우림 분리 정상화 (이전엔 모든 steep이 한 푸어로 flatten)
-4. 8017 추가 (그라인딩 회복 효과 없으나 부작용 없어 유지)
+2. 커피 prelude에 8022 추가 → 추출 패턴 정상화 (이전엔 spiral이 center로 깨졌음)
+3. 커피 prelude에 RECIPE_STOP + BREWER_QUIT + GRINDER_QUIT 추가 → 티 다단 우림 분리 정상화 (이전엔 모든 steep이 한 번의 추출로 flatten)
+4. 8017 추가 (분쇄 회복 효과 없으나 부작용 없어 유지)
 5. 8006 추가 시도 → 효과 없음 → 롤백
 6. 티 경로 8004 path 실험 → tea mode 진입 안 함 → 4513/4512로 복구
 7. `bypass_volume` / `bypass_temperature` 실제 8102 페이로드에 실어 송신 — YAML의 bypass 필드가 처음으로 동작
