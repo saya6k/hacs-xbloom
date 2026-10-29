@@ -956,6 +956,9 @@ class XBloomPanel extends HTMLElement {
         this._confirm = null;
         this._render();
         return this._press("button.calibrate_grinder");
+      case "cancel-confirm":
+        this._confirm = null;
+        return this._render();
       default:
         return undefined;
     }
@@ -1900,9 +1903,12 @@ class XBloomPanel extends HTMLElement {
         <h2>${this._t("maintenance")}</h2>
         <div class="row">
           <span>${this._t("calibrate_grinder")}</span>
-          <button class="btn small ${this._confirm === "calibrate" ? "danger" : ""}" data-action="calibrate"
-            ${BUSY_STATES.has(this._state) || !this._connected ? "disabled" : ""}>
-            ${this._t(this._confirm === "calibrate" ? "confirm_calibrate" : "calibrate_grinder")}</button>
+          <span class="row-actions">
+            ${this._confirm === "calibrate" ? `<button class="btn small" data-action="cancel-confirm">${this._t("cancel")}</button>` : ""}
+            <button class="btn small ${this._confirm === "calibrate" ? "danger" : ""}" data-action="calibrate"
+              ${BUSY_STATES.has(this._state) || !this._connected ? "disabled" : ""}>
+              ${this._t(this._confirm === "calibrate" ? "confirm_calibrate" : "calibrate_grinder")}</button>
+          </span>
         </div>
         ${this._maintGuideRow("calibrate_scale", "calibrating_scale", "scale_cal_steps")}
         ${this._maintGuideRow("descale", "descaling", "descale_steps")}
@@ -2248,6 +2254,7 @@ const STYLE = `
   .detail-hero { display: flex; flex-direction: column; gap: 14px; }
   .detail-head { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .kv, .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; }
+  .row-actions { display: flex; gap: 8px; flex: none; }
   .kv span:first-child { color: var(--xb-muted); flex: none; white-space: nowrap; }
   .kv span:last-child { font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
   .slot-row { display: flex; gap: 8px; flex-wrap: wrap; }
