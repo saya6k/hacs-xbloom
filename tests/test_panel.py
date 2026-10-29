@@ -76,7 +76,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["mac"] == "AA:BB"
     # Serial "J15A02…" → the app's white-machine code; nothing picked yet.
     assert payload["detected_color"] == "moonlight_white"
-    assert payload["photo_url"] == "/api/xbloom/machine_photo/entry1?v=02-None"
+    assert payload["photo_url"] == "/api/xbloom/machine_photo/entry1?v=02-None-2"
 
 
 def test_color_from_serial_follows_the_official_app():

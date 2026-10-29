@@ -80,11 +80,19 @@ class MachinePhotoView(HomeAssistantView):
         )
 
 
+# Bumped when the bytes served for an unchanged key change: browsers keep
+# the photo for a day. 2: v2.1.0 cached truncated photos (fixed in #206).
+_PHOTO_URL_REV = 2
+
+
 def _photo_url(entry_id: str, coordinator: Any, serial: str | None) -> str:
     """The panel's photo URL; the query changes when a newer server cover
     is cached, so the browser doesn't keep showing the older one."""
     version = coordinator.machine_cover_version
-    return f"{MachinePhotoView.url.format(entry_id=entry_id)}?v={color_code(serial)}-{version}"
+    return (
+        f"{MachinePhotoView.url.format(entry_id=entry_id)}"
+        f"?v={color_code(serial)}-{version}-{_PHOTO_URL_REV}"
+    )
 
 
 def _file_hash(path: Path) -> str:
