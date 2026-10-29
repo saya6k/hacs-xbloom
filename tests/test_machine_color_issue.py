@@ -32,6 +32,7 @@ def test_unknown_code_raises_a_repairs_issue():
     assert kwargs["translation_key"] == "unknown_machine_color"
     assert kwargs["translation_placeholders"]["code"] == "06"
     assert kwargs["is_fixable"] is False
+    assert kwargs["config_entry_id"] == "e1"
 
 
 def test_report_link_carries_only_the_code_not_the_serial():

@@ -1,6 +1,6 @@
 # xBloom Coffee Machine — Home Assistant Integration
 
-> Requires Home Assistant **2026.10.0b0** or later.
+> Requires Home Assistant **2026.11.0b0** or later.
 
 > Source of truth — see [한국어](../ko/index.md) for the Korean translation (may lag).
 
