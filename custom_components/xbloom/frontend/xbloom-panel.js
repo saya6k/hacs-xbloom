@@ -60,6 +60,25 @@ const STRINGS = {
     brightness: "Display brightness", apply: "Apply",
     maintenance: "Maintenance", calibrate_grinder: "Calibrate grinder",
     confirm_calibrate: "Tap again to calibrate", device: "Device",
+    calibrate_scale: "Calibrate scale", descale: "Descale", how_to: "How to", hide: "Hide",
+    on_machine_now: "In progress on the machine",
+    on_machine_only: "This runs on the machine itself — xBloom offers no way to start it remotely, in its app either. The panel shows when the machine reports it in progress.",
+    scale_cal_steps: [
+      "Have a 100 g and a 500 g weight ready, and clear the scale.",
+      "Open the scale page on the machine, then quickly press the middle knob three times.",
+      "When the screen shows NO LOAD, press the right knob to start.",
+      "Place the 100 g weight in the centre of the scale and wait.",
+      "When asked, place the 500 g weight and wait until the screen shows DONE.",
+      "If calibration fails, start again from step 2.",
+    ],
+    descale_steps: [
+      "Mix descaler with water in the tank, about 1:20 (e.g. 25 g in 500 ml) or as the descaler says. Put a large container (about 1 L) under the dispenser.",
+      "Press the middle knob to open the brew page, then quickly press it three more times to open descaling, and start it.",
+      "Wait about 30 minutes while the solution works. Don't use the machine or add water meanwhile, and don't drink the solution.",
+      "When the screen shows + WATER, empty the container and fill the tank with clean water.",
+      "Press start for RINSE-1, then empty the container.",
+      "Press start for RINSE-2, then empty the container. The screen shows DONE when it's finished.",
+    ],
     serial: "Serial number", firmware: "Firmware", mac: "Address",
     unavailable: "Unavailable",
     my_recipes: "My recipes", cloud: "Cloud",
@@ -136,6 +155,25 @@ const STRINGS = {
     brightness: "화면 밝기", apply: "적용",
     maintenance: "유지보수", calibrate_grinder: "그라인더 보정",
     confirm_calibrate: "한 번 더 누르면 보정", device: "기기",
+    calibrate_scale: "저울 보정", descale: "디스케일링", how_to: "방법 보기", hide: "닫기",
+    on_machine_now: "기기에서 진행 중",
+    on_machine_only: "기기에서 직접 진행하는 작업입니다. xBloom 앱도 원격으로 시작할 수 없습니다. 기기가 진행 중이라고 알리면 패널에 표시됩니다.",
+    scale_cal_steps: [
+      "100 g, 500 g 추를 준비하고 저울을 비워 두세요.",
+      "기기에서 저울 화면을 연 뒤, 가운데 노브를 빠르게 세 번 누르세요.",
+      "화면에 NO LOAD가 나오면 오른쪽 노브를 눌러 시작하세요.",
+      "100 g 추를 저울 가운데에 올리고 기다리세요.",
+      "안내가 나오면 500 g 추를 올리고, 화면에 DONE이 나올 때까지 기다리세요.",
+      "보정에 실패하면 2단계부터 다시 하세요.",
+    ],
+    descale_steps: [
+      "물탱크에 디스케일러를 물과 약 1:20(예: 물 500 ml에 25 g)으로, 또는 제품 설명대로 섞으세요. 추출구 아래에 큰 용기(약 1 L)를 두세요.",
+      "가운데 노브를 눌러 추출 화면을 연 뒤, 다시 빠르게 세 번 눌러 디스케일링을 열고 시작하세요.",
+      "용액이 작용하도록 약 30분 기다리세요. 그동안 기기를 쓰거나 물을 보충하지 말고, 용액은 마시지 마세요.",
+      "화면에 + WATER가 나오면 용기를 비우고 물탱크를 깨끗한 물로 채우세요.",
+      "시작을 눌러 RINSE-1을 진행한 뒤 용기를 비우세요.",
+      "시작을 눌러 RINSE-2를 진행한 뒤 용기를 비우세요. 끝나면 화면에 DONE이 나옵니다.",
+    ],
     serial: "시리얼 번호", firmware: "펌웨어", mac: "주소",
     unavailable: "사용 불가",
     my_recipes: "내 레시피", cloud: "클라우드",
@@ -336,6 +374,7 @@ class XBloomPanel extends HTMLElement {
     this._editor = null; // { uid|null, recipe }
     this._filter = { q: "", kind: "all" };
     this._confirm = null; // key of a destructive action awaiting its 2nd tap
+    this._maintGuide = null; // maintenance task whose how-to is open
     this._sig = "";
     this._recipeSig = "";
     this._pendingRender = false;
@@ -883,6 +922,9 @@ class XBloomPanel extends HTMLElement {
       }
       case "set-store-region":
         return this._setStoreRegion(arg);
+      case "maint-guide":
+        this._maintGuide = this._maintGuide === arg ? null : arg;
+        return this._render();
       case "calibrate":
         if (this._confirm !== "calibrate") {
           this._confirm = "calibrate";
@@ -1756,6 +1798,22 @@ class XBloomPanel extends HTMLElement {
 
   // ---- Settings
 
+  // Scale calibration and descaling have no BLE command (the official app
+  // only shows instructions), so the panel offers the steps and shows
+  // when the machine reports the task running.
+  _maintGuideRow(task, runningState, stepsKey) {
+    const open = this._maintGuide === task;
+    const running = this._state === runningState;
+    return `<div class="row">
+        <span>${this._t(task)}${running ? ` <span class="chip on"><span class="dot"></span>${this._t("on_machine_now")}</span>` : ""}</span>
+        <button class="btn small" data-action="maint-guide" data-arg="${task}">${this._t(open ? "hide" : "how_to")}</button>
+      </div>
+      ${open ? `<div class="maint-guide">
+        <ol>${this._t(stepsKey).map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+        <div class="muted small">${this._t("on_machine_only")}</div>
+      </div>` : ""}`;
+  }
+
   _renderSettings() {
     const m = this._machine;
     const modeState = this._st("select.mode");
@@ -1823,6 +1881,8 @@ class XBloomPanel extends HTMLElement {
             ${BUSY_STATES.has(this._state) || !this._connected ? "disabled" : ""}>
             ${this._t(this._confirm === "calibrate" ? "confirm_calibrate" : "calibrate_grinder")}</button>
         </div>
+        ${this._maintGuideRow("calibrate_scale", "calibrating_scale", "scale_cal_steps")}
+        ${this._maintGuideRow("descale", "descaling", "descale_steps")}
       </section>
 
       <section class="card">
@@ -1991,6 +2051,9 @@ const STYLE = `
     border-radius: 14px; padding: 12px 16px; font-weight: 500; }
   .hint { background: color-mix(in srgb, var(--xb-gold) 14%, transparent); border-radius: 14px; padding: 12px 16px; font-size: 14px; line-height: 1.45; }
   .hint.on-dark { background: rgba(197,175,119,.14); color: #e3d9bf; text-align: center; }
+  .maint-guide { padding: 4px 0 12px; font-size: 14px; line-height: 1.5; }
+  .maint-guide ol { margin: 0 0 8px; padding-left: 22px; }
+  .maint-guide li + li { margin-top: 4px; }
   .warn { color: var(--xb-danger); font-size: 13px; margin-top: 4px; }
   .card { background: var(--xb-card); border-radius: var(--xb-radius); padding: 20px;
     box-shadow: var(--xb-shadow); display: flex; flex-direction: column; gap: 14px; min-width: 0; }
