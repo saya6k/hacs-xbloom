@@ -117,6 +117,7 @@ def test_machine_payload_carries_the_weight_unit():
     hass.config_entries.async_get_entry.return_value = entry
     coordinator = SimpleNamespace(
         recipes={}, selected_recipe=None, mac_address="AA", cloud_login_configured=False,
+        machine_cover_url=None,
         easy_slot_contents=lambda s: None, data={}, _weight_unit="ml",
     )
     from unittest.mock import patch

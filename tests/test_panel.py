@@ -49,6 +49,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
         selected_recipe="Daily",
         mac_address="AA:BB",
         cloud_login_configured=False,
+        machine_cover_url=None,
         easy_slot_contents=lambda s: {"uid": "u1", "name": "Daily"} if s == "A" else None,
         data={"serial_number": "J15A02B4CV030"},
     )
@@ -75,6 +76,7 @@ def test_machine_payload_maps_entities_and_full_recipes():
     assert payload["mac"] == "AA:BB"
     # Serial "J15A02…" → the app's white-machine code; nothing picked yet.
     assert payload["detected_color"] == "moonlight_white"
+    assert payload["cover_url"] is None
 
 
 def test_color_from_serial_follows_the_official_app():
