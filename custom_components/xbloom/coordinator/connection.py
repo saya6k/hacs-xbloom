@@ -55,6 +55,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Pre-filled "new issue" link the unknown-colour Repairs issue points at.
 _COLOR_REPORT_URL = "https://github.com/saya6k/hacs-xbloom/issues/new?title={title}&body={body}"
+# The official app refetches its cached machine cover after 3 days.
+_MACHINE_COVER_MAX_AGE_S = 3 * 24 * 3600
 
 _T = TypeVar("_T")
 
@@ -211,6 +213,7 @@ class ConnectionMixin:
 
         if serial:
             self._sync_machine_color_issue(serial)
+            self.hass.async_create_task(self._async_refresh_machine_cover(serial))
 
         try:
             registry = dr.async_get(self.hass)
@@ -228,6 +231,32 @@ class ConnectionMixin:
                     _LOGGER.info("Device registry updated: %s", updates)
         except Exception as exc:
             _LOGGER.debug("Device registry update failed: %s", exc)
+
+    @property
+    def machine_cover_url(self) -> str | None:
+        """The server-assigned machine photo, if one has been fetched."""
+        return self._machine_cover[1] if self._machine_cover else None
+
+    async def _async_refresh_machine_cover(self, serial: str) -> None:
+        """Fetch the photo xBloom's server assigns to this serial
+        (``tuMachineCover``, app 2.2.5), like the app does: once per
+        colour code, refreshed after 3 days. Needs a cloud login; without
+        one, or on any failure, the panel keeps the per-colour photo."""
+        code = color_code(serial)
+        if code is None or not self.cloud_login_configured:
+            return
+        cached = self._machine_cover
+        if (
+            cached
+            and cached[0] == code
+            and time.monotonic() - cached[2] < _MACHINE_COVER_MAX_AGE_S
+        ):
+            return
+        if not await self.async_ensure_cloud_login():
+            return
+        cover = await self.cloud_client.get_machine_cover(serial)
+        if cover:
+            self._machine_cover = (code, cover["image_url"], time.monotonic())
 
     def _sync_machine_color_issue(self, serial: str) -> None:
         """Raise a Repairs issue when the serial's colour code is unmapped.

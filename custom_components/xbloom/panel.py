@@ -112,6 +112,9 @@ def _machine_payload(hass: HomeAssistant, entry_id: str, coordinator: Any) -> di
         "cloud_login": coordinator.cloud_login_configured,
         # None when the code is unknown — the panel falls back to black.
         "detected_color": color_from_serial(_machine_serial(hass, coordinator)),
+        # xBloom's own photo for this serial (cloud login only) — preferred
+        # over the per-colour store photo, as in the official app.
+        "cover_url": coordinator.machine_cover_url,
         # The machine's own display unit (g/oz/ml) — the scale sensor is
         # always grams, so the panel converts to match the machine screen.
         "weight_unit": getattr(coordinator, "_weight_unit", "g"),

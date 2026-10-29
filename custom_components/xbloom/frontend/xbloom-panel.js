@@ -305,9 +305,12 @@ const MACHINE_IMAGES = {
   offline_blue: "xbloomofflinebluestudioproductimage-3.webp",
 };
 // The colour comes from the serial number only (panel.py's
-// MACHINE_COLOR_CODES); an unknown code shows the black machine.
+// MACHINE_COLOR_CODES); an unknown code shows the black machine. With a
+// cloud login, xBloom's own photo for the serial (cover_url) wins, as in
+// the official app.
 const machineColor = (m) => m?.detected_color || "midnight_black";
-const machineImage = (m) => `${SHOP_CDN}${MACHINE_IMAGES[machineColor(m)] || MACHINE_IMAGES.midnight_black}?width=720`;
+const machineImage = (m) => m?.cover_url
+  || `${SHOP_CDN}${MACHINE_IMAGES[machineColor(m)] || MACHINE_IMAGES.midnight_black}?width=720`;
 
 // A stable hue per recipe name, kept inside a warm (coffee) or green
 // (tea) band, so generated card art is varied but consistent.
@@ -1169,7 +1172,7 @@ class XBloomPanel extends HTMLElement {
           ${stage === undefined
             // Idle: the machine itself, like the app's home screen.
             ? `<div class="machine">
-                <img class="machine-img" src="${machineImage(m)}" alt="xBloom Studio">
+                <img class="machine-img" src="${esc(machineImage(m))}" alt="xBloom Studio">
                 <div class="big" data-live="sensor.weight" data-live-fmt="weight">–</div>
                 <div class="sub">${esc(this._fmt("sensor.state"))}</div>
               </div>`
@@ -1852,7 +1855,7 @@ class XBloomPanel extends HTMLElement {
       </section>
 
       <section class="card device-card">
-        <div class="device-stage"><img class="device-img" src="${machineImage(m)}" alt="xBloom Studio"></div>
+        <div class="device-stage"><img class="device-img" src="${esc(machineImage(m))}" alt="xBloom Studio"></div>
         <h2>${this._t("device")}</h2>
         <div class="kv"><span>${this._t("color")}</span>
           <span>${esc(this._t(m.detected_color ? `color_${m.detected_color}` : "color_unknown"))}</span></div>
