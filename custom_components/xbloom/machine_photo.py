@@ -41,14 +41,20 @@ _MAX_BYTES = 8 * 1024 * 1024
 
 
 def image_type(data: bytes) -> str | None:
-    """The image's content type from its magic bytes. Headers can't be
-    trusted: the S3 covers come as application/octet-stream, and Shopify
-    serves PNG for a .webp file name."""
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+    """The image's content type from its magic bytes, or None unless it is a
+    whole image. Headers can't be trusted: the S3 covers come as
+    application/octet-stream, and Shopify serves PNG for a .webp file name.
+    The end is checked too, so a truncated download (or one cached by an
+    older version) is refetched instead of drawn as a sliver."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and data.endswith(b"IEND\xaeB`\x82"):
         return "image/png"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+    if (
+        data[:4] == b"RIFF"
+        and data[8:12] == b"WEBP"
+        and int.from_bytes(data[4:8], "little") + 8 == len(data)
+    ):
         return "image/webp"
-    if data.startswith(b"\xff\xd8\xff"):
+    if data.startswith(b"\xff\xd8\xff") and data.endswith(b"\xff\xd9"):
         return "image/jpeg"
     return None
 
@@ -82,11 +88,21 @@ async def _download(hass: HomeAssistant, url: str) -> bytes | None:
         async with async_get_clientsession(hass).get(url, timeout=_TIMEOUT) as resp:
             if resp.status != 200:
                 return None
-            data = await resp.content.read(_MAX_BYTES + 1)
+            # read(n) returns as soon as any data arrives — often a single
+            # 8 KiB chunk — so read to the end, capped at _MAX_BYTES.
+            data = bytearray()
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                data += chunk
+                if len(data) > _MAX_BYTES:
+                    return None
     except (aiohttp.ClientError, TimeoutError) as exc:
         _LOGGER.debug("Machine photo download failed (%s): %s", url, exc)
         return None
-    return data if len(data) <= _MAX_BYTES and image_type(data) else None
+    return bytes(data) if image_type(data) else None
+
+
+def _is_cached(path: Path) -> bool:
+    return path.is_file() and image_type(path.read_bytes()) is not None
 
 
 def _write(path: Path, data: bytes, stale: list[Path] = ()) -> None:
@@ -102,7 +118,7 @@ def _write(path: Path, data: bytes, stale: list[Path] = ()) -> None:
 async def async_cache_store_photo(hass: HomeAssistant, color: str | None) -> bool:
     """Download the store photo for a colour unless it is already cached."""
     path = photo_dir(hass) / _store_file(color)
-    if await hass.async_add_executor_job(path.is_file):
+    if await hass.async_add_executor_job(_is_cached, path):
         return True
     name = STORE_PHOTOS[color if color in STORE_PHOTOS else DEFAULT_COLOR]
     data = await _download(hass, f"{STORE_PHOTO_CDN}{name}?width=720")
@@ -122,7 +138,7 @@ async def async_cache_cover(
         return False
     directory = photo_dir(hass)
     path = directory / f"cover_{code}_v{int(version)}.img"
-    if await hass.async_add_executor_job(path.is_file):
+    if await hass.async_add_executor_job(_is_cached, path):
         return True
     data = await _download(hass, url)
     if data is None:

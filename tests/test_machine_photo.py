@@ -16,9 +16,11 @@ from custom_components.xbloom import machine_photo
 from custom_components.xbloom.coordinator.connection import ConnectionMixin
 
 SERIAL = "J15A04B4CV030"
-PNG = b"\x89PNG\r\n\x1a\n"
-GOLD, COVER, COVER1, COVER2 = (PNG + tag for tag in (b"gold", b"cover", b"cover1", b"cover2"))
-BLACK = b"RIFF\0\0\0\0WEBPblack"
+PNG, PNG_END = b"\x89PNG\r\n\x1a\n", b"IEND\xaeB`\x82"
+GOLD, COVER, COVER1, COVER2 = (
+    PNG + tag + PNG_END for tag in (b"gold", b"cover", b"cover1", b"cover2")
+)
+BLACK = b"RIFF" + (9).to_bytes(4, "little") + b"WEBPblack"
 
 
 @pytest.fixture
@@ -102,8 +104,50 @@ def test_image_type_trusts_bytes_not_headers():
     for a .webp name, so only the magic bytes decide."""
     assert machine_photo.image_type(GOLD) == "image/png"
     assert machine_photo.image_type(BLACK) == "image/webp"
-    assert machine_photo.image_type(b"\xff\xd8\xff\xe0jpeg") == "image/jpeg"
+    assert machine_photo.image_type(b"\xff\xd8\xff\xe0jpeg\xff\xd9") == "image/jpeg"
     assert machine_photo.image_type(b"<html>error page</html>") is None
+
+
+def test_image_type_rejects_a_truncated_image():
+    """Live 2026-10-29: the cached black store photo was the first 8 KiB of
+    a 720x720 PNG, and the panel drew only its top rows."""
+    assert machine_photo.image_type(GOLD[:-3]) is None
+    assert machine_photo.image_type(BLACK[:-1]) is None
+    assert machine_photo.image_type(b"\xff\xd8\xff\xe0jpeg") is None
+
+
+def test_a_truncated_cached_photo_is_downloaded_again(hass, downloads):
+    path = machine_photo.photo_dir(hass) / "store_sage_green_gold.img"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(GOLD[:8])
+    downloads.served[_store_url("sage_green_gold")] = GOLD
+    assert _read(hass) == (GOLD, "image/png")
+    assert path.read_bytes() == GOLD
+
+
+def test_download_reads_every_chunk(hass, monkeypatch):
+    """aiohttp's read(n) returns after the first chunk; the whole body must
+    be read."""
+
+    class Content:
+        async def iter_chunked(self, _size):
+            for part in (GOLD[:5], GOLD[5:12], GOLD[12:]):
+                yield part
+
+    class Resp:
+        status = 200
+        content = Content()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    session = MagicMock()
+    session.get.return_value = Resp()
+    monkeypatch.setattr(machine_photo, "async_get_clientsession", lambda _hass: session)
+    assert asyncio.run(machine_photo._download(hass, "https://cdn/x.png")) == GOLD
 
 
 def _coordinator(hass, cover, configured=True):
