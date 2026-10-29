@@ -167,6 +167,11 @@ _TIMEOUT = aiohttp.ClientTimeout(total=15)
 # facts".
 _AUTH_INTERFACE_VERSION = 20240918
 _AUTH_SKEY = "testskey"
+# The app's language index (w2.a / LanguageFragment, app 2.2.5): 0=en, 1=fr,
+# 2=de, 3=zh-Hans, 4=zh-Hant, 5=ko, 6=ja, 7=ar. Only the response's "info"
+# message is localized by it (recipe/pod/firmware content is English for
+# every value, checked live 2026-10-29) and that only reaches our logs.
+_LANGUAGE_TYPE = 0
 
 
 def _auth_base(member_id: int, token: str) -> dict:
@@ -176,7 +181,7 @@ def _auth_base(member_id: int, token: str) -> dict:
         "phoneType": "Android",
         "memberId": member_id,
         "clientType": 2,
-        "languageType": 1,
+        "languageType": _LANGUAGE_TYPE,
         "token": token,
     }
 
@@ -329,9 +334,10 @@ def validate_pour_volume_consistency(recipe: dict) -> str | None:
     for a dosed (coffee-style) recipe, ``sum(pours[].volume_ml) +
     bypass_volume`` must equal ``dose_g * ratio`` (the declared total water
     budget) — ``tuRecipeAdd.tuhtml``/``tuRecipeUpdate.tuhtml`` silently
-    reject a mismatch with a generic, French, unactionable
+    reject a mismatch with a generic, unactionable
     ``{"result": "fail", "info": "Les données de versement de cette
-    recette sont anormales"}`` (abnormal pour data). This isn't documented
+    recette sont anormales"}`` (abnormal pour data — French because we
+    then sent ``languageType: 1``, see ``_LANGUAGE_TYPE``). This isn't documented
     anywhere in the reference implementation — confirmed empirically by
     bisecting a failing live create call.
 
@@ -498,7 +504,7 @@ class XBloomCloudClient:
                 "skey": "testskey",
                 "clientType": 2,
                 "phoneType": "Android",
-                "languageType": 1,
+                "languageType": _LANGUAGE_TYPE,
                 "email": email,
                 "password": password,
             },
@@ -871,7 +877,7 @@ class XBloomCloudClient:
                 "skey": _AUTH_SKEY,
                 "phoneType": "Android",
                 "clientType": 2,
-                "languageType": 1,
+                "languageType": _LANGUAGE_TYPE,
                 "xid": xid,
                 "adaptedModel": 1,
                 "isRefreshScanTime": 2,
